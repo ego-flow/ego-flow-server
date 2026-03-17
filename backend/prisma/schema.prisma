@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  user
+}
+
+model User {
+  id           String   @id @db.VarChar(64)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  role         UserRole @default(user)
+  displayName  String?  @map("display_name") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  videos       Video[]
+
+  @@map("users")
+}
+
+model Setting {
+  key       String   @id @db.VarChar(255)
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+enum VideoStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Video {
+  id                    String      @id @default(uuid()) @db.Uuid
+  videoKey              String      @map("video_key") @db.VarChar(64)
+  userId                String      @map("user_id") @db.VarChar(64)
+  user                  User        @relation(fields: [userId], references: [id])
+  rawRecordingPath      String      @map("raw_recording_path") @db.VarChar(1024)
+  streamPath            String?     @map("stream_path") @db.VarChar(255)
+  deviceType            String?     @map("device_type") @db.VarChar(100)
+  sessionId             String?     @map("session_id") @db.VarChar(255)
+  streamedAt            DateTime    @default(now()) @map("streamed_at")
+  durationSec           Float?      @map("duration_sec")
+  resolutionWidth       Int?        @map("resolution_width")
+  resolutionHeight      Int?        @map("resolution_height")
+  fps                   Float?
+  codec                 String?     @db.VarChar(50)
+  recordedAt            DateTime?   @map("recorded_at")
+  vlmVideoPath          String?     @map("vlm_video_path") @db.VarChar(1024)
+  dashboardVideoPath    String?     @map("dashboard_video_path") @db.VarChar(1024)
+  thumbnailPath         String?     @map("thumbnail_path") @db.VarChar(1024)
+  clipSegments          Json?       @map("clip_segments")
+  actionLabels          Json?       @map("action_labels")
+  videoTextAlignment    Json?       @map("video_text_alignment")
+  sceneSummary          String?     @map("scene_summary") @db.Text
+  status                VideoStatus @default(PENDING)
+  errorMessage          String?     @map("error_message") @db.Text
+  processingStartedAt   DateTime?   @map("processing_started_at")
+  processingCompletedAt DateTime?   @map("processing_completed_at")
+  createdAt             DateTime    @default(now()) @map("created_at")
+  updatedAt             DateTime    @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([videoKey], map: "idx_videos_video_key")
+  @@index([userId], map: "idx_videos_user_id")
+  @@index([recordedAt], map: "idx_videos_recorded_at")
+  @@index([sessionId], map: "idx_videos_session")
+  @@map("videos")
+}

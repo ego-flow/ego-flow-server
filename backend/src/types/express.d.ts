@@ -1,0 +1,9 @@
+import type { AuthTokenPayload } from "./auth";
+
+declare module "express-serve-static-core" {
+  interface Request {
+    user?: Pick<AuthTokenPayload, "userId" | "role">;
+  }
+}
+
+export {};

@@ -1,0 +1,12 @@
+backend/node_modules/
+backend/dist/
+
+data/raw/*
+data/datasets/*
+data/postgres/
+data/redis/
+!data/raw/.gitkeep
+!data/datasets/.gitkeep
+
+.env
+backend/.env

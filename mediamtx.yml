@@ -1,0 +1,30 @@
+rtmp: yes
+rtmpAddress: :1935
+
+hls: yes
+hlsAddress: :8888
+hlsAlwaysRemux: yes
+
+api: yes
+apiAddress: :9997
+
+authMethod: http
+authHTTPAddress: http://host.docker.internal:3000/api/v1/auth/rtmp
+
+pathDefaults:
+  source: publisher
+  overridePublisher: yes
+  record: yes
+  recordPath: /data/raw/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordFormat: fmp4
+  recordPartDuration: 1s
+  recordSegmentDuration: 1h
+  recordDeleteAfter: 0s
+  runOnDisconnect: >
+    sh -c 'curl -sS -X POST http://host.docker.internal:3000/api/v1/hooks/recording-complete
+    -H "Content-Type: application/json"
+    -d "{\"path\":\"$MTX_PATH\",\"recording_path\":\"$MTX_SEGMENT_PATH\"}" >/dev/null || true'
+
+paths:
+  live:
+    record: yes
