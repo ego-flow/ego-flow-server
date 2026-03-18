@@ -26,19 +26,19 @@ export default function RepositoryCard({
       to="/repositories/$userId/$repoName"
       params={{ userId, repoName }}
       className={cn(
-        'group block w-full cursor-pointer rounded-xl border border-[#2a2e36] bg-gradient-to-r from-[#16181d] via-[#121419] to-[#0e1014] px-5 py-4 shadow-[0_8px_28px_rgba(0,0,0,0.34)] no-underline',
-        'transition-colors transition-transform duration-200 hover:-translate-y-0.5 hover:border-[#3a3f49]',
+        'group block w-full cursor-pointer rounded-xl border border-[var(--line)] bg-gradient-to-r from-[color-mix(in_oklab,var(--card)_90%,transparent)] via-[color-mix(in_oklab,var(--card)_84%,transparent)] to-[color-mix(in_oklab,var(--card)_78%,var(--background))] px-5 py-4 no-underline',
+        'transition-colors transition-transform duration-200 hover:-translate-y-0.5 hover:border-[color-mix(in_oklab,var(--lagoon-deep)_38%,var(--line))]',
         className,
       )}
     >
-      <p className="mb-2 flex items-center gap-2.5 leading-none font-semibold tracking-[-0.02em] text-[#e3e8f4]">
-        <Database size={16} className="text-[#8d929e] md:size-[18px]" aria-hidden="true" />
-        <span className="font-mono text-xs transition-colors duration-200 group-hover:text-[#f7d66b] md:text-base">
+      <p className="mb-2 flex items-center gap-2.5 leading-none font-semibold tracking-[-0.02em] text-[var(--sea-ink)]">
+        <Database size={16} className="text-[var(--sea-ink-soft)] md:size-[18px]" aria-hidden="true" />
+        <span className="font-mono text-xs transition-colors duration-200 group-hover:text-[var(--lagoon-deep)] md:text-base">
           {fullName}
         </span>
       </p>
 
-      <div className="flex flex-wrap items-center gap-2.5 text-[11px] leading-none text-[#a3a8b3] md:text-xs">
+      <div className="flex flex-wrap items-center gap-2.5 text-[11px] leading-none text-[var(--sea-ink-soft)] md:text-xs">
         <span>{updatedText}</span>
         <span aria-hidden="true">•</span>
         <span className="inline-flex items-center gap-1.5">

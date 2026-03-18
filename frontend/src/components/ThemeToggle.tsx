@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { Moon, Sun } from 'lucide-react'
+import { Button } from '#/components/ui/button'
 
 type ThemeMode = 'light' | 'dark' | 'auto'
 
@@ -55,27 +57,25 @@ export default function ThemeToggle() {
   }, [mode])
 
   function toggleMode() {
-    const nextMode: ThemeMode =
-      mode === 'light' ? 'dark' : mode === 'dark' ? 'auto' : 'light'
+    const nextMode: ThemeMode = mode === 'dark' ? 'light' : 'dark'
     setMode(nextMode)
     applyThemeMode(nextMode)
     window.localStorage.setItem('theme', nextMode)
   }
 
-  const label =
-    mode === 'auto'
-      ? 'Theme mode: auto (system). Click to switch to light mode.'
-      : `Theme mode: ${mode}. Click to switch mode.`
+  const isDarkMode = mode === 'dark'
+  const label = isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'
 
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
+      size="icon"
       onClick={toggleMode}
       aria-label={label}
       title={label}
-      className="rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-3 py-1.5 text-sm font-semibold text-[var(--sea-ink)] shadow-[0_8px_22px_rgba(30,90,72,0.08)] transition hover:-translate-y-0.5"
     >
-      {mode === 'auto' ? 'Auto' : mode === 'dark' ? 'Dark' : 'Light'}
-    </button>
+      {isDarkMode ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
+    </Button>
   )
 }

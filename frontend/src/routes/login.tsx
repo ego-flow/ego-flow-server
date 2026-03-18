@@ -1,8 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { z } from 'zod'
 
 import { Button } from '#/components/ui/button'
+import { useAuth } from '#/hooks/useAuth'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { useAppForm } from '#/hooks/demo.form'
@@ -13,21 +14,16 @@ export const Route = createFileRoute('/login')({
 
 const loginSchema = z.object({
   id: z.string().min(1, 'ID is required'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: z.string().trim().min(1, 'Password is required'),
   rememberMe: z.boolean(),
 })
 
 type LoginFormValues = z.infer<typeof loginSchema>
 
-async function loginRequest(values: LoginFormValues) {
-  // Replace with API integration when backend endpoint is ready.
-  await new Promise((resolve) => setTimeout(resolve, 450))
-  console.info('Login payload ready for API:', values)
-}
-
 function LoginPage() {
   const [submitError, setSubmitError] = useState<string | null>(null)
-  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null)
+  const { isReady, isAuthenticated, login } = useAuth()
+  const navigate = useNavigate()
 
   const form = useAppForm({
     defaultValues: {
@@ -36,16 +32,16 @@ function LoginPage() {
       rememberMe: false,
     },
     validators: {
+      onChange: loginSchema,
       onBlur: loginSchema,
       onSubmit: loginSchema,
     },
     onSubmit: async ({ value }) => {
       setSubmitError(null)
-      setSubmitSuccess(null)
 
       try {
-        await loginRequest(value)
-        setSubmitSuccess('Login request is validated and ready to call your API.')
+        await login(value)
+        await navigate({ to: '/repositories' })
       } catch (error) {
         setSubmitError(
           error instanceof Error
@@ -56,24 +52,31 @@ function LoginPage() {
     },
   })
 
+  if (!isReady) {
+    return null
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to="/repositories" />
+  }
+
   return (
     <main className="page-wrap grid min-h-[calc(100dvh-5rem)] place-items-center px-4 py-12 sm:py-16">
       <section className="island-shell w-full max-w-md rounded-2xl p-6 shadow-xl sm:p-8">
-        <p className="island-kicker mb-2">Account Access</p>
         <h1 className="display-title text-balance text-3xl font-bold text-[var(--sea-ink)] sm:text-4xl">
           Log in
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-[var(--sea-ink-soft)]">
-          No API call is sent yet. This form is wired so you can connect your
-          auth endpoint with minimal changes.
+          Welcome to EgoFlow.
+          <br />
+          Sign in to continue to your repositories.
         </p>
 
         <form
           className="mt-7 space-y-4"
           onSubmit={(e) => {
             e.preventDefault()
-            e.stopPropagation()
-            form.handleSubmit()
+            void form.handleSubmit()
           }}
         >
           <form.Field name="id">
@@ -109,12 +112,14 @@ function LoginPage() {
                   id="login-password"
                   type="password"
                   autoComplete="current-password"
-                  placeholder="At least 8 characters"
+                  placeholder="Enter your Password"
+                  minLength={1}
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(e) => field.handleChange(e.target.value)}
                 />
                 {field.state.meta.isTouched &&
+                  field.state.value.trim().length === 0 &&
                   field.state.meta.errors.length > 0 && (
                     <p className="text-sm font-medium text-red-600">
                       {typeof field.state.meta.errors[0] === 'string'
@@ -146,12 +151,6 @@ function LoginPage() {
           </form.Field>
 
           {submitError && <p className="text-sm font-medium text-red-600">{submitError}</p>}
-          {submitSuccess && (
-            <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
-              {submitSuccess}
-            </p>
-          )}
-
           <form.Subscribe selector={(state) => state.isSubmitting}>
             {(isSubmitting) => (
               <Button type="submit" className="mt-2 w-full" disabled={isSubmitting}>
