@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as RepositoriesRouteImport } from './routes/repositories'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RepositoriesIndexRouteImport } from './routes/repositories.index'
@@ -18,6 +19,11 @@ import { Route as RepositoriesUserIdRepoNameRouteImport } from './routes/reposit
 const RepositoriesRoute = RepositoriesRouteImport.update({
   id: '/repositories',
   path: '/repositories',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -45,6 +51,7 @@ const RepositoriesUserIdRepoNameRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/profile': typeof ProfileRoute
   '/repositories': typeof RepositoriesRouteWithChildren
   '/repositories/': typeof RepositoriesIndexRoute
   '/repositories/$userId/$repoName': typeof RepositoriesUserIdRepoNameRoute
@@ -52,6 +59,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/profile': typeof ProfileRoute
   '/repositories': typeof RepositoriesIndexRoute
   '/repositories/$userId/$repoName': typeof RepositoriesUserIdRepoNameRoute
 }
@@ -59,6 +67,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/profile': typeof ProfileRoute
   '/repositories': typeof RepositoriesRouteWithChildren
   '/repositories/': typeof RepositoriesIndexRoute
   '/repositories/$userId/$repoName': typeof RepositoriesUserIdRepoNameRoute
@@ -68,15 +77,22 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/profile'
     | '/repositories'
     | '/repositories/'
     | '/repositories/$userId/$repoName'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/repositories' | '/repositories/$userId/$repoName'
+  to:
+    | '/'
+    | '/login'
+    | '/profile'
+    | '/repositories'
+    | '/repositories/$userId/$repoName'
   id:
     | '__root__'
     | '/'
     | '/login'
+    | '/profile'
     | '/repositories'
     | '/repositories/'
     | '/repositories/$userId/$repoName'
@@ -85,6 +101,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
+  ProfileRoute: typeof ProfileRoute
   RepositoriesRoute: typeof RepositoriesRouteWithChildren
 }
 
@@ -95,6 +112,13 @@ declare module '@tanstack/react-router' {
       path: '/repositories'
       fullPath: '/repositories'
       preLoaderRoute: typeof RepositoriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -145,6 +169,7 @@ const RepositoriesRouteWithChildren = RepositoriesRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
+  ProfileRoute: ProfileRoute,
   RepositoriesRoute: RepositoriesRouteWithChildren,
 }
 export const routeTree = rootRouteImport
