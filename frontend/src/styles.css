@@ -124,19 +124,3 @@ body {
   letter-spacing: -0.03em;
   line-height: 1.04;
 }
-
-.nav-link {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 9999px;
-  padding: 0.4rem 0.8rem;
-  color: var(--sea-ink-soft);
-  text-decoration: none;
-  transition: background-color 140ms ease, color 140ms ease;
-}
-
-.nav-link:hover,
-.nav-link.is-active {
-  color: var(--sea-ink);
-  background: var(--link-bg-hover);
-}

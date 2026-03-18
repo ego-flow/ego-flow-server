@@ -7,6 +7,8 @@ import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 
 import TanStackQueryProvider from '../integrations/tanstack-query/root-provider'
+import Header from '#/components/Header'
+import NotFound from '#/components/NotFound'
 
 import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 
@@ -42,6 +44,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
     ],
   }),
   shellComponent: RootDocument,
+  notFoundComponent: NotFound,
 })
 
 function RootDocument({ children }: { children: React.ReactNode }) {
@@ -53,6 +56,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(79,184,178,0.24)]">
         <TanStackQueryProvider>
+          <Header />
           {children}
           <TanStackDevtools
             config={{
