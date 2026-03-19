@@ -20,7 +20,7 @@ pathDefaults:
   recordPartDuration: 1s
   recordSegmentDuration: 1h
   recordDeleteAfter: 0s
-  runOnDisconnect: >
+  runOnRecordSegmentComplete: >
     sh -c 'curl -sS -X POST http://host.docker.internal:3000/api/v1/hooks/recording-complete
     -H "Content-Type: application/json"
     -d "{\"path\":\"$MTX_PATH\",\"recording_path\":\"$MTX_SEGMENT_PATH\"}" >/dev/null || true'

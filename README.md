@@ -8,6 +8,7 @@ RTMP 기반 EgoFlow 백엔드(Express + Prisma + PostgreSQL + Redis + MediaMTX) 
 - `backend/` Express + TypeScript API 서버
 - BullMQ 기반 video processing worker
 - 초보 사용자가 그대로 따라도 되는 `./scripts/dev.sh` 단일 진입점
+- `docker compose up -d` 로 바로 띄울 수 있는 backend + worker 통합 스택
 
 ## Fastest Start
 
@@ -93,6 +94,43 @@ cd ~/ego-flow/ego-flow-server
 - 같은 터미널 흐름에서 `start`나 `worker`를 여러 번 눌러 중복 실행하는 경우를 막기 위해 pidfile 기반 방어를 넣었습니다.
 - `start`는 이미 backend health check가 살아 있으면 중복 기동을 건너뜁니다.
 
+## Full Docker Stack
+
+로컬 호스트에서 Node 프로세스를 따로 띄우지 않고 전체 스택을 Compose로 확인하고 싶다면:
+
+```bash
+cd ~/ego-flow/ego-flow-server
+docker compose up -d
+```
+
+이 경로는 다음 서비스를 함께 기동합니다.
+
+- `postgres`
+- `redis`
+- `backend`
+- `worker`
+- `mediamtx`
+
+동작 방식:
+
+- `backend` 컨테이너가 시작 시 `prisma migrate deploy`와 production seed를 수행합니다.
+- `worker`는 같은 이미지를 사용하고 `npm run worker:start`로 실행됩니다.
+- `TARGET_DIRECTORY`는 컨테이너 내부 `/data/datasets`를 사용하며, 호스트의 `./data/datasets`와 bind mount 됩니다.
+- raw recordings도 `./data/raw`와 bind mount 됩니다.
+
+확인:
+
+```bash
+docker compose ps
+curl -i http://127.0.0.1:3000/api/v1/health
+```
+
+정리:
+
+```bash
+docker compose down
+```
+
 ## Scripts
 
 실행 진입점은 사실상 `./scripts/dev.sh` 하나만 보면 됩니다.
@@ -154,7 +192,7 @@ curl -i http://127.0.0.1:3000/api/v1/health
 - `backend/`: API 서버와 worker
 - `scripts/`: 로컬 실행 스크립트
 - `guide/`: 구현 가이드 및 API/roadmap 문서
-- `docker-compose.yml`: 로컬 인프라 정의
+- `docker-compose.yml`: 인프라 + backend + worker 통합 Compose 정의
 
 ## Tech Stack and Versions
 
@@ -172,6 +210,7 @@ Updated: 2026-03-19
 - PostgreSQL image: `postgres:16-alpine`
 - Redis image: `redis:7-alpine`
 - MediaMTX image: `bluenviron/mediamtx:latest`
+- Backend/Worker image: local build from `backend/Dockerfile`
 
 Note:
 

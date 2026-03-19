@@ -11,6 +11,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d egoflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   redis:
     image: redis:7-alpine
@@ -21,11 +26,87 @@ services:
       - "6379:6379"
     volumes:
       - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: egoflow-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment: &backend_environment
+      NODE_ENV: production
+      PORT: 3000
+      CORS_ORIGIN: "*"
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/egoflow?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: replace-this-in-production
+      JWT_EXPIRES_IN: 24h
+      JWT_REFRESH_THRESHOLD_SECONDS: 21600
+      ADMIN_DEFAULT_PASSWORD: changeme123
+      TARGET_DIRECTORY: /data/datasets
+      RTMP_BASE_URL: rtmp://127.0.0.1:1935/live
+      HLS_BASE_URL: http://127.0.0.1:8888
+      BULLMQ_QUEUE_NAME: video-processing
+      WORKER_CONCURRENCY: 2
+      DELETE_RAW_AFTER_PROCESSING: "true"
+    command: >
+      sh -c "npm run prisma:migrate:deploy &&
+      npm run db:seed:prod &&
+      npm run start"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data/raw:/data/raw
+      - ./data/datasets:/data/datasets
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:3000/api/v1/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: egoflow-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment: *backend_environment
+    command: ["npm", "run", "worker:start"]
+    volumes:
+      - ./data/raw:/data/raw
+      - ./data/datasets:/data/datasets
 
   mediamtx:
     image: bluenviron/mediamtx:latest
     container_name: egoflow-mediamtx
     restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
