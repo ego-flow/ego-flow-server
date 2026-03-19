@@ -13,12 +13,14 @@ async function main() {
     update: {
       passwordHash: adminPasswordHash,
       role: UserRole.admin,
+      isActive: true,
       displayName: "Administrator",
     },
     create: {
       id: "admin",
       passwordHash: adminPasswordHash,
       role: UserRole.admin,
+      isActive: true,
       displayName: "Administrator",
     },
   });

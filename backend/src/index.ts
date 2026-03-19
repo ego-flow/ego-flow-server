@@ -11,6 +11,7 @@ import { requireAuthWithQueryToken } from "./middleware/auth.middleware";
 import { errorMiddleware } from "./middleware/error.middleware";
 import { requireFileAccess } from "./middleware/file-access.middleware";
 import { authRoutes } from "./routes/auth.routes";
+import { adminRoutes } from "./routes/admin.routes";
 import { hooksRoutes } from "./routes/hooks.routes";
 import { streamsRoutes } from "./routes/streams.routes";
 import { usersRoutes } from "./routes/users.routes";
@@ -32,6 +33,7 @@ app.get("/api/v1/health", (_req, res) => {
 });
 
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/streams", streamsRoutes);
 app.use("/api/v1/hooks", hooksRoutes);
 app.use("/api/v1/users", usersRoutes);

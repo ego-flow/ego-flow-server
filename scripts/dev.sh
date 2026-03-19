@@ -204,14 +204,7 @@ run_foreground_with_pidfile() {
   local child_pid=$!
   echo "$child_pid" >"$pidfile"
 
-  cleanup() {
-    rm -f "$pidfile"
-    if kill -0 "$child_pid" >/dev/null 2>&1; then
-      kill "$child_pid" >/dev/null 2>&1 || true
-    fi
-  }
-
-  trap cleanup EXIT INT TERM
+  trap 'rm -f '"'"$pidfile"'"'; if kill -0 '"$child_pid"' >/dev/null 2>&1; then kill '"$child_pid"' >/dev/null 2>&1 || true; fi' EXIT INT TERM
   wait "$child_pid"
   local exit_code=$?
   rm -f "$pidfile"

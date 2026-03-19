@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 
 import { AppError } from "../lib/errors";
 import { shouldRefreshToken, signAccessToken, verifyAccessToken } from "../lib/jwt";
+import { adminService } from "../services/admin.service";
 
 const extractBearerToken = (authorizationHeader?: string): string | null => {
   if (!authorizationHeader) {
@@ -24,7 +25,7 @@ const extractQueryToken = (req: Request): string | null => {
 
 const requireAuthWithOptions =
   ({ allowQueryToken = false }: { allowQueryToken?: boolean } = {}) =>
-  (req: Request, res: Response, next: NextFunction) => {
+  async (req: Request, res: Response, next: NextFunction) => {
     const token = extractBearerToken(req.headers.authorization) ?? (allowQueryToken ? extractQueryToken(req) : null);
     if (!token) {
       const message = allowQueryToken
@@ -35,16 +36,15 @@ const requireAuthWithOptions =
 
     try {
       const payload = verifyAccessToken(token);
-      req.user = {
-        userId: payload.userId,
-        role: payload.role,
-      };
+      const authenticatedUser = await adminService.getAuthenticatedUser(payload.userId);
+      if (!authenticatedUser) {
+        throw new AppError(401, "UNAUTHORIZED", "Invalid or expired token.");
+      }
 
-      if (shouldRefreshToken(token)) {
-        const refreshed = signAccessToken({
-          userId: payload.userId,
-          role: payload.role,
-        });
+      req.user = authenticatedUser;
+
+      if (shouldRefreshToken(token) || authenticatedUser.role !== payload.role) {
+        const refreshed = signAccessToken(authenticatedUser);
         res.setHeader("X-Refreshed-Token", refreshed);
       }
 

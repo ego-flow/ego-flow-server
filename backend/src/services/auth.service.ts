@@ -6,6 +6,7 @@ import { signAccessToken, verifyAccessToken } from "../lib/jwt";
 import { prisma } from "../lib/prisma";
 import type { LoginInput, RtmpAuthInput } from "../schemas/auth.schema";
 import type { ChangeMyPasswordInput } from "../schemas/user.schema";
+import { adminService } from "./admin.service";
 
 export class AuthService {
   async login(input: LoginInput) {
@@ -14,6 +15,10 @@ export class AuthService {
     });
 
     if (!user) {
+      throw new AppError(401, "INVALID_CREDENTIALS", "Invalid id or password.");
+    }
+
+    if (!user.isActive) {
       throw new AppError(401, "INVALID_CREDENTIALS", "Invalid id or password.");
     }
 
@@ -38,10 +43,15 @@ export class AuthService {
     };
   }
 
-  verifyRtmpAuthorization(input: RtmpAuthInput): boolean {
+  async verifyRtmpAuthorization(input: RtmpAuthInput): Promise<boolean> {
     try {
       const payload = verifyAccessToken(input.password);
       if (payload.userId !== input.user) {
+        return false;
+      }
+
+      const authenticatedUser = await adminService.getAuthenticatedUser(payload.userId);
+      if (!authenticatedUser) {
         return false;
       }
 
@@ -58,6 +68,10 @@ export class AuthService {
     });
 
     if (!user) {
+      throw new AppError(401, "INVALID_CREDENTIALS", "Current password is incorrect.");
+    }
+
+    if (!user.isActive) {
       throw new AppError(401, "INVALID_CREDENTIALS", "Current password is incorrect.");
     }
 

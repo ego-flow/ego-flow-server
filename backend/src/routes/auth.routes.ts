@@ -25,7 +25,7 @@ router.post(
       return;
     }
 
-    const isAuthorized = authService.verifyRtmpAuthorization(parsed.data);
+    const isAuthorized = await authService.verifyRtmpAuthorization(parsed.data);
     if (!isAuthorized) {
       res.status(401).end();
       return;
