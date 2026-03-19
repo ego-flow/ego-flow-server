@@ -14,31 +14,18 @@ RTMP 기반 EgoFlow 백엔드(Express + Prisma + PostgreSQL + Redis + MediaMTX) 
 
 처음 clone 받은 뒤 가장 간단한 실행 순서는 아래입니다.
 
-터미널 1:
-
 ```bash
 cd ~/ego-flow/ego-flow-server
 ./scripts/dev.sh start
-```
-
-터미널 2:
-
-```bash
-cd ~/ego-flow/ego-flow-server
 ./scripts/dev.sh worker
 ```
 
-`start`는 아래를 자동으로 처리합니다.
+`start`와 `worker`는 둘 다 Compose 기반으로 동작합니다.
 
-- `postgres`, `redis`, `mediamtx` 컨테이너 시작
-- `backend/.env` 생성(없을 때만)
-- `backend` 의존성 설치(필요할 때만)
-- Prisma client generate
-- Prisma migrate deploy
-- seed 실행
-- backend dev server 실행
+- `start`: `postgres`, `redis`, `backend`, `mediamtx`를 `up -d --build`
+- `worker`: `worker`를 `up -d --build`
 
-즉, 로컬 DB가 비어 있어도 `start` 한 번으로 바로 복구 가능한 방향을 기본값으로 잡았습니다.
+즉, 실제 서버 기동은 로컬 `ts-node`가 아니라 Compose 스택으로 통일되어 있습니다.
 
 ## First Time Setup
 
@@ -65,7 +52,13 @@ cd ~/ego-flow/ego-flow-server
 ./scripts/dev.sh setup
 ```
 
-`setup`은 서버를 띄우지 않고 bootstrap만 수행합니다. 여러 번 다시 실행해도 괜찮게 구성되어 있습니다.
+`setup`은 서버를 띄우지 않고 아래만 수행합니다.
+
+- `backend/.env` 생성(없을 때만)
+- 로컬 `backend` 의존성 설치
+- 로컬 Prisma client generate
+
+여러 번 다시 실행해도 괜찮게 구성되어 있습니다.
 
 ## Daily Flow
 
@@ -89,10 +82,10 @@ cd ~/ego-flow/ego-flow-server
 
 주의:
 
-- `stop`은 Docker infra만 중지합니다.
-- `start`와 `worker`는 foreground 프로세스이므로 종료하려면 각 터미널에서 `Ctrl+C`를 눌러야 합니다.
-- 같은 터미널 흐름에서 `start`나 `worker`를 여러 번 눌러 중복 실행하는 경우를 막기 위해 pidfile 기반 방어를 넣었습니다.
-- `start`는 이미 backend health check가 살아 있으면 중복 기동을 건너뜁니다.
+- `start`와 `worker`는 둘 다 Compose 기반 `up -d --build` 명령입니다.
+- 코드 수정 후 다시 반영하려면 해당 명령을 다시 실행하면 됩니다.
+- `stop`은 Compose 스택 전체를 멈춥니다.
+- 예전의 로컬 pidfile/foreground dev server 흐름은 더 이상 쓰지 않습니다.
 
 ## Full Docker Stack
 
@@ -138,16 +131,16 @@ docker compose down
 - `./scripts/dev.sh check`
   - `docker`, `docker compose`, `node`, `npm`, Docker daemon 접근 가능 여부를 확인합니다.
 - `./scripts/dev.sh setup`
-  - infra 기동, `.env` 준비, 의존성 설치, Prisma bootstrap만 수행합니다.
+  - `.env` 준비, 로컬 의존성 설치, 로컬 Prisma client generate만 수행합니다.
   - safe to re-run 입니다.
 - `./scripts/dev.sh start`
-  - `setup`에 해당하는 bootstrap을 보장한 뒤 backend dev server를 실행합니다.
-  - 로컬 DB가 비어 있거나 아직 migrate/seed가 안 된 상태여도 복구합니다.
+  - Compose로 `postgres`, `redis`, `backend`, `mediamtx`를 `up -d --build` 합니다.
+  - backend 컨테이너가 시작 시 migration + seed를 자동 수행합니다.
 - `./scripts/dev.sh worker`
-  - infra와 backend 기본 준비 상태를 확인한 뒤 worker dev server를 실행합니다.
-  - 일반적으로 `start`를 먼저 올린 뒤 두 번째 터미널에서 실행하면 됩니다.
+  - Compose로 `worker`를 `up -d --build` 합니다.
+  - 일반적으로 `start` 이후 실행하면 됩니다.
 - `./scripts/dev.sh stop`
-  - `postgres`, `redis`, `mediamtx` 컨테이너를 중지합니다.
+  - Compose 스택 전체를 `stop` 합니다.
 - `./scripts/dev.sh reset`
   - Docker containers/volumes와 로컬 Redis bind-mount 데이터를 제거합니다.
   - 로컬 환경이 꼬였을 때만 사용하세요.
@@ -159,19 +152,19 @@ docker compose down
 ### 가장 간단한 권장 순서
 
 1. `./scripts/dev.sh start`
-2. 다른 터미널에서 `./scripts/dev.sh worker`
+2. `./scripts/dev.sh worker`
 
 ### bootstrap만 먼저 하고 싶은 경우
 
 1. `./scripts/dev.sh setup`
 2. `./scripts/dev.sh start`
-3. 다른 터미널에서 `./scripts/dev.sh worker`
+3. `./scripts/dev.sh worker`
 
 ### 로컬 환경이 깨졌을 때
 
 1. `./scripts/dev.sh reset`
 2. `./scripts/dev.sh start`
-3. 다른 터미널에서 `./scripts/dev.sh worker`
+3. `./scripts/dev.sh worker`
 
 ## Health Check
 
@@ -250,8 +243,8 @@ Note:
 ## Notes
 
 - Prisma는 현재 의도적으로 `v6` 라인을 유지합니다.
-- `start`는 idempotent bootstrap을 포함하도록 바뀌었습니다.
-- `setup`은 “한 번만” 스크립트가 아니라, 필요 시 다시 실행 가능한 bootstrap 명령입니다.
+- `setup`은 로컬 개발 도구 준비용이고, 실제 서버 기동은 Compose 기반으로 통일되었습니다.
+- 코드 변경 후에도 `./scripts/dev.sh start` 또는 `./scripts/dev.sh worker`를 다시 실행하면 Compose가 build/recreate를 담당합니다.
 
 ## Related Docs
 

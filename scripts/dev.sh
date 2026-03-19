@@ -4,10 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
 BACKEND_ENV_FILE="$BACKEND_DIR/.env"
-RUN_DIR="$ROOT_DIR/.run"
-BACKEND_PID_FILE="$RUN_DIR/backend-dev.pid"
-WORKER_PID_FILE="$RUN_DIR/worker-dev.pid"
-COMPOSE_INFRA_SERVICES=(postgres redis mediamtx)
+COMPOSE_BACKEND_SERVICES=(postgres redis backend mediamtx)
+COMPOSE_WORKER_SERVICES=(worker)
+COMPOSE_ALL_SERVICES=(postgres redis backend worker mediamtx)
 cd "$ROOT_DIR"
 
 usage() {
@@ -15,10 +14,10 @@ usage() {
 Usage:
   ./scripts/dev.sh install-docker   # Ubuntu only
   ./scripts/dev.sh check
-  ./scripts/dev.sh setup            # Safe to re-run: bootstrap infra/env/deps/db only
-  ./scripts/dev.sh start            # Safe to re-run: bootstrap, then run backend dev server
-  ./scripts/dev.sh worker           # Start video worker after setup/start
-  ./scripts/dev.sh stop             # Stop infra containers only
+  ./scripts/dev.sh setup            # Safe to re-run: local env/deps/prisma bootstrap only
+  ./scripts/dev.sh start            # Compose-based backend stack start/rebuild
+  ./scripts/dev.sh worker           # Compose-based worker start/rebuild
+  ./scripts/dev.sh stop             # Stop full compose stack
   ./scripts/dev.sh reset            # Remove local containers/volumes and redis data
 EOF
 }
@@ -30,15 +29,19 @@ require_cmd() {
   fi
 }
 
+require_compose() {
+  if ! docker compose version >/dev/null 2>&1; then
+    echo "Docker Compose plugin is missing or not available."
+    exit 1
+  fi
+}
+
 check_prereqs() {
   require_cmd docker
   require_cmd node
   require_cmd npm
 
-  if ! docker compose version >/dev/null 2>&1; then
-    echo "Docker Compose plugin is missing or not available."
-    exit 1
-  fi
+  require_compose
 
   if ! docker info >/dev/null 2>&1; then
     echo "Cannot access Docker daemon."
@@ -49,27 +52,6 @@ check_prereqs() {
   fi
 
   echo "Prerequisites OK: docker, compose, node, npm."
-}
-
-ensure_run_dir() {
-  mkdir -p "$RUN_DIR"
-}
-
-pidfile_running() {
-  local pidfile="$1"
-  [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" >/dev/null 2>&1
-}
-
-clear_stale_pidfile() {
-  local pidfile="$1"
-  if [[ -f "$pidfile" ]] && ! pidfile_running "$pidfile"; then
-    rm -f "$pidfile"
-  fi
-}
-
-process_running_matching() {
-  local pattern="$1"
-  command -v pgrep >/dev/null 2>&1 && pgrep -af "$pattern" >/dev/null 2>&1
 }
 
 backend_port() {
@@ -105,39 +87,8 @@ req.on("timeout", () => {
 ' "$port" >/dev/null 2>&1
 }
 
-start_infra() {
-  echo "[1/5] Starting infra containers (${COMPOSE_INFRA_SERVICES[*]})..."
-  docker compose up -d --remove-orphans "${COMPOSE_INFRA_SERVICES[@]}"
-}
-
-wait_for_postgres() {
-  echo "[2/5] Waiting for PostgreSQL readiness..."
-  for i in {1..30}; do
-    if docker compose exec -T postgres pg_isready -U postgres -d egoflow >/dev/null 2>&1; then
-      return
-    fi
-    sleep 1
-  done
-
-  echo "PostgreSQL did not become ready in time."
-  exit 1
-}
-
-wait_for_redis() {
-  echo "[3/5] Waiting for Redis readiness..."
-  for i in {1..30}; do
-    if docker compose exec -T redis redis-cli ping | grep -q "PONG"; then
-      return
-    fi
-    sleep 1
-  done
-
-  echo "Redis did not become ready in time."
-  exit 1
-}
-
 ensure_backend_env() {
-  echo "[4/5] Ensuring backend env file..."
+  echo "[env] Ensuring backend env file..."
   if [[ -f "$BACKEND_ENV_FILE" ]]; then
     echo "backend/.env already exists (skip)."
     return
@@ -160,7 +111,7 @@ needs_backend_install() {
 }
 
 ensure_backend_dependencies() {
-  echo "[5/5] Ensuring backend dependencies..."
+  echo "[deps] Ensuring backend dependencies..."
   if needs_backend_install; then
     npm --prefix "$BACKEND_DIR" install
     return
@@ -169,108 +120,80 @@ ensure_backend_dependencies() {
   echo "backend/node_modules is up to date (skip)."
 }
 
-bootstrap_backend() {
+bootstrap_local_dev() {
   check_prereqs
-  start_infra
-  wait_for_postgres
-  wait_for_redis
   ensure_backend_env
   ensure_backend_dependencies
 
-  echo "[db] Generating Prisma client..."
+  echo "[prisma] Generating local Prisma client..."
   npm --prefix "$BACKEND_DIR" run prisma:generate
-
-  echo "[db] Applying Prisma migrations..."
-  npm --prefix "$BACKEND_DIR" run prisma:migrate:deploy
-
-  echo "[db] Seeding baseline data..."
-  npm --prefix "$BACKEND_DIR" run db:seed
 }
 
-run_foreground_with_pidfile() {
-  local label="$1"
-  local pidfile="$2"
-  shift 2
-
-  ensure_run_dir
-  clear_stale_pidfile "$pidfile"
-
-  if pidfile_running "$pidfile"; then
-    echo "$label is already running with pid $(cat "$pidfile")."
-    return 0
-  fi
-
-  "$@" &
-  local child_pid=$!
-  echo "$child_pid" >"$pidfile"
-
-  trap 'rm -f '"'"$pidfile"'"'; if kill -0 '"$child_pid"' >/dev/null 2>&1; then kill '"$child_pid"' >/dev/null 2>&1 || true; fi' EXIT INT TERM
-  wait "$child_pid"
-  local exit_code=$?
-  rm -f "$pidfile"
-  trap - EXIT INT TERM
-  return "$exit_code"
-}
-
-start_backend() {
-  bootstrap_backend
-
+wait_for_backend_health() {
   local port
   port="$(backend_port)"
 
-  clear_stale_pidfile "$BACKEND_PID_FILE"
-  if pidfile_running "$BACKEND_PID_FILE"; then
-    echo "Backend dev server is already running with pid $(cat "$BACKEND_PID_FILE")."
-    return 0
-  fi
+  echo "[health] Waiting for backend health on port $port..."
+  for _ in {1..30}; do
+    if backend_healthcheck_ok "$port"; then
+      echo "Backend is responding on port $port."
+      return
+    fi
+    sleep 1
+  done
 
-  if process_running_matching "ts-node src/index.ts|node dist/index.js"; then
-    echo "A backend process already appears to be running. Skip duplicate start."
-    return 0
-  fi
-
-  if backend_healthcheck_ok "$port"; then
-    echo "Backend is already responding on port $port. Skip duplicate start."
-    return 0
-  fi
-
-  echo "[run] Starting backend dev server on port $port..."
-  run_foreground_with_pidfile "Backend dev server" "$BACKEND_PID_FILE" npm --prefix "$BACKEND_DIR" run dev
+  echo "Backend did not become healthy in time."
+  exit 1
 }
 
-start_worker() {
+worker_container_running() {
+  local container_id
+  container_id="$(docker compose ps -q worker)"
+  [[ -n "$container_id" ]] && [[ "$(docker inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null || true)" == "true" ]]
+}
+
+wait_for_worker_running() {
+  echo "[health] Waiting for worker container..."
+  for _ in {1..30}; do
+    if worker_container_running; then
+      echo "Worker container is running."
+      return
+    fi
+    sleep 1
+  done
+
+  echo "Worker container did not become ready in time."
+  exit 1
+}
+
+compose_up() {
+  docker compose up -d --build --remove-orphans "$@"
+}
+
+start_backend_stack() {
   check_prereqs
-  start_infra
-  wait_for_postgres
-  wait_for_redis
   ensure_backend_env
-  ensure_backend_dependencies
 
-  clear_stale_pidfile "$WORKER_PID_FILE"
-  if pidfile_running "$WORKER_PID_FILE"; then
-    echo "Worker dev server is already running with pid $(cat "$WORKER_PID_FILE")."
-    return 0
-  fi
-
-  if process_running_matching "ts-node src/worker.ts|node dist/worker.js"; then
-    echo "A worker process already appears to be running. Skip duplicate start."
-    return 0
-  fi
-
-  echo "[run] Starting worker dev server..."
-  run_foreground_with_pidfile "Worker dev server" "$WORKER_PID_FILE" npm --prefix "$BACKEND_DIR" run worker:dev
+  echo "[compose] Starting backend stack: ${COMPOSE_BACKEND_SERVICES[*]}"
+  compose_up "${COMPOSE_BACKEND_SERVICES[@]}"
+  wait_for_backend_health
 }
 
-stop_infra() {
+start_worker_stack() {
+  check_prereqs
+  ensure_backend_env
+
+  echo "[compose] Starting worker service: ${COMPOSE_WORKER_SERVICES[*]}"
+  compose_up "${COMPOSE_WORKER_SERVICES[@]}"
+  wait_for_worker_running
+}
+
+stop_stack() {
   require_cmd docker
+  require_compose
 
-  if ! docker compose version >/dev/null 2>&1; then
-    echo "Docker Compose plugin is missing or not available."
-    exit 1
-  fi
-
-  docker compose stop "${COMPOSE_INFRA_SERVICES[@]}"
-  echo "Stopped infra containers: ${COMPOSE_INFRA_SERVICES[*]}"
+  docker compose stop "${COMPOSE_ALL_SERVICES[@]}"
+  echo "Stopped compose services: ${COMPOSE_ALL_SERVICES[*]}"
 }
 
 reset_env() {
@@ -283,7 +206,7 @@ reset_env() {
   rm -rf "$ROOT_DIR/data/redis"
 
   echo "Reset complete."
-  echo "Next: ./scripts/dev.sh setup"
+  echo "Next: ./scripts/dev.sh start"
 }
 
 cmd="${1:-}"
@@ -295,16 +218,16 @@ case "$cmd" in
     check_prereqs
     ;;
   setup)
-    bootstrap_backend
+    bootstrap_local_dev
     ;;
   start)
-    start_backend
+    start_backend_stack
     ;;
   worker)
-    start_worker
+    start_worker_stack
     ;;
   stop)
-    stop_infra
+    stop_stack
     ;;
   reset)
     reset_env
