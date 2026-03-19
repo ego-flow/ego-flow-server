@@ -1,31 +1,12 @@
-import path from "path";
+import fs from "fs/promises";
 
-import type { Prisma } from "@prisma/client";
+import type { Prisma, VideoStatus } from "@prisma/client";
 
-import { env } from "../config/env";
+import { AppError } from "../lib/errors";
 import { prisma } from "../lib/prisma";
+import { getTargetDirectory, toFileUrl, toStorageRelativePath } from "../lib/storage";
 import type { VideoListQueryInput } from "../schemas/video.schema";
-
-const getTargetDirectory = async (): Promise<string> => {
-  const setting = await prisma.setting.findUnique({ where: { key: "target_directory" } });
-  return setting?.value || env.TARGET_DIRECTORY;
-};
-
-const toFileUrl = (targetDirectory: string, filePath: string | null): string | null => {
-  if (!filePath) {
-    return null;
-  }
-
-  const base = path.resolve(targetDirectory);
-  const resolved = path.resolve(filePath);
-  const relative = path.relative(base, resolved);
-  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
-    return null;
-  }
-
-  const encoded = relative.split(path.sep).map(encodeURIComponent).join("/");
-  return `/files/${encoded}`;
-};
+import { processingService } from "./processing.service";
 
 const buildOrderBy = (query: VideoListQueryInput): Prisma.VideoOrderByWithRelationInput => {
   switch (query.sort_by) {
@@ -39,7 +20,61 @@ const buildOrderBy = (query: VideoListQueryInput): Prisma.VideoOrderByWithRelati
   }
 };
 
+const normalizeProgress = (status: VideoStatus, progress: number | null): number => {
+  if (typeof progress === "number") {
+    return Math.max(0, Math.min(100, Math.round(progress)));
+  }
+
+  switch (status) {
+    case "COMPLETED":
+      return 100;
+    case "PROCESSING":
+      return 0;
+    case "FAILED":
+    case "PENDING":
+    default:
+      return 0;
+  }
+};
+
 export class VideoService {
+  private async getAccessibleVideo(videoId: string, requestUserId: string, requestUserRole: "admin" | "user") {
+    const video = await prisma.video.findUnique({
+      where: { id: videoId },
+      select: {
+        id: true,
+        userId: true,
+        status: true,
+        errorMessage: true,
+        processingStartedAt: true,
+        processingCompletedAt: true,
+      },
+    });
+
+    if (!video) {
+      throw new AppError(404, "NOT_FOUND", "Video not found.");
+    }
+
+    if (requestUserRole !== "admin" && video.userId !== requestUserId) {
+      throw new AppError(403, "FORBIDDEN", "You do not have access to this video.");
+    }
+
+    return video;
+  }
+
+  private async deleteManagedFiles(targetDirectory: string, filePaths: Array<string | null>) {
+    await Promise.all(
+      filePaths.map(async (filePath) => {
+        const relativePath = toStorageRelativePath(targetDirectory, filePath);
+        if (!relativePath) {
+          return;
+        }
+
+        await fs.rm(filePath as string, { force: true });
+      }),
+    );
+  }
+
   async listVideos(requestUserId: string, requestUserRole: "admin" | "user", query: VideoListQueryInput) {
     const where: Prisma.VideoWhereInput = {
       ...(query.video_key ? { videoKey: query.video_key } : {}),
@@ -105,6 +140,54 @@ export class VideoService {
         clip_segments: video.clipSegments,
         created_at: video.createdAt.toISOString(),
       })),
+    };
+  }
+
+  async getVideoStatus(videoId: string, requestUserId: string, requestUserRole: "admin" | "user") {
+    const [video, progress] = await Promise.all([
+      this.getAccessibleVideo(videoId, requestUserId, requestUserRole),
+      processingService.getVideoProcessingProgress(videoId),
+    ]);
+
+    return {
+      id: video.id,
+      status: video.status,
+      progress: normalizeProgress(video.status, progress),
+      error_message: video.errorMessage,
+      processing_started_at: video.processingStartedAt ? video.processingStartedAt.toISOString() : null,
+      processing_completed_at: video.processingCompletedAt ? video.processingCompletedAt.toISOString() : null,
+    };
+  }
+
+  async deleteVideo(videoId: string, requestUserId: string, requestUserRole: "admin" | "user") {
+    const [targetDirectory, video] = await Promise.all([
+      getTargetDirectory(),
+      prisma.video.findUnique({
+        where: { id: videoId },
+        select: {
+          id: true,
+          userId: true,
+          vlmVideoPath: true,
+          dashboardVideoPath: true,
+          thumbnailPath: true,
+        },
+      }),
+    ]);
+
+    if (!video) {
+      throw new AppError(404, "NOT_FOUND", "Video not found.");
+    }
+
+    if (requestUserRole !== "admin" && video.userId !== requestUserId) {
+      throw new AppError(403, "FORBIDDEN", "You do not have access to this video.");
+    }
+
+    await this.deleteManagedFiles(targetDirectory, [video.vlmVideoPath, video.dashboardVideoPath, video.thumbnailPath]);
+    await prisma.video.delete({ where: { id: video.id } });
+
+    return {
+      id: video.id,
+      deleted: true,
     };
   }
 }

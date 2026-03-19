@@ -8,7 +8,12 @@ export const validate =
   async (req: Request, _res: Response, next: NextFunction) => {
     try {
       const parsed = await schema.parseAsync(req[target]);
-      Object.assign(req, { [target]: parsed });
+      Object.defineProperty(req, target, {
+        value: parsed,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
       return next();
     } catch (error) {
       return next(error);

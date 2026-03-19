@@ -8,10 +8,12 @@ const processingQueue = new Queue<VideoProcessingJobData, void, "video-processin
   connection: buildBullConnection(),
 });
 
+export const buildVideoProcessingJobId = (videoId: string) => `video-${videoId}`;
+
 export class ProcessingService {
   async enqueueVideoProcessing(payload: VideoProcessingJobData) {
     return processingQueue.add("video-processing", payload, {
-      jobId: `video:${payload.videoId}`,
+      jobId: buildVideoProcessingJobId(payload.videoId),
       attempts: 3,
       backoff: {
         type: "exponential",
@@ -20,6 +22,15 @@ export class ProcessingService {
       removeOnComplete: 1000,
       removeOnFail: 2000,
     });
+  }
+
+  async getVideoProcessingProgress(videoId: string): Promise<number | null> {
+    const job = await processingQueue.getJob(buildVideoProcessingJobId(videoId));
+    if (!job || typeof job.progress !== "number") {
+      return null;
+    }
+
+    return Math.max(0, Math.min(100, Math.round(job.progress)));
   }
 }
 

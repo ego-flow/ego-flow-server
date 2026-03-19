@@ -6,7 +6,10 @@ import morgan from "morgan";
 import { env } from "./config/env";
 import { AppError } from "./lib/errors";
 import { redis } from "./lib/redis";
+import { getTargetDirectory } from "./lib/storage";
+import { requireAuthWithQueryToken } from "./middleware/auth.middleware";
 import { errorMiddleware } from "./middleware/error.middleware";
+import { requireFileAccess } from "./middleware/file-access.middleware";
 import { authRoutes } from "./routes/auth.routes";
 import { hooksRoutes } from "./routes/hooks.routes";
 import { streamsRoutes } from "./routes/streams.routes";
@@ -33,6 +36,18 @@ app.use("/api/v1/streams", streamsRoutes);
 app.use("/api/v1/hooks", hooksRoutes);
 app.use("/api/v1/users", usersRoutes);
 app.use("/api/v1/videos", videosRoutes);
+app.use("/files", requireAuthWithQueryToken, requireFileAccess, (req, res, next) => {
+  void getTargetDirectory()
+    .then((targetDirectory) =>
+      express.static(targetDirectory, {
+        dotfiles: "deny",
+        fallthrough: true,
+        index: false,
+        redirect: false,
+      })(req, res, next),
+    )
+    .catch(next);
+});
 
 app.use((_req, _res, next) => {
   next(new AppError(404, "NOT_FOUND", "Route not found."));

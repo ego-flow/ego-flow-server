@@ -43,13 +43,20 @@ router.post(
       },
     });
 
-    await processingService.enqueueVideoProcessing({
-      videoId: video.id,
-      videoKey,
-      userId: session.userId,
-      rawRecordingPath: payload.recording_path,
-      targetDirectory: session.targetDirectory,
-    });
+    try {
+      await processingService.enqueueVideoProcessing({
+        videoId: video.id,
+        videoKey,
+        userId: session.userId,
+        rawRecordingPath: payload.recording_path,
+        targetDirectory: session.targetDirectory,
+      });
+    } catch (error) {
+      await prisma.video.delete({ where: { id: video.id } }).catch(() => {
+        // Ignore cleanup failure and surface the original enqueue error.
+      });
+      throw error;
+    }
 
     res.status(200).json({
       video_id: video.id,
