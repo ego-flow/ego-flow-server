@@ -1,14 +1,15 @@
 # EgoFlow Server
 
-Docker-first backend stack for EgoFlow.
+Docker-first full stack for EgoFlow.
 
-This repository packages the API server, background worker, and supporting infrastructure into a single Docker Compose workflow. Standard local usage does not require a host-side Node.js installation.
+This repository packages the API server, dashboard, background worker, and supporting infrastructure into a single Docker Compose workflow. Standard local usage does not require a host-side Node.js installation.
 
 ## What Runs
 
 - PostgreSQL
 - Redis
 - Express + TypeScript backend API
+- TanStack Start dashboard
 - BullMQ worker
 - MediaMTX
 
@@ -44,6 +45,7 @@ cd ego-flow-server
 When startup completes, these endpoints should be available:
 
 - API health: `http://127.0.0.1:3000/api/v1/health`
+- Dashboard: `http://127.0.0.1:8088`
 - RTMP ingest: `rtmp://127.0.0.1:1935/live`
 - HLS output: `http://127.0.0.1:8888`
 
@@ -77,9 +79,10 @@ Command summary:
 - `redis`
 - `backend`
 - `worker`
+- `dashboard`
 - `mediamtx`
 
-The backend container performs database migration and seed work before starting the API process. The worker uses the same image as the backend but runs the queue processor entrypoint instead.
+The backend container performs database migration and seed work before starting the API process. The worker uses the same image as the backend but runs the queue processor entrypoint instead. The dashboard uses its own multi-stage Node image and serves the built TanStack Start app on port `8088`.
 
 ## Persistence
 
@@ -95,6 +98,7 @@ Persistent data is stored through Docker volumes and bind mounts:
 ## Repository Layout
 
 - `backend/`: API server and worker source
+- `frontend/`: dashboard source and production runtime wrapper
 - `scripts/`: local development and operations helpers
 - `guide/`: implementation guide, roadmap, and API specification
 - `docker-compose.yml`: full local stack definition

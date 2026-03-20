@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.yml"
-COMPOSE_SERVICES=(postgres redis backend worker mediamtx)
+COMPOSE_SERVICES=(postgres redis backend worker dashboard mediamtx)
 
 cd "$ROOT_DIR"
 
@@ -117,12 +117,14 @@ up_stack() {
   wait_for_healthy postgres
   wait_for_healthy redis
   wait_for_healthy backend
+  wait_for_healthy dashboard
   wait_for_running worker
   wait_for_running mediamtx
 
   echo
   echo "EgoFlow stack is ready."
   echo "Backend health: http://127.0.0.1:3000/api/v1/health"
+  echo "Dashboard:      http://127.0.0.1:8088"
   echo "RTMP ingest: rtmp://127.0.0.1:1935/live"
   echo "HLS output:  http://127.0.0.1:8888"
 }

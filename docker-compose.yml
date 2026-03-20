@@ -100,6 +100,34 @@ services:
       - ./data/raw:/data/raw
       - ./data/datasets:/data/datasets
 
+  dashboard:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: egoflow-dashboard
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 8088
+    ports:
+      - "8088:8088"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:8088/login', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   mediamtx:
     image: bluenviron/mediamtx:latest
     container_name: egoflow-mediamtx
