@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Navigate, createFileRoute } from '@tanstack/react-router'
 import { Activity, RadioTower, RefreshCcw } from 'lucide-react'
@@ -6,9 +6,10 @@ import { Activity, RadioTower, RefreshCcw } from 'lucide-react'
 import { getApiErrorMessage } from '#/api/client'
 import { requestActiveStreams, type ActiveStream } from '#/api/streams'
 import { formatDateTime } from '#/api/videos'
-import HlsPlayer from '#/components/HlsPlayer'
 import { Button } from '#/components/ui/button'
 import { useAuth } from '#/hooks/useAuth'
+
+const HlsPlayer = lazy(() => import('#/components/HlsPlayer'))
 
 export const Route = createFileRoute('/live')({
   component: LivePage,
@@ -170,7 +171,15 @@ function LivePage() {
 
           {selectedStream ? (
             <>
-              <HlsPlayer src={selectedStream.hlsUrl} />
+              <Suspense
+                fallback={
+                  <div className="grid aspect-video place-items-center rounded-2xl border border-[var(--line)] bg-black text-sm text-white/70">
+                    Loading live player...
+                  </div>
+                }
+              >
+                <HlsPlayer src={selectedStream.hlsUrl} />
+              </Suspense>
               <dl className="mt-5 grid gap-3 text-sm text-[var(--sea-ink-soft)] sm:grid-cols-2">
                 <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
                   <dt className="font-semibold text-[var(--sea-ink)]">HLS URL</dt>

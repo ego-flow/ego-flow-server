@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import Hls from 'hls.js'
 
 interface HlsPlayerProps {
   src: string | null
@@ -17,6 +16,9 @@ export default function HlsPlayer({ src, poster, className }: HlsPlayerProps) {
       return
     }
 
+    let isCancelled = false
+    let cleanup: (() => void) | undefined
+
     setErrorMessage(null)
 
     if (!src) {
@@ -33,28 +35,45 @@ export default function HlsPlayer({ src, poster, className }: HlsPlayerProps) {
       }
     }
 
-    if (!Hls.isSupported()) {
-      setErrorMessage('This browser does not support HLS playback.')
-      return
-    }
+    void import('hls.js/light')
+      .then(({ default: Hls }) => {
+        if (isCancelled) {
+          return
+        }
 
-    const hls = new Hls({
-      enableWorker: true,
-      lowLatencyMode: true,
-    })
+        if (!Hls.isSupported()) {
+          setErrorMessage('This browser does not support HLS playback.')
+          return
+        }
 
-    hls.loadSource(src)
-    hls.attachMedia(video)
-    hls.on(Hls.Events.ERROR, (_event, data) => {
-      if (data.fatal) {
-        setErrorMessage('Failed to load the live stream.')
-      }
-    })
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+        })
+
+        hls.loadSource(src)
+        hls.attachMedia(video)
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (data.fatal) {
+            setErrorMessage('Failed to load the live stream.')
+          }
+        })
+
+        cleanup = () => {
+          hls.destroy()
+          video.removeAttribute('src')
+          video.load()
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setErrorMessage('Failed to load the live stream player.')
+        }
+      })
 
     return () => {
-      hls.destroy()
-      video.removeAttribute('src')
-      video.load()
+      isCancelled = true
+      cleanup?.()
     }
   }, [src])
 
