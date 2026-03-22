@@ -2,11 +2,14 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
   requestLogin,
   requestLogout,
-  type AuthSession,
   type LoginRequestInput,
 } from '#/lib/auth'
-
-const AUTH_STORAGE_KEY = 'ego-flow-auth-session'
+import {
+  clearStoredAuthSession,
+  readStoredAuthSession,
+  writeStoredAuthSession,
+  type AuthSession,
+} from '#/lib/auth-session'
 
 interface AuthContextValue {
   isReady: boolean
@@ -23,37 +26,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null)
 
   useEffect(() => {
-    try {
-      const rawSession = window.localStorage.getItem(AUTH_STORAGE_KEY)
-      if (rawSession) {
-        const parsed = JSON.parse(rawSession) as AuthSession
-        if (parsed?.userId) {
-          setSession(parsed)
-        }
-      }
-    } catch {
-      // no-op
-    } finally {
-      setIsReady(true)
+    setSession(readStoredAuthSession())
+    setIsReady(true)
+
+    const syncAuthState = () => {
+      setSession(readStoredAuthSession())
+    }
+
+    window.addEventListener('storage', syncAuthState)
+
+    return () => {
+      window.removeEventListener('storage', syncAuthState)
     }
   }, [])
 
   const login = async (input: LoginRequestInput) => {
-    const nextSession = await requestLogin(input)
+    const response = await requestLogin(input)
+    const persistence = input.rememberMe ? 'local' : 'session'
+    const nextSession = {
+      token: response.token,
+      user: response.user,
+      persistence,
+    } satisfies AuthSession
+
+    writeStoredAuthSession(
+      {
+        token: nextSession.token,
+        user: nextSession.user,
+      },
+      persistence,
+    )
     setSession(nextSession)
-
-    if (input.rememberMe) {
-      window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextSession))
-      return
-    }
-
-    window.localStorage.removeItem(AUTH_STORAGE_KEY)
   }
 
   const logout = async () => {
     await requestLogout()
+    clearStoredAuthSession()
     setSession(null)
-    window.localStorage.removeItem(AUTH_STORAGE_KEY)
   }
 
   const value = useMemo<AuthContextValue>(
@@ -79,4 +88,3 @@ export function useAuth() {
 
   return auth
 }
-

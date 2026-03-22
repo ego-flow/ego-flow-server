@@ -41,7 +41,7 @@ function LoginPage() {
 
       try {
         await login(value)
-        await navigate({ to: '/repositories' })
+        await navigate({ to: '/videos' })
       } catch (error) {
         setSubmitError(
           error instanceof Error
@@ -57,7 +57,7 @@ function LoginPage() {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/repositories" />
+    return <Navigate to="/videos" />
   }
 
   return (
@@ -69,7 +69,7 @@ function LoginPage() {
         <p className="mt-2 text-sm leading-relaxed text-[var(--sea-ink-soft)]">
           Welcome to EgoFlow.
           <br />
-          Sign in to continue to your repositories.
+          Sign in to continue to your video dashboard.
         </p>
 
         <form

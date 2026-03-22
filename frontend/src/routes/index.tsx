@@ -12,5 +12,5 @@ function HomeRedirect() {
     return null
   }
 
-  return <Navigate to={isAuthenticated ? '/repositories' : '/login'} />
+  return <Navigate to={isAuthenticated ? '/videos' : '/login'} />
 }
