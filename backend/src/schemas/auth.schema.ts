@@ -5,19 +5,38 @@ export const loginSchema = z.object({
   password: z.string().min(1).max(255),
 });
 
+const optionalString = z.preprocess((value) => {
+  if (value === "" || value === null || value === undefined) {
+    return undefined;
+  }
+
+  return value;
+}, z.string().optional());
+
+const optionalCredential = z.preprocess((value) => {
+  if (value === "" || value === null || value === undefined) {
+    return undefined;
+  }
+
+  return value;
+}, z.string().min(1).optional());
+
 export const rtmpAuthSchema = z.object({
-  user: z.string().min(1).max(64),
-  password: z.string().min(1),
-  token: z.string().min(1).optional(),
+  user: z.preprocess((value) => {
+    if (value === "" || value === null || value === undefined) {
+      return undefined;
+    }
+
+    return value;
+  }, z.string().min(1).max(64).optional()),
+  password: optionalCredential,
+  token: optionalCredential,
   action: z.string().min(1),
   path: z.string().min(1),
-  protocol: z.string().optional(),
-  query: z.string().optional(),
-  id: z.string().optional(),
-  ip: z.string().optional(),
-}).partial({
-  user: true,
-  password: true,
+  protocol: optionalString,
+  query: optionalString,
+  id: optionalString,
+  ip: optionalString,
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
