@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 
 interface HlsPlayerProps {
   src: string | null
+  authToken?: string | null
   poster?: string
   className?: string
 }
 
-export default function HlsPlayer({ src, poster, className }: HlsPlayerProps) {
+export default function HlsPlayer({ src, authToken, poster, className }: HlsPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -27,7 +28,7 @@ export default function HlsPlayer({ src, poster, className }: HlsPlayerProps) {
       return
     }
 
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    if (!authToken && video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src
       return () => {
         video.removeAttribute('src')
@@ -49,6 +50,11 @@ export default function HlsPlayer({ src, poster, className }: HlsPlayerProps) {
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: true,
+          xhrSetup: (xhr) => {
+            if (authToken) {
+              xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
+            }
+          },
         })
 
         hls.loadSource(src)
@@ -75,7 +81,7 @@ export default function HlsPlayer({ src, poster, className }: HlsPlayerProps) {
       isCancelled = true
       cleanup?.()
     }
-  }, [src])
+  }, [authToken, src])
 
   return (
     <div className={className}>

@@ -12,7 +12,7 @@ import {
   type VideoSortBy,
   type VideoStatus,
 } from '#/api/videos'
-import { getApiErrorMessage } from '#/api/client'
+import { getApiErrorMessage, withAccessToken } from '#/api/client'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
@@ -285,7 +285,7 @@ function VideosPage() {
                   <div className="flex h-36 w-full shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--line)] bg-[color-mix(in_oklab,var(--card)_72%,var(--background))] sm:w-56">
                     {video.thumbnailUrl ? (
                       <img
-                        src={video.thumbnailUrl}
+                        src={withAccessToken(video.thumbnailUrl, session?.token) ?? undefined}
                         alt={video.videoKey}
                         className="h-full w-full object-cover"
                       />

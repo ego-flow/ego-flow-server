@@ -2,19 +2,27 @@ import { Router } from "express";
 import { VideoStatus } from "@prisma/client";
 
 import { asyncHandler } from "../lib/async-handler";
+import { AppError } from "../lib/errors";
 import { prisma } from "../lib/prisma";
-import { validate } from "../middleware/validate.middleware";
 import { recordingCompleteSchema } from "../schemas/stream.schema";
 import { processingService } from "../services/processing.service";
 import { streamService } from "../services/stream.service";
 
 const router = Router();
 
-router.post(
+router.all(
   "/recording-complete",
-  validate(recordingCompleteSchema),
   asyncHandler(async (req, res) => {
-    const payload = req.body;
+    const parsed = recordingCompleteSchema.safeParse({
+      path: typeof req.body?.path === "string" ? req.body.path : req.query.path,
+      recording_path:
+        typeof req.body?.recording_path === "string" ? req.body.recording_path : req.query.recording_path,
+    });
+    if (!parsed.success) {
+      throw new AppError(400, "VALIDATION_ERROR", "Invalid recording completion payload.");
+    }
+
+    const payload = parsed.data;
 
     const existing = await prisma.video.findFirst({
       where: {

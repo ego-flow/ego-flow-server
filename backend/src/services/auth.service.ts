@@ -45,8 +45,15 @@ export class AuthService {
 
   async verifyRtmpAuthorization(input: RtmpAuthInput): Promise<boolean> {
     try {
-      const payload = verifyAccessToken(input.password);
-      if (payload.userId !== input.user) {
+      const queryParams = new URLSearchParams(input.query ?? "");
+      const credential = input.password || input.token || queryParams.get("pass") || queryParams.get("token");
+      if (!credential) {
+        return false;
+      }
+
+      const payload = verifyAccessToken(credential);
+      const requestedUser = input.user || queryParams.get("user");
+      if (requestedUser && payload.userId !== requestedUser) {
         return false;
       }
 

@@ -10,7 +10,7 @@ import {
   requestVideoDetail,
   requestVideoStatus,
 } from '#/api/videos'
-import { getApiErrorMessage } from '#/api/client'
+import { getApiErrorMessage, withAccessToken } from '#/api/client'
 import { Button } from '#/components/ui/button'
 import { useAuth } from '#/hooks/useAuth'
 import { removeVideoSnapshot } from '#/lib/video-snapshots'
@@ -48,7 +48,7 @@ function VideoDetailPage() {
   const { videoId } = Route.useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { isReady, isAuthenticated } = useAuth()
+  const { isReady, isAuthenticated, session } = useAuth()
 
   const detailQuery = useQuery({
     queryKey: ['video-detail', videoId],
@@ -85,6 +85,7 @@ function VideoDetailPage() {
 
   const video = detailQuery.data ?? null
   const currentStatus = statusQuery.data?.status ?? detailQuery.data?.status ?? 'PENDING'
+  const playbackUrl = withAccessToken(video?.dashboardVideoUrl ?? null, session?.token)
 
   return (
     <main className="page-wrap px-4 py-8 sm:py-10">
@@ -133,8 +134,8 @@ function VideoDetailPage() {
           <div className="mt-6 overflow-hidden rounded-2xl border border-[var(--line)] bg-black">
             {video?.dashboardVideoUrl && currentStatus === 'COMPLETED' ? (
               <video
-                key={video.dashboardVideoUrl}
-                src={video.dashboardVideoUrl}
+                key={playbackUrl}
+                src={playbackUrl ?? undefined}
                 controls
                 playsInline
                 className="aspect-video w-full"
