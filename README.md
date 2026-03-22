@@ -46,8 +46,14 @@ When startup completes, these endpoints should be available:
 
 - API health: `http://127.0.0.1:3000/api/v1/health`
 - Dashboard: `http://127.0.0.1:8088`
+- Live monitor: `http://127.0.0.1:8088/live`
 - RTMP ingest: `rtmp://127.0.0.1:1935/live`
 - HLS output: `http://127.0.0.1:8888`
+
+Default seeded dashboard login:
+
+- id: `admin`
+- password: `changeme123` unless `ADMIN_DEFAULT_PASSWORD` is overridden
 
 ## Common Commands
 
@@ -83,6 +89,22 @@ Command summary:
 - `mediamtx`
 
 The backend container performs database migration and seed work before starting the API process. The worker uses the same image as the backend but runs the queue processor entrypoint instead. The dashboard uses its own multi-stage Node image and serves the built TanStack Start app on port `8088`.
+
+## Dashboard Capabilities
+
+The current dashboard exposes these flows:
+
+- `/login`: JWT login
+- `/videos`: processed video list with filter/sort UI
+- `/videos/:videoId`: playback, processing status, and delete action
+- `/live`: active stream list with HLS playback
+- `/admin/users`: admin-only user creation, password reset, and deactivation
+- `/admin/settings`: admin-only target directory management
+
+Current limitation:
+
+- there is no dedicated backend `GET /api/v1/videos/:videoId` endpoint yet
+- the detail page relies on cached list metadata plus the status endpoint
 
 ## Persistence
 
