@@ -38,18 +38,28 @@ app.use("/api/v1/streams", streamsRoutes);
 app.use("/api/v1/hooks", hooksRoutes);
 app.use("/api/v1/users", usersRoutes);
 app.use("/api/v1/videos", videosRoutes);
-app.use("/files", requireAuthWithQueryToken, requireFileAccess, (req, res, next) => {
-  void getTargetDirectory()
-    .then((targetDirectory) =>
-      express.static(targetDirectory, {
-        dotfiles: "deny",
-        fallthrough: true,
-        index: false,
-        redirect: false,
-      })(req, res, next),
-    )
-    .catch(next);
-});
+app.use(
+  "/files",
+  (_req, res, next) => {
+    // Dashboard runs on a different origin (:8088) and embeds media from the backend (:3000).
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    next();
+  },
+  requireAuthWithQueryToken,
+  requireFileAccess,
+  (req, res, next) => {
+    void getTargetDirectory()
+      .then((targetDirectory) =>
+        express.static(targetDirectory, {
+          dotfiles: "deny",
+          fallthrough: true,
+          index: false,
+          redirect: false,
+        })(req, res, next),
+      )
+      .catch(next);
+  },
+);
 
 app.use((_req, _res, next) => {
   next(new AppError(404, "NOT_FOUND", "Route not found."));
