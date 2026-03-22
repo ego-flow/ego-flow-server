@@ -1,21 +1,19 @@
-import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { AlertTriangle, Trash2 } from 'lucide-react'
 
 import {
-  findCachedVideo,
   formatDateTime,
   formatDuration,
   formatResolution,
   requestDeleteVideo,
+  requestVideoDetail,
   requestVideoStatus,
-  type VideoRecord,
 } from '#/api/videos'
 import { getApiErrorMessage } from '#/api/client'
 import { Button } from '#/components/ui/button'
 import { useAuth } from '#/hooks/useAuth'
-import { readVideoSnapshot, removeVideoSnapshot } from '#/lib/video-snapshots'
+import { removeVideoSnapshot } from '#/lib/video-snapshots'
 
 export const Route = createFileRoute('/videos/$videoId')({
   component: VideoDetailPage,
@@ -51,14 +49,12 @@ function VideoDetailPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { isReady, isAuthenticated } = useAuth()
-  const [video, setVideo] = useState<VideoRecord | null>(() => readVideoSnapshot(videoId))
 
-  useEffect(() => {
-    const cachedVideo = findCachedVideo(queryClient, videoId) ?? readVideoSnapshot(videoId)
-    if (cachedVideo) {
-      setVideo(cachedVideo)
-    }
-  }, [queryClient, videoId])
+  const detailQuery = useQuery({
+    queryKey: ['video-detail', videoId],
+    queryFn: () => requestVideoDetail(videoId),
+    enabled: isReady && isAuthenticated,
+  })
 
   const statusQuery = useQuery({
     queryKey: ['video-status', videoId],
@@ -87,7 +83,8 @@ function VideoDetailPage() {
     return <Navigate to="/login" />
   }
 
-  const currentStatus = statusQuery.data?.status ?? video?.status ?? 'PENDING'
+  const video = detailQuery.data ?? null
+  const currentStatus = statusQuery.data?.status ?? detailQuery.data?.status ?? 'PENDING'
 
   return (
     <main className="page-wrap px-4 py-8 sm:py-10">
@@ -166,13 +163,10 @@ function VideoDetailPage() {
             </div>
           ) : null}
 
-          {!video ? (
-            <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-500/25 bg-amber-500/8 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+          {detailQuery.isError ? (
+            <div className="mt-4 flex items-start gap-3 rounded-xl border border-red-500/25 bg-red-500/8 px-4 py-3 text-sm text-red-700 dark:text-red-300">
               <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 shrink-0" />
-              <p>
-                Detailed metadata is available when this page is opened from the video list.
-                Processing status still updates from the backend.
-              </p>
+              <p>{getApiErrorMessage(detailQuery.error, 'Failed to load video details.')}</p>
             </div>
           ) : null}
         </article>

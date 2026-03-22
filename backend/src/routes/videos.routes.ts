@@ -28,6 +28,24 @@ router.get(
   }),
 );
 
+router.get(
+  "/:videoId",
+  requireAuth,
+  validate(videoIdParamSchema, "params"),
+  asyncHandler(async (req, res) => {
+    if (!req.user) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
+    }
+
+    const response = await videoService.getVideoDetail(
+      (req.params as VideoIdParamInput).videoId,
+      req.user.userId,
+      req.user.role,
+    );
+    res.status(200).json(response);
+  }),
+);
+
 router.delete(
   "/:videoId",
   requireAuth,

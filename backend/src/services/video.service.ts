@@ -37,6 +37,45 @@ const normalizeProgress = (status: VideoStatus, progress: number | null): number
   }
 };
 
+const toVideoResponse = (
+  targetDirectory: string,
+  video: {
+    id: string;
+    videoKey: string;
+    userId: string;
+    status: VideoStatus;
+    durationSec: number | null;
+    resolutionWidth: number | null;
+    resolutionHeight: number | null;
+    fps: number | null;
+    codec: string | null;
+    recordedAt: Date | null;
+    thumbnailPath: string | null;
+    dashboardVideoPath: string | null;
+    vlmVideoPath: string | null;
+    sceneSummary: string | null;
+    clipSegments: Prisma.JsonValue | null;
+    createdAt: Date;
+  },
+) => ({
+  id: video.id,
+  video_key: video.videoKey,
+  user_id: video.userId,
+  status: video.status,
+  duration_sec: video.durationSec,
+  resolution_width: video.resolutionWidth,
+  resolution_height: video.resolutionHeight,
+  fps: video.fps,
+  codec: video.codec,
+  recorded_at: video.recordedAt ? video.recordedAt.toISOString() : null,
+  thumbnail_url: toFileUrl(targetDirectory, video.thumbnailPath),
+  dashboard_video_url: toFileUrl(targetDirectory, video.dashboardVideoPath),
+  vlm_video_path: video.vlmVideoPath,
+  scene_summary: video.sceneSummary,
+  clip_segments: video.clipSegments,
+  created_at: video.createdAt.toISOString(),
+});
+
 export class VideoService {
   private async getAccessibleVideo(videoId: string, requestUserId: string, requestUserRole: "admin" | "user") {
     const video = await prisma.video.findUnique({
@@ -122,25 +161,45 @@ export class VideoService {
       total,
       page: query.page,
       limit: query.limit,
-      data: videos.map((video) => ({
-        id: video.id,
-        video_key: video.videoKey,
-        user_id: video.userId,
-        status: video.status,
-        duration_sec: video.durationSec,
-        resolution_width: video.resolutionWidth,
-        resolution_height: video.resolutionHeight,
-        fps: video.fps,
-        codec: video.codec,
-        recorded_at: video.recordedAt ? video.recordedAt.toISOString() : null,
-        thumbnail_url: toFileUrl(targetDirectory, video.thumbnailPath),
-        dashboard_video_url: toFileUrl(targetDirectory, video.dashboardVideoPath),
-        vlm_video_path: video.vlmVideoPath,
-        scene_summary: video.sceneSummary,
-        clip_segments: video.clipSegments,
-        created_at: video.createdAt.toISOString(),
-      })),
+      data: videos.map((video) => toVideoResponse(targetDirectory, video)),
     };
+  }
+
+  async getVideoDetail(videoId: string, requestUserId: string, requestUserRole: "admin" | "user") {
+    const [targetDirectory, video] = await Promise.all([
+      getTargetDirectory(),
+      prisma.video.findUnique({
+        where: { id: videoId },
+        select: {
+          id: true,
+          videoKey: true,
+          userId: true,
+          status: true,
+          durationSec: true,
+          resolutionWidth: true,
+          resolutionHeight: true,
+          fps: true,
+          codec: true,
+          recordedAt: true,
+          thumbnailPath: true,
+          dashboardVideoPath: true,
+          vlmVideoPath: true,
+          sceneSummary: true,
+          clipSegments: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    if (!video) {
+      throw new AppError(404, "NOT_FOUND", "Video not found.");
+    }
+
+    if (requestUserRole !== "admin" && video.userId !== requestUserId) {
+      throw new AppError(403, "FORBIDDEN", "You do not have access to this video.");
+    }
+
+    return toVideoResponse(targetDirectory, video);
   }
 
   async getVideoStatus(videoId: string, requestUserId: string, requestUserRole: "admin" | "user") {

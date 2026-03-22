@@ -140,6 +140,11 @@ export async function requestVideoStatus(videoId: string) {
   } satisfies VideoStatusResponse
 }
 
+export async function requestVideoDetail(videoId: string) {
+  const response = await apiClient.get<VideoApiRecord>(`/videos/${videoId}`)
+  return normalizeVideo(response.data)
+}
+
 export async function requestDeleteVideo(videoId: string) {
   const response = await apiClient.delete<{ id: string; deleted: boolean }>(
     `/videos/${videoId}`,

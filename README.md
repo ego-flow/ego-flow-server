@@ -101,11 +101,6 @@ The current dashboard exposes these flows:
 - `/admin/users`: admin-only user creation, password reset, and deactivation
 - `/admin/settings`: admin-only target directory management
 
-Current limitation:
-
-- there is no dedicated backend `GET /api/v1/videos/:videoId` endpoint yet
-- the detail page relies on cached list metadata plus the status endpoint
-
 ## Persistence
 
 Persistent data is stored through Docker volumes and bind mounts:
@@ -129,7 +124,7 @@ Persistent data is stored through Docker volumes and bind mounts:
 
 - The default workflow is Docker-first
 - Code changes are picked up by rebuilding with `./scripts/dev.sh up`
-- Standard usage does not depend on local `npm install` or local `.env` bootstrap
+- Standard usage does not depend on local `npm install` or any local `.env` bootstrap
 
 ## Related Documentation
 
