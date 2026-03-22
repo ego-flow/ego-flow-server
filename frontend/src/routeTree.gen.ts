@@ -10,26 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VideosRouteImport } from './routes/videos'
-import { Route as RepositoriesRouteImport } from './routes/repositories'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as VideosIndexRouteImport } from './routes/videos.index'
-import { Route as RepositoriesIndexRouteImport } from './routes/repositories.index'
 import { Route as VideosVideoIdRouteImport } from './routes/videos.$videoId'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
-import { Route as RepositoriesUserIdRepoNameRouteImport } from './routes/repositories.$userId.$repoName'
 
 const VideosRoute = VideosRouteImport.update({
   id: '/videos',
   path: '/videos',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RepositoriesRoute = RepositoriesRouteImport.update({
-  id: '/repositories',
-  path: '/repositories',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProfileRoute = ProfileRouteImport.update({
@@ -57,11 +49,6 @@ const VideosIndexRoute = VideosIndexRouteImport.update({
   path: '/',
   getParentRoute: () => VideosRoute,
 } as any)
-const RepositoriesIndexRoute = RepositoriesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => RepositoriesRoute,
-} as any)
 const VideosVideoIdRoute = VideosVideoIdRouteImport.update({
   id: '/$videoId',
   path: '/$videoId',
@@ -77,26 +64,17 @@ const AdminSettingsRoute = AdminSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AdminRoute,
 } as any)
-const RepositoriesUserIdRepoNameRoute =
-  RepositoriesUserIdRepoNameRouteImport.update({
-    id: '/$userId/$repoName',
-    path: '/$userId/$repoName',
-    getParentRoute: () => RepositoriesRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
-  '/repositories': typeof RepositoriesRouteWithChildren
   '/videos': typeof VideosRouteWithChildren
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/users': typeof AdminUsersRoute
   '/videos/$videoId': typeof VideosVideoIdRoute
-  '/repositories/': typeof RepositoriesIndexRoute
   '/videos/': typeof VideosIndexRoute
-  '/repositories/$userId/$repoName': typeof RepositoriesUserIdRepoNameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -106,9 +84,7 @@ export interface FileRoutesByTo {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/users': typeof AdminUsersRoute
   '/videos/$videoId': typeof VideosVideoIdRoute
-  '/repositories': typeof RepositoriesIndexRoute
   '/videos': typeof VideosIndexRoute
-  '/repositories/$userId/$repoName': typeof RepositoriesUserIdRepoNameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -116,14 +92,11 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
-  '/repositories': typeof RepositoriesRouteWithChildren
   '/videos': typeof VideosRouteWithChildren
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/users': typeof AdminUsersRoute
   '/videos/$videoId': typeof VideosVideoIdRoute
-  '/repositories/': typeof RepositoriesIndexRoute
   '/videos/': typeof VideosIndexRoute
-  '/repositories/$userId/$repoName': typeof RepositoriesUserIdRepoNameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -132,14 +105,11 @@ export interface FileRouteTypes {
     | '/admin'
     | '/login'
     | '/profile'
-    | '/repositories'
     | '/videos'
     | '/admin/settings'
     | '/admin/users'
     | '/videos/$videoId'
-    | '/repositories/'
     | '/videos/'
-    | '/repositories/$userId/$repoName'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -149,23 +119,18 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/users'
     | '/videos/$videoId'
-    | '/repositories'
     | '/videos'
-    | '/repositories/$userId/$repoName'
   id:
     | '__root__'
     | '/'
     | '/admin'
     | '/login'
     | '/profile'
-    | '/repositories'
     | '/videos'
     | '/admin/settings'
     | '/admin/users'
     | '/videos/$videoId'
-    | '/repositories/'
     | '/videos/'
-    | '/repositories/$userId/$repoName'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -173,7 +138,6 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   LoginRoute: typeof LoginRoute
   ProfileRoute: typeof ProfileRoute
-  RepositoriesRoute: typeof RepositoriesRouteWithChildren
   VideosRoute: typeof VideosRouteWithChildren
 }
 
@@ -184,13 +148,6 @@ declare module '@tanstack/react-router' {
       path: '/videos'
       fullPath: '/videos'
       preLoaderRoute: typeof VideosRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/repositories': {
-      id: '/repositories'
-      path: '/repositories'
-      fullPath: '/repositories'
-      preLoaderRoute: typeof RepositoriesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/profile': {
@@ -228,13 +185,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VideosIndexRouteImport
       parentRoute: typeof VideosRoute
     }
-    '/repositories/': {
-      id: '/repositories/'
-      path: '/'
-      fullPath: '/repositories/'
-      preLoaderRoute: typeof RepositoriesIndexRouteImport
-      parentRoute: typeof RepositoriesRoute
-    }
     '/videos/$videoId': {
       id: '/videos/$videoId'
       path: '/$videoId'
@@ -256,13 +206,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSettingsRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/repositories/$userId/$repoName': {
-      id: '/repositories/$userId/$repoName'
-      path: '/$userId/$repoName'
-      fullPath: '/repositories/$userId/$repoName'
-      preLoaderRoute: typeof RepositoriesUserIdRepoNameRouteImport
-      parentRoute: typeof RepositoriesRoute
-    }
   }
 }
 
@@ -277,20 +220,6 @@ const AdminRouteChildren: AdminRouteChildren = {
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
-
-interface RepositoriesRouteChildren {
-  RepositoriesIndexRoute: typeof RepositoriesIndexRoute
-  RepositoriesUserIdRepoNameRoute: typeof RepositoriesUserIdRepoNameRoute
-}
-
-const RepositoriesRouteChildren: RepositoriesRouteChildren = {
-  RepositoriesIndexRoute: RepositoriesIndexRoute,
-  RepositoriesUserIdRepoNameRoute: RepositoriesUserIdRepoNameRoute,
-}
-
-const RepositoriesRouteWithChildren = RepositoriesRoute._addFileChildren(
-  RepositoriesRouteChildren,
-)
 
 interface VideosRouteChildren {
   VideosVideoIdRoute: typeof VideosVideoIdRoute
@@ -310,7 +239,6 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   LoginRoute: LoginRoute,
   ProfileRoute: ProfileRoute,
-  RepositoriesRoute: RepositoriesRouteWithChildren,
   VideosRoute: VideosRouteWithChildren,
 }
 export const routeTree = rootRouteImport
