@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Database, LogOut, Settings, Shield, UserRound } from 'lucide-react'
+import { Database, LogOut, RadioTower, Settings, Shield, UserRound } from 'lucide-react'
 import egoFlowIcon from '#/assets/EgoFlowIcon.png'
 import ThemeToggle from '#/components/ThemeToggle'
 import { Button } from '#/components/ui/button'
@@ -36,6 +36,13 @@ export default function Header() {
             >
               <Database size={15} aria-hidden="true" />
               Videos
+            </Link>
+            <Link
+              to="/live"
+              className="inline-flex items-center gap-2 text-[var(--sea-ink-soft)] no-underline transition-colors hover:text-[var(--sea-ink)]"
+            >
+              <RadioTower size={15} aria-hidden="true" />
+              Live
             </Link>
             {isAdmin ? (
               <>
