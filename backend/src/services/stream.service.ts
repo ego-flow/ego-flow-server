@@ -26,6 +26,12 @@ const parseSession = (value: string | null): StreamSessionCache | null => {
   }
 };
 
+interface MediaMtxPathsListResponse {
+  items?: Array<{
+    name?: unknown;
+  }>;
+}
+
 const getTargetDirectory = async (): Promise<string> => {
   const setting = await prisma.setting.findUnique({
     where: { key: "target_directory" },
@@ -82,8 +88,13 @@ export class StreamService {
     const visible =
       requestUserRole === "admin" ? parsed : parsed.filter((session) => session.userId === requestUserId);
 
+    const activeVideoKeys = await this.getActiveVideoKeys();
+    const activeVisible = activeVideoKeys
+      ? visible.filter((session) => activeVideoKeys.has(session.videoKey))
+      : visible.filter((session) => !session.stoppedAt);
+
     const hlsBase = env.HLS_BASE_URL.replace(/\/+$/, "");
-    return visible
+    return activeVisible
       .sort((a, b) => (a.registeredAt > b.registeredAt ? -1 : 1))
       .map((session) => ({
         video_key: session.videoKey,
@@ -92,6 +103,48 @@ export class StreamService {
         hls_url: `${hlsBase}/live/${session.videoKey}/index.m3u8`,
         registered_at: session.registeredAt,
       }));
+  }
+
+  async stopSession(requestUserId: string, requestUserRole: "admin" | "user", videoKey: string) {
+    const pathKey = streamPathKey(videoKey);
+    const sessionKey = await redis.get(pathKey);
+    if (!sessionKey) {
+      throw new AppError(404, "NOT_FOUND", "Active stream session not found.");
+    }
+
+    const sessionRaw = await redis.get(sessionKey);
+    const session = parseSession(sessionRaw);
+    if (!session) {
+      throw new AppError(404, "NOT_FOUND", "Active stream session not found.");
+    }
+
+    if (requestUserRole !== "admin" && session.userId !== requestUserId) {
+      throw new AppError(403, "FORBIDDEN", "You do not have access to this stream session.");
+    }
+
+    if (session.stoppedAt) {
+      return {
+        video_key: session.videoKey,
+        status: "stopping" as const,
+      };
+    }
+
+    const nextSession: StreamSessionCache = {
+      ...session,
+      stoppedAt: new Date().toISOString(),
+    };
+
+    const ttlSeconds = await redis.ttl(sessionKey);
+    if (ttlSeconds > 0) {
+      await redis.set(sessionKey, serializeSession(nextSession), "EX", ttlSeconds);
+    } else {
+      await redis.set(sessionKey, serializeSession(nextSession));
+    }
+
+    return {
+      video_key: session.videoKey,
+      status: "stopping" as const,
+    };
   }
 
   async consumeSessionForRecordingPath(streamPath: string) {
@@ -122,6 +175,38 @@ export class StreamService {
       throw new AppError(400, "VALIDATION_ERROR", "Invalid stream path format.");
     }
     return parts[1];
+  }
+
+  private async getActiveVideoKeys(): Promise<Set<string> | null> {
+    const baseUrl = env.MEDIAMTX_API_URL.replace(/\/+$/, "");
+
+    try {
+      const response = await fetch(`${baseUrl}/v3/paths/list`);
+      if (!response.ok) {
+        throw new Error(`MediaMTX API responded with ${response.status}`);
+      }
+
+      const payload = (await response.json()) as MediaMtxPathsListResponse;
+      const activeVideoKeys = new Set<string>();
+
+      for (const item of payload.items ?? []) {
+        if (typeof item.name !== "string") {
+          continue;
+        }
+
+        try {
+          activeVideoKeys.add(this.extractVideoKey(item.name));
+        } catch (_error) {
+          // Ignore non-live paths and keep scanning.
+        }
+      }
+
+      return activeVideoKeys;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      console.warn(`[streams] failed to query MediaMTX active paths: ${message}`);
+      return null;
+    }
   }
 }
 

@@ -5,6 +5,7 @@ export interface StreamSessionCache {
   targetDirectory: string;
   registeredAt: string;
   sessionId: string;
+  stoppedAt?: string;
 }
 
 export interface VideoProcessingJobData {

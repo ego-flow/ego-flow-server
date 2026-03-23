@@ -56,6 +56,7 @@ services:
       TARGET_DIRECTORY: /data/datasets
       RTMP_BASE_URL: rtmp://127.0.0.1:1935/live
       HLS_BASE_URL: http://127.0.0.1:8888
+      MEDIAMTX_API_URL: http://mediamtx:9997
       BULLMQ_QUEUE_NAME: video-processing
       WORKER_CONCURRENCY: 2
       DELETE_RAW_AFTER_PROCESSING: "true"
