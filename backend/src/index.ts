@@ -6,13 +6,14 @@ import morgan from "morgan";
 import { env } from "./config/env";
 import { AppError } from "./lib/errors";
 import { redis } from "./lib/redis";
-import { getTargetDirectory } from "./lib/storage";
+import { getTargetDirectory, initializeTargetDirectory } from "./lib/storage";
 import { requireAuthWithQueryToken } from "./middleware/auth.middleware";
 import { errorMiddleware } from "./middleware/error.middleware";
 import { requireFileAccess } from "./middleware/file-access.middleware";
 import { authRoutes } from "./routes/auth.routes";
 import { adminRoutes } from "./routes/admin.routes";
 import { hooksRoutes } from "./routes/hooks.routes";
+import { repositoriesRoutes } from "./routes/repositories.routes";
 import { streamsRoutes } from "./routes/streams.routes";
 import { usersRoutes } from "./routes/users.routes";
 import { videosRoutes } from "./routes/videos.routes";
@@ -34,6 +35,7 @@ app.get("/api/v1/health", (_req, res) => {
 
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/repositories", repositoriesRoutes);
 app.use("/api/v1/streams", streamsRoutes);
 app.use("/api/v1/hooks", hooksRoutes);
 app.use("/api/v1/users", usersRoutes);
@@ -47,18 +49,13 @@ app.use(
   },
   requireAuthWithQueryToken,
   requireFileAccess,
-  (req, res, next) => {
-    void getTargetDirectory()
-      .then((targetDirectory) =>
-        express.static(targetDirectory, {
-          dotfiles: "deny",
-          fallthrough: true,
-          index: false,
-          redirect: false,
-        })(req, res, next),
-      )
-      .catch(next);
-  },
+  (req, res, next) =>
+    express.static(getTargetDirectory(), {
+      dotfiles: "allow",
+      fallthrough: true,
+      index: false,
+      redirect: false,
+    })(req, res, next),
 );
 
 app.use((_req, _res, next) => {
@@ -66,8 +63,17 @@ app.use((_req, _res, next) => {
 });
 app.use(errorMiddleware);
 
-app.listen(env.PORT, () => {
-  console.log(`EgoFlow backend listening on port ${env.PORT}`);
+const start = async () => {
+  await initializeTargetDirectory();
+
+  app.listen(env.PORT, () => {
+    console.log(`EgoFlow backend listening on port ${env.PORT}`);
+  });
+};
+
+void start().catch((error) => {
+  console.error("Failed to start EgoFlow backend:", error);
+  process.exit(1);
 });
 
 void redis;

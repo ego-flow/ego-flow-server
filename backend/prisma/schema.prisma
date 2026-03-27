@@ -12,6 +12,17 @@ enum UserRole {
   user
 }
 
+enum RepoVisibility {
+  public
+  private
+}
+
+enum RepoRole {
+  read
+  maintain
+  admin
+}
+
 model User {
   id           String   @id @db.VarChar(64)
   passwordHash String   @map("password_hash") @db.VarChar(255)
@@ -20,7 +31,6 @@ model User {
   displayName  String?  @map("display_name") @db.VarChar(255)
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
-  videos       Video[]
 
   @@map("users")
 }
@@ -40,11 +50,37 @@ enum VideoStatus {
   FAILED
 }
 
+model Repository {
+  id          String         @id @default(uuid()) @db.Uuid
+  name        String         @db.VarChar(64)
+  ownerId     String         @map("owner_id") @db.VarChar(64)
+  visibility  RepoVisibility @default(public)
+  description String?        @db.VarChar(500)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  @@unique([ownerId, name])
+  @@index([ownerId], map: "idx_repos_owner_id")
+  @@index([visibility], map: "idx_repos_visibility")
+  @@map("repositories")
+}
+
+model RepoMember {
+  id           String   @id @default(uuid()) @db.Uuid
+  repositoryId String   @map("repository_id") @db.Uuid
+  userId       String   @map("user_id") @db.VarChar(64)
+  role         RepoRole
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([repositoryId, userId])
+  @@index([repositoryId], map: "idx_repo_members_repo_id")
+  @@index([userId], map: "idx_repo_members_user_id")
+  @@map("repo_members")
+}
+
 model Video {
   id                    String      @id @default(uuid()) @db.Uuid
-  videoKey              String      @map("video_key") @db.VarChar(64)
-  userId                String      @map("user_id") @db.VarChar(64)
-  user                  User        @relation(fields: [userId], references: [id])
+  repositoryId          String      @map("repository_id") @db.Uuid
   rawRecordingPath      String      @map("raw_recording_path") @db.VarChar(1024)
   streamPath            String?     @map("stream_path") @db.VarChar(255)
   deviceType            String?     @map("device_type") @db.VarChar(100)
@@ -71,8 +107,7 @@ model Video {
   updatedAt             DateTime    @updatedAt @map("updated_at")
 
   @@index([status])
-  @@index([videoKey], map: "idx_videos_video_key")
-  @@index([userId], map: "idx_videos_user_id")
+  @@index([repositoryId], map: "idx_videos_repository_id")
   @@index([recordedAt], map: "idx_videos_recorded_at")
   @@index([sessionId], map: "idx_videos_session")
   @@map("videos")

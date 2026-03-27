@@ -1,16 +1,19 @@
 import { randomUUID } from "crypto";
 
 import { AppError } from "../lib/errors";
-import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
+import { getTargetDirectory } from "../lib/storage";
 import { env } from "../config/env";
+import type { AppUserRole } from "../types/auth";
 import type { StreamRegisterInput } from "../schemas/stream.schema";
 import type { StreamSessionCache } from "../types/stream";
+import { repositoryService } from "./repository.service";
 
 const SESSION_TTL_SECONDS = 24 * 60 * 60;
+const REGISTRATION_GRACE_PERIOD_MS = 30 * 1000;
 
-const streamSessionKey = (userId: string, videoKey: string) => `stream:${userId}:${videoKey}`;
-const streamPathKey = (videoKey: string) => `stream:path:${videoKey}`;
+const streamSessionKey = (repositoryId: string) => `stream:repo:${repositoryId}`;
+const streamPathKey = (repoName: string) => `stream:path:${repoName}`;
 
 const serializeSession = (value: StreamSessionCache) => JSON.stringify(value);
 
@@ -32,99 +35,94 @@ interface MediaMtxPathsListResponse {
   }>;
 }
 
-const getTargetDirectory = async (): Promise<string> => {
-  const setting = await prisma.setting.findUnique({
-    where: { key: "target_directory" },
-  });
-  return setting?.value || env.TARGET_DIRECTORY;
-};
-
-const getAllSessionKeys = async (): Promise<string[]> => {
-  const keys: string[] = [];
-  let cursor = "0";
-  do {
-    const [nextCursor, foundKeys] = await redis.scan(cursor, "MATCH", "stream:*:*", "COUNT", 200);
-    cursor = nextCursor;
-    keys.push(...foundKeys.filter((key) => !key.startsWith("stream:path:")));
-  } while (cursor !== "0");
-  return keys;
-};
-
 export class StreamService {
-  async registerSession(userId: string, input: StreamRegisterInput, userJwt: string) {
-    const targetDirectory = await getTargetDirectory();
+  async registerSession(
+    userId: string,
+    userRole: AppUserRole,
+    input: StreamRegisterInput,
+    userJwt: string,
+  ) {
+    const access = await repositoryService.assertRepositoryAccess(userId, userRole, input.repository_id, "maintain");
+    await this.ensureRepositoryPathIsAvailable(access.repository.id, access.repository.name);
+
+    const targetDirectory = getTargetDirectory();
     const session: StreamSessionCache = {
       userId,
-      videoKey: input.video_key,
+      repositoryId: access.repository.id,
+      repositoryName: access.repository.name,
+      ownerId: access.repository.ownerId,
       ...(input.device_type ? { deviceType: input.device_type } : {}),
       targetDirectory,
       registeredAt: new Date().toISOString(),
       sessionId: randomUUID(),
     };
 
-    const sessionKey = streamSessionKey(userId, input.video_key);
+    const sessionKey = streamSessionKey(access.repository.id);
     await Promise.all([
       redis.set(sessionKey, serializeSession(session), "EX", SESSION_TTL_SECONDS),
-      redis.set(streamPathKey(input.video_key), sessionKey, "EX", SESSION_TTL_SECONDS),
+      redis.set(streamPathKey(access.repository.name), sessionKey, "EX", SESSION_TTL_SECONDS),
     ]);
 
     const base = env.RTMP_BASE_URL.replace(/\/+$/, "");
     return {
-      video_key: input.video_key,
-      rtmp_url: `${base}/${input.video_key}?user=${encodeURIComponent(userId)}&pass=${encodeURIComponent(userJwt)}`,
+      repository_id: access.repository.id,
+      repository_name: access.repository.name,
+      rtmp_url: `${base}/${access.repository.name}?user=${encodeURIComponent(userId)}&pass=${encodeURIComponent(userJwt)}`,
       status: "ready" as const,
     };
   }
 
-  async listActiveSessions(requestUserId: string, requestUserRole: "admin" | "user") {
-    const keys = await getAllSessionKeys();
+  async listActiveSessions(requestUserId: string, requestUserRole: AppUserRole) {
+    const keys = await this.getAllSessionKeys();
     if (keys.length === 0) {
       return [];
     }
 
     const values = await redis.mget(keys);
-    const parsed = values.map(parseSession).filter((value): value is StreamSessionCache => Boolean(value));
+    const sessions = values.map(parseSession).filter((value): value is StreamSessionCache => Boolean(value));
+    const accessResults = await Promise.all(
+      sessions.map(async (session) => ({
+        session,
+        access: await repositoryService.getRepositoryAccess(requestUserId, requestUserRole, session.repositoryId),
+      })),
+    );
 
-    const visible =
-      requestUserRole === "admin" ? parsed : parsed.filter((session) => session.userId === requestUserId);
+    const visible = accessResults
+      .filter((result): result is { session: StreamSessionCache; access: NonNullable<typeof result.access> } => Boolean(result.access))
+      .map((result) => result.session);
 
-    const activeVideoKeys = await this.getActiveVideoKeys();
-    const activeVisible = activeVideoKeys
-      ? visible.filter((session) => activeVideoKeys.has(session.videoKey))
+    const activeRepoNames = await this.getActiveRepositoryNames();
+    const activeVisible = activeRepoNames
+      ? visible.filter((session) => activeRepoNames.has(session.repositoryName))
       : visible.filter((session) => !session.stoppedAt);
 
     const hlsBase = env.HLS_BASE_URL.replace(/\/+$/, "");
     return activeVisible
       .sort((a, b) => (a.registeredAt > b.registeredAt ? -1 : 1))
       .map((session) => ({
-        video_key: session.videoKey,
+        repository_id: session.repositoryId,
+        repository_name: session.repositoryName,
+        owner_id: session.ownerId,
         user_id: session.userId,
         device_type: session.deviceType ?? null,
-        hls_url: `${hlsBase}/live/${session.videoKey}/index.m3u8`,
+        hls_url: `${hlsBase}/live/${session.repositoryName}/index.m3u8`,
         registered_at: session.registeredAt,
       }));
   }
 
-  async stopSession(requestUserId: string, requestUserRole: "admin" | "user", videoKey: string) {
-    const pathKey = streamPathKey(videoKey);
-    const sessionKey = await redis.get(pathKey);
-    if (!sessionKey) {
-      throw new AppError(404, "NOT_FOUND", "Active stream session not found.");
-    }
+  async stopSession(requestUserId: string, requestUserRole: AppUserRole, repositoryId: string) {
+    await repositoryService.assertRepositoryAccess(requestUserId, requestUserRole, repositoryId, "maintain");
 
+    const sessionKey = streamSessionKey(repositoryId);
     const sessionRaw = await redis.get(sessionKey);
     const session = parseSession(sessionRaw);
     if (!session) {
       throw new AppError(404, "NOT_FOUND", "Active stream session not found.");
     }
 
-    if (requestUserRole !== "admin" && session.userId !== requestUserId) {
-      throw new AppError(403, "FORBIDDEN", "You do not have access to this stream session.");
-    }
-
     if (session.stoppedAt) {
       return {
-        video_key: session.videoKey,
+        repository_id: session.repositoryId,
         status: "stopping" as const,
       };
     }
@@ -142,14 +140,24 @@ export class StreamService {
     }
 
     return {
-      video_key: session.videoKey,
+      repository_id: session.repositoryId,
       status: "stopping" as const,
     };
   }
 
-  async consumeSessionForRecordingPath(streamPath: string) {
-    const videoKey = this.extractVideoKey(streamPath);
-    const pathSessionKey = await redis.get(streamPathKey(videoKey));
+  async findSessionByStreamPath(streamPath: string): Promise<StreamSessionCache | null> {
+    const repoName = this.extractRepositoryName(streamPath);
+    const sessionKey = await redis.get(streamPathKey(repoName));
+    if (!sessionKey) {
+      return null;
+    }
+
+    return parseSession(await redis.get(sessionKey));
+  }
+
+  async getSessionForRecordingPath(streamPath: string) {
+    const repoName = this.extractRepositoryName(streamPath);
+    const pathSessionKey = await redis.get(streamPathKey(repoName));
     if (!pathSessionKey) {
       throw new AppError(404, "NOT_FOUND", "Active stream session not found.");
     }
@@ -160,24 +168,69 @@ export class StreamService {
       throw new AppError(404, "NOT_FOUND", "Active stream session not found.");
     }
 
-    await Promise.all([redis.del(pathSessionKey), redis.del(streamPathKey(videoKey))]);
-
     return {
-      videoKey,
+      repositoryName: repoName,
       session,
     };
   }
 
-  private extractVideoKey(streamPath: string): string {
+  private extractRepositoryName(streamPath: string): string {
     const normalized = streamPath.trim().replace(/^\/+/, "");
     const parts = normalized.split("/");
     if (parts.length < 2 || parts[0] !== "live" || !parts[1]) {
       throw new AppError(400, "VALIDATION_ERROR", "Invalid stream path format.");
     }
+
     return parts[1];
   }
 
-  private async getActiveVideoKeys(): Promise<Set<string> | null> {
+  private async ensureRepositoryPathIsAvailable(repositoryId: string, repositoryName: string) {
+    const repositorySessionKey = streamSessionKey(repositoryId);
+    const repositoryPathKey = streamPathKey(repositoryName);
+    const [sessionByRepo, sessionByPath, activeRepoNames] = await Promise.all([
+      redis.get(repositorySessionKey),
+      redis.get(repositoryPathKey),
+      this.getActiveRepositoryNames(),
+    ]);
+
+    if (activeRepoNames?.has(repositoryName)) {
+      throw new AppError(409, "CONFLICT", "Repository already has an active stream.");
+    }
+
+    if (!sessionByRepo && !sessionByPath) {
+      return;
+    }
+
+    if (!activeRepoNames) {
+      throw new AppError(409, "CONFLICT", "Repository already has an active stream.");
+    }
+
+    const parsedSessionByRepo = parseSession(sessionByRepo);
+    const registeredAtMs = parsedSessionByRepo ? Date.parse(parsedSessionByRepo.registeredAt) : Number.NaN;
+    if (Number.isFinite(registeredAtMs) && Date.now() - registeredAtMs < REGISTRATION_GRACE_PERIOD_MS) {
+      throw new AppError(409, "CONFLICT", "Repository already has an active stream.");
+    }
+
+    const staleKeys = new Set<string>([repositorySessionKey, repositoryPathKey]);
+    if (sessionByPath?.startsWith("stream:repo:")) {
+      staleKeys.add(sessionByPath);
+    }
+
+    await redis.del(...Array.from(staleKeys));
+  }
+
+  private async getAllSessionKeys(): Promise<string[]> {
+    const keys: string[] = [];
+    let cursor = "0";
+    do {
+      const [nextCursor, foundKeys] = await redis.scan(cursor, "MATCH", "stream:repo:*", "COUNT", 200);
+      cursor = nextCursor;
+      keys.push(...foundKeys);
+    } while (cursor !== "0");
+    return keys;
+  }
+
+  private async getActiveRepositoryNames(): Promise<Set<string> | null> {
     const baseUrl = env.MEDIAMTX_API_URL.replace(/\/+$/, "");
 
     try {
@@ -187,7 +240,7 @@ export class StreamService {
       }
 
       const payload = (await response.json()) as MediaMtxPathsListResponse;
-      const activeVideoKeys = new Set<string>();
+      const activeRepositoryNames = new Set<string>();
 
       for (const item of payload.items ?? []) {
         if (typeof item.name !== "string") {
@@ -195,13 +248,13 @@ export class StreamService {
         }
 
         try {
-          activeVideoKeys.add(this.extractVideoKey(item.name));
+          activeRepositoryNames.add(this.extractRepositoryName(item.name));
         } catch (_error) {
           // Ignore non-live paths and keep scanning.
         }
       }
 
-      return activeVideoKeys;
+      return activeRepositoryNames;
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown error";
       console.warn(`[streams] failed to query MediaMTX active paths: ${message}`);

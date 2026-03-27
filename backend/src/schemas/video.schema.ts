@@ -8,13 +8,8 @@ export const videoIdParamSchema = z.object({
 });
 
 export const videoListQuerySchema = z.object({
-  video_key: z
-    .string()
-    .max(64)
-    .regex(/^[a-z0-9_]+$/)
-    .optional(),
+  repository_id: z.uuid().optional(),
   status: z.nativeEnum(VideoStatus).optional(),
-  user_id: z.string().max(64).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   sort_by: videoSortBySchema.default("created_at"),

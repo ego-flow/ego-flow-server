@@ -20,7 +20,7 @@ export default function Header() {
       <nav className="page-full flex items-center justify-between px-10 py-4">
         <div className="flex items-center gap-3">
           <Link
-            to={isAuthenticated ? '/videos' : '/login'}
+            to={isAuthenticated ? '/repositories' : '/login'}
             className="inline-flex items-center gap-2 text-lg font-bold text-[var(--sea-ink)] no-underline"
           >
             <img src={egoFlowIcon} alt="Ego Flow logo" className="h-6 w-6 object-contain" />
@@ -31,11 +31,11 @@ export default function Header() {
         {isAuthenticated ? (
           <div className="ml-auto flex flex-wrap items-center justify-end gap-4 text-sm font-semibold sm:gap-6 sm:text-base">
             <Link
-              to="/videos"
+              to="/repositories"
               className="inline-flex items-center gap-2 text-[var(--sea-ink-soft)] no-underline transition-colors hover:text-[var(--sea-ink)]"
             >
               <Database size={15} aria-hidden="true" />
-              Videos
+              Repositories
             </Link>
             <Link
               to="/live"

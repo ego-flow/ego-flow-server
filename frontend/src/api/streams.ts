@@ -1,7 +1,9 @@
 import { apiClient } from '#/api/client'
 
 export interface ActiveStream {
-  videoKey: string
+  repositoryId: string
+  repositoryName: string
+  ownerId: string
   userId: string
   deviceType: string | null
   hlsUrl: string
@@ -11,7 +13,9 @@ export interface ActiveStream {
 export async function requestActiveStreams() {
   const response = await apiClient.get<{
     streams: Array<{
-      video_key: string
+      repository_id: string
+      repository_name: string
+      owner_id: string
       user_id: string
       device_type: string | null
       hls_url: string
@@ -20,7 +24,9 @@ export async function requestActiveStreams() {
   }>('/streams/active')
 
   return response.data.streams.map((stream) => ({
-    videoKey: stream.video_key,
+    repositoryId: stream.repository_id,
+    repositoryName: stream.repository_name,
+    ownerId: stream.owner_id,
     userId: stream.user_id,
     deviceType: stream.device_type,
     hlsUrl: stream.hls_url,

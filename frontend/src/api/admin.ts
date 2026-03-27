@@ -74,15 +74,3 @@ export async function requestAdminSettings() {
     targetDirectory: response.data.settings.target_directory,
   } satisfies AdminSettings
 }
-
-export async function requestUpdateTargetDirectory(targetDirectory: string) {
-  const response = await apiClient.put<{
-    target_directory: string
-  }>('/admin/settings/target-directory', {
-    target_directory: targetDirectory,
-  })
-
-  return {
-    targetDirectory: response.data.target_directory,
-  } satisfies AdminSettings
-}

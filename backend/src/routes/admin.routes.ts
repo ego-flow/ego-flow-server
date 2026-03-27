@@ -5,12 +5,7 @@ import { requireAuth } from "../middleware/auth.middleware";
 import { requireRole } from "../middleware/role.middleware";
 import { validate } from "../middleware/validate.middleware";
 import type { AdminUserIdParamInput } from "../schemas/admin.schema";
-import {
-  adminUserIdParamSchema,
-  createAdminUserSchema,
-  resetUserPasswordSchema,
-  updateTargetDirectorySchema,
-} from "../schemas/admin.schema";
+import { adminUserIdParamSchema, createAdminUserSchema, resetUserPasswordSchema } from "../schemas/admin.schema";
 import { adminService } from "../services/admin.service";
 
 const router = Router();
@@ -57,15 +52,6 @@ router.get(
   "/settings",
   asyncHandler(async (_req, res) => {
     const response = await adminService.getSettings();
-    res.status(200).json(response);
-  }),
-);
-
-router.put(
-  "/settings/target-directory",
-  validate(updateTargetDirectorySchema),
-  asyncHandler(async (req, res) => {
-    const response = await adminService.updateTargetDirectory(req.body);
     res.status(200).json(response);
   }),
 );

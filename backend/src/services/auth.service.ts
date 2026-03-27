@@ -7,6 +7,8 @@ import { prisma } from "../lib/prisma";
 import type { LoginInput, RtmpAuthInput } from "../schemas/auth.schema";
 import type { ChangeMyPasswordInput } from "../schemas/user.schema";
 import { adminService } from "./admin.service";
+import { repositoryService } from "./repository.service";
+import { streamService } from "./stream.service";
 
 export class AuthService {
   async login(input: LoginInput) {
@@ -62,8 +64,25 @@ export class AuthService {
         return false;
       }
 
-      const allowedActions = new Set(["publish", "read", "playback"]);
-      return allowedActions.has(input.action);
+      const activeSession = await streamService.findSessionByStreamPath(input.path);
+      if (!activeSession) {
+        return false;
+      }
+
+      if (input.action === "publish") {
+        return activeSession.userId === authenticatedUser.userId;
+      }
+
+      if (input.action === "read" || input.action === "playback") {
+        const access = await repositoryService.getRepositoryAccess(
+          authenticatedUser.userId,
+          authenticatedUser.role,
+          activeSession.repositoryId,
+        );
+        return Boolean(access);
+      }
+
+      return false;
     } catch (_error) {
       return false;
     }

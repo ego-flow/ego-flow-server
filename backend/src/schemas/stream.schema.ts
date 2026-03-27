@@ -1,9 +1,7 @@
 import { z } from "zod";
 
-const videoKeySchema = z.string().min(1).max(64).regex(/^[a-z0-9_]+$/);
-
 export const streamRegisterSchema = z.object({
-  video_key: videoKeySchema,
+  repository_id: z.uuid(),
   device_type: z.string().max(100).optional(),
 });
 
@@ -13,7 +11,7 @@ export const recordingCompleteSchema = z.object({
 });
 
 export const streamStopParamsSchema = z.object({
-  videoKey: videoKeySchema,
+  repositoryId: z.uuid(),
 });
 
 export type StreamRegisterInput = z.infer<typeof streamRegisterSchema>;

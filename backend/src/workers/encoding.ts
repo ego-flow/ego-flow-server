@@ -30,18 +30,16 @@ export interface EncodedOutputPaths {
 
 export const buildOutputPaths = (
   targetDirectory: string,
-  userId: string,
-  videoKey: string,
+  ownerId: string,
+  repoName: string,
   videoId: string,
 ): EncodedOutputPaths => {
-  const shortId = videoId.slice(0, 8);
-  const baseName = `${videoKey}_${shortId}`;
-  const userRoot = path.join(targetDirectory, userId);
+  const repositoryRoot = path.join(targetDirectory, ownerId, repoName);
 
   return {
-    vlmVideoPath: path.join(userRoot, "vlm", `${baseName}.mp4`),
-    dashboardVideoPath: path.join(userRoot, "dashboard", `${baseName}.mp4`),
-    thumbnailPath: path.join(userRoot, "thumbnails", `${baseName}.jpg`),
+    vlmVideoPath: path.join(repositoryRoot, `${videoId}.mp4`),
+    dashboardVideoPath: path.join(repositoryRoot, ".dashboard", `${videoId}.mp4`),
+    thumbnailPath: path.join(repositoryRoot, ".thumbnails", `${videoId}.jpg`),
   };
 };
 

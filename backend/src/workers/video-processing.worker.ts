@@ -64,7 +64,7 @@ const updateVideoAsFailed = async (videoId: string, errorMessage: string) => {
 };
 
 const processVideoJob = async (job: Job<VideoProcessingJobData, void, "video-processing">) => {
-  const { videoId, videoKey, userId, rawRecordingPath, targetDirectory } = job.data;
+  const { videoId, ownerId, repoName, rawRecordingPath, targetDirectory } = job.data;
 
   try {
     await job.updateProgress(5);
@@ -102,7 +102,7 @@ const processVideoJob = async (job: Job<VideoProcessingJobData, void, "video-pro
 
     await job.updateProgress(35);
 
-    const outputs = buildOutputPaths(targetDirectory, userId, videoKey, videoId);
+    const outputs = buildOutputPaths(targetDirectory, ownerId, repoName, videoId);
     await ensureOutputDirectories(outputs);
 
     const thumbnailSeekSec = metadata.durationSec && metadata.durationSec > 2 ? metadata.durationSec / 2 : 1;

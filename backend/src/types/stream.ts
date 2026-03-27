@@ -1,6 +1,8 @@
 export interface StreamSessionCache {
   userId: string;
-  videoKey: string;
+  repositoryId: string;
+  repositoryName: string;
+  ownerId: string;
   deviceType?: string;
   targetDirectory: string;
   registeredAt: string;
@@ -10,8 +12,9 @@ export interface StreamSessionCache {
 
 export interface VideoProcessingJobData {
   videoId: string;
-  videoKey: string;
-  userId: string;
+  repositoryId: string;
+  ownerId: string;
+  repoName: string;
   rawRecordingPath: string;
   targetDirectory: string;
 }

@@ -12,6 +12,10 @@ interface LoginResponse {
   user: AuthUser
 }
 
+interface ChangeMyPasswordResponse {
+  message: string
+}
+
 export async function requestLogin({
   id,
   password,
@@ -26,4 +30,16 @@ export async function requestLogin({
 
 export async function requestLogout(): Promise<void> {
   return Promise.resolve()
+}
+
+export async function requestChangeMyPassword(input: {
+  currentPassword: string
+  newPassword: string
+}) {
+  const response = await apiClient.put<ChangeMyPasswordResponse>(
+    '/users/me/password',
+    input,
+  )
+
+  return response.data
 }

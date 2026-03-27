@@ -3,6 +3,7 @@ import { Router } from "express";
 import { asyncHandler } from "../lib/async-handler";
 import { AppError } from "../lib/errors";
 import { requireAuth } from "../middleware/auth.middleware";
+import { repoAccess } from "../middleware/repo-access.middleware";
 import { validate } from "../middleware/validate.middleware";
 import { streamRegisterSchema, streamStopParamsSchema } from "../schemas/stream.schema";
 import { streamService } from "../services/stream.service";
@@ -13,6 +14,7 @@ router.post(
   "/register",
   requireAuth,
   validate(streamRegisterSchema),
+  repoAccess({ minRole: "maintain", repoIdFrom: "body.repository_id" }),
   asyncHandler(async (req, res) => {
     if (!req.user) {
       throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
@@ -23,7 +25,7 @@ router.post(
       throw new AppError(401, "UNAUTHORIZED", "Bearer token is required.");
     }
 
-    const response = await streamService.registerSession(req.user.userId, req.body, rawToken);
+    const response = await streamService.registerSession(req.user.userId, req.user.role, req.body, rawToken);
     res.status(200).json(response);
   }),
 );
@@ -41,7 +43,7 @@ router.get(
 );
 
 router.delete(
-  "/:videoKey",
+  "/:repositoryId",
   requireAuth,
   asyncHandler(async (req, res) => {
     if (!req.user) {
@@ -53,7 +55,7 @@ router.delete(
       throw new AppError(400, "VALIDATION_ERROR", "Invalid stream session identifier.");
     }
 
-    const response = await streamService.stopSession(req.user.userId, req.user.role, parsed.data.videoKey);
+    const response = await streamService.stopSession(req.user.userId, req.user.role, parsed.data.repositoryId);
     res.status(200).json(response);
   }),
 );

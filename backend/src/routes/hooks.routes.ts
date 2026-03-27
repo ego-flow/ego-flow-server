@@ -37,12 +37,11 @@ router.all(
       return;
     }
 
-    const { videoKey, session } = await streamService.consumeSessionForRecordingPath(payload.path);
+    const { repositoryName, session } = await streamService.getSessionForRecordingPath(payload.path);
 
     const video = await prisma.video.create({
       data: {
-        videoKey,
-        userId: session.userId,
+        repositoryId: session.repositoryId,
         rawRecordingPath: payload.recording_path,
         streamPath: payload.path,
         deviceType: session.deviceType ?? null,
@@ -54,8 +53,9 @@ router.all(
     try {
       await processingService.enqueueVideoProcessing({
         videoId: video.id,
-        videoKey,
-        userId: session.userId,
+        repositoryId: session.repositoryId,
+        ownerId: session.ownerId,
+        repoName: repositoryName,
         rawRecordingPath: payload.recording_path,
         targetDirectory: session.targetDirectory,
       });

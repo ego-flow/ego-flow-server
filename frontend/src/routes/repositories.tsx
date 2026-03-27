@@ -2,12 +2,12 @@ import { Navigate, Outlet, createFileRoute } from '@tanstack/react-router'
 
 import { useAuth } from '#/hooks/useAuth'
 
-export const Route = createFileRoute('/admin')({
-  component: AdminLayout,
+export const Route = createFileRoute('/repositories')({
+  component: RepositoriesLayout,
 })
 
-function AdminLayout() {
-  const { isReady, isAuthenticated, session } = useAuth()
+function RepositoriesLayout() {
+  const { isReady, isAuthenticated } = useAuth()
 
   if (!isReady) {
     return null
@@ -15,10 +15,6 @@ function AdminLayout() {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" />
-  }
-
-  if (session?.user.role !== 'admin') {
-    return <Navigate to="/repositories" />
   }
 
   return <Outlet />

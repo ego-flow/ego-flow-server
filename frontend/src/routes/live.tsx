@@ -17,7 +17,7 @@ export const Route = createFileRoute('/live')({
 
 function LivePage() {
   const { isReady, isAuthenticated, session } = useAuth()
-  const [selectedStreamKey, setSelectedStreamKey] = useState<string | null>(null)
+  const [selectedRepositoryId, setSelectedRepositoryId] = useState<string | null>(null)
 
   const streamsQuery = useQuery({
     queryKey: ['streams', 'active'],
@@ -29,15 +29,15 @@ function LivePage() {
   useEffect(() => {
     const streams = streamsQuery.data ?? []
     if (streams.length === 0) {
-      setSelectedStreamKey(null)
+      setSelectedRepositoryId(null)
       return
     }
 
-    const selectedExists = streams.some((stream) => stream.videoKey === selectedStreamKey)
+    const selectedExists = streams.some((stream) => stream.repositoryId === selectedRepositoryId)
     if (!selectedExists) {
-      setSelectedStreamKey(streams[0].videoKey)
+      setSelectedRepositoryId(streams[0].repositoryId)
     }
-  }, [selectedStreamKey, streamsQuery.data])
+  }, [selectedRepositoryId, streamsQuery.data])
 
   if (!isReady) {
     return null
@@ -49,7 +49,7 @@ function LivePage() {
 
   const streams = streamsQuery.data ?? []
   const selectedStream =
-    streams.find((stream) => stream.videoKey === selectedStreamKey) ?? null
+    streams.find((stream) => stream.repositoryId === selectedRepositoryId) ?? null
   const isAdmin = session?.user.role === 'admin'
 
   return (
@@ -103,18 +103,18 @@ function LivePage() {
             <div className="space-y-3">
               {streams.map((stream) => (
                 <button
-                  key={`${stream.userId}:${stream.videoKey}`}
+                  key={stream.repositoryId}
                   type="button"
-                  onClick={() => setSelectedStreamKey(stream.videoKey)}
+                  onClick={() => setSelectedRepositoryId(stream.repositoryId)}
                   className={`w-full rounded-2xl border p-4 text-left transition-colors ${
-                    selectedStreamKey === stream.videoKey
+                    selectedRepositoryId === stream.repositoryId
                       ? 'border-[color-mix(in_oklab,var(--lagoon-deep)_55%,var(--line))] bg-[var(--link-bg-hover)]'
                       : 'border-[var(--line)] bg-[color-mix(in_oklab,var(--card)_86%,transparent)] hover:bg-[var(--link-bg-hover)]'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="truncate text-base font-semibold text-[var(--sea-ink)]">
-                      {stream.videoKey}
+                      {stream.repositoryName}
                     </h3>
                     <span className="rounded-full bg-emerald-500/12 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
                       LIVE
@@ -122,8 +122,12 @@ function LivePage() {
                   </div>
                   <dl className="mt-3 grid gap-2 text-sm text-[var(--sea-ink-soft)]">
                     <div>
-                      <dt className="font-semibold text-[var(--sea-ink)]">User</dt>
+                      <dt className="font-semibold text-[var(--sea-ink)]">Publisher</dt>
                       <dd>{stream.userId}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-semibold text-[var(--sea-ink)]">Owner</dt>
+                      <dd>{stream.ownerId}</dd>
                     </div>
                     {isAdmin ? (
                       <div>
@@ -158,7 +162,7 @@ function LivePage() {
               <h2 className="text-lg font-semibold text-[var(--sea-ink)]">Live Playback</h2>
               <p className="mt-1 text-sm text-[var(--sea-ink-soft)]">
                 {selectedStream
-                  ? `${selectedStream.userId} / ${selectedStream.videoKey}`
+                  ? `${selectedStream.ownerId} / ${selectedStream.repositoryName}`
                   : 'Select an active stream to begin playback.'}
               </p>
             </div>

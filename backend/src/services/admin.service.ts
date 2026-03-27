@@ -1,16 +1,10 @@
-import { mkdir } from "fs/promises";
-import path from "path";
-
 import bcrypt from "bcryptjs";
 import { UserRole } from "@prisma/client";
 
 import { AppError } from "../lib/errors";
 import { prisma } from "../lib/prisma";
-import type {
-  CreateAdminUserInput,
-  ResetUserPasswordInput,
-  UpdateTargetDirectoryInput,
-} from "../schemas/admin.schema";
+import { getTargetDirectory } from "../lib/storage";
+import type { CreateAdminUserInput, ResetUserPasswordInput } from "../schemas/admin.schema";
 
 const toUserRole = (role: UserRole): "admin" | "user" => (role === UserRole.admin ? "admin" : "user");
 
@@ -30,14 +24,9 @@ const toUserResponse = (user: {
 
 export class AdminService {
   async getSettings() {
-    const setting = await prisma.setting.findUnique({
-      where: { key: "target_directory" },
-      select: { value: true },
-    });
-
     return {
       settings: {
-        target_directory: setting?.value ?? null,
+        target_directory: getTargetDirectory(),
       },
     };
   }
@@ -143,33 +132,6 @@ export class AdminService {
     return {
       id: user.id,
       passwordReset: true,
-    };
-  }
-
-  async updateTargetDirectory(input: UpdateTargetDirectoryInput) {
-    const targetDirectory = path.resolve(input.target_directory);
-
-    if (!path.isAbsolute(targetDirectory)) {
-      throw new AppError(400, "VALIDATION_ERROR", "target_directory must be an absolute path.");
-    }
-
-    try {
-      await mkdir(targetDirectory, { recursive: true });
-    } catch (_error) {
-      throw new AppError(400, "VALIDATION_ERROR", "Failed to create target directory.");
-    }
-
-    await prisma.setting.upsert({
-      where: { key: "target_directory" },
-      update: { value: targetDirectory },
-      create: {
-        key: "target_directory",
-        value: targetDirectory,
-      },
-    });
-
-    return {
-      target_directory: targetDirectory,
     };
   }
 

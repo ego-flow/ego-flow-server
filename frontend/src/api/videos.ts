@@ -9,17 +9,17 @@ export type SortOrder = 'asc' | 'desc'
 export interface VideoListFilters {
   page?: number
   limit?: number
-  videoKey?: string
+  repositoryId?: string
   status?: VideoStatus | 'ALL'
-  userId?: string
   sortBy?: VideoSortBy
   sortOrder?: SortOrder
 }
 
 interface VideoApiRecord {
   id: string
-  video_key: string
-  user_id: string
+  repository_id: string
+  repository_name: string
+  owner_id: string
   status: VideoStatus
   duration_sec: number | null
   resolution_width: number | null
@@ -44,8 +44,9 @@ interface VideoListApiResponse {
 
 export interface VideoRecord {
   id: string
-  videoKey: string
-  userId: string
+  repositoryId: string
+  repositoryName: string
+  ownerId: string
   status: VideoStatus
   durationSec: number | null
   resolutionWidth: number | null
@@ -70,6 +71,7 @@ export interface VideoListResponse {
 
 export interface VideoStatusResponse {
   id: string
+  repositoryId: string
   status: VideoStatus
   progress: number
   errorMessage: string | null
@@ -80,8 +82,9 @@ export interface VideoStatusResponse {
 function normalizeVideo(video: VideoApiRecord): VideoRecord {
   return {
     id: video.id,
-    videoKey: video.video_key,
-    userId: video.user_id,
+    repositoryId: video.repository_id,
+    repositoryName: video.repository_name,
+    ownerId: video.owner_id,
     status: video.status,
     durationSec: video.duration_sec,
     resolutionWidth: video.resolution_width,
@@ -103,10 +106,9 @@ export async function requestVideos(filters: VideoListFilters) {
     params: {
       page: filters.page ?? 1,
       limit: filters.limit ?? 20,
-      video_key: filters.videoKey || undefined,
+      repository_id: filters.repositoryId || undefined,
       status:
         filters.status && filters.status !== 'ALL' ? filters.status : undefined,
-      user_id: filters.userId || undefined,
       sort_by: filters.sortBy ?? 'created_at',
       sort_order: filters.sortOrder ?? 'desc',
     },
@@ -123,6 +125,7 @@ export async function requestVideos(filters: VideoListFilters) {
 export async function requestVideoStatus(videoId: string) {
   const response = await apiClient.get<{
     id: string
+    repository_id: string
     status: VideoStatus
     progress: number
     error_message: string | null
@@ -132,6 +135,7 @@ export async function requestVideoStatus(videoId: string) {
 
   return {
     id: response.data.id,
+    repositoryId: response.data.repository_id,
     status: response.data.status,
     progress: response.data.progress,
     errorMessage: response.data.error_message,
@@ -179,7 +183,7 @@ export function formatDateTime(value: string | null) {
 
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) {
-    return 'Unavailable'
+    return value
   }
 
   return parsed.toLocaleString()
@@ -187,23 +191,12 @@ export function formatDateTime(value: string | null) {
 
 export function formatResolution(video: Pick<VideoRecord, 'resolutionWidth' | 'resolutionHeight'>) {
   if (!video.resolutionWidth || !video.resolutionHeight) {
-    return 'Unknown'
+    return 'Unavailable'
   }
 
-  return `${video.resolutionWidth}x${video.resolutionHeight}`
+  return `${video.resolutionWidth} × ${video.resolutionHeight}`
 }
 
-export function findCachedVideo(queryClient: QueryClient, videoId: string) {
-  const cachedLists = queryClient.getQueriesData<VideoListResponse>({
-    queryKey: ['videos'],
-  })
-
-  for (const [, cachedList] of cachedLists) {
-    const matchedVideo = cachedList?.data.find((video) => video.id === videoId)
-    if (matchedVideo) {
-      return matchedVideo
-    }
-  }
-
-  return null
+export function primeVideoDetailCache(queryClient: QueryClient, video: VideoRecord) {
+  queryClient.setQueryData(['video-detail', video.id], video)
 }

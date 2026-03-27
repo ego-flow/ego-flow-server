@@ -16,11 +16,6 @@ export const resetUserPasswordSchema = z.object({
   newPassword: z.string().min(8).max(255),
 });
 
-export const updateTargetDirectorySchema = z.object({
-  target_directory: z.string().trim().min(1).startsWith("/"),
-});
-
 export type CreateAdminUserInput = z.infer<typeof createAdminUserSchema>;
 export type AdminUserIdParamInput = z.infer<typeof adminUserIdParamSchema>;
 export type ResetUserPasswordInput = z.infer<typeof resetUserPasswordSchema>;
-export type UpdateTargetDirectoryInput = z.infer<typeof updateTargetDirectorySchema>;
