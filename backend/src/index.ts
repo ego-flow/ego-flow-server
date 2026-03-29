@@ -2,8 +2,11 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
+import type { NextFunction, Request, Response } from "express";
+import swaggerUi from "swagger-ui-express";
 
 import { env } from "./config/env";
+import { openApiDocument } from "./docs/openapi";
 import { AppError } from "./lib/errors";
 import { redis } from "./lib/redis";
 import { getTargetDirectory, initializeTargetDirectory } from "./lib/storage";
@@ -28,6 +31,26 @@ app.use(
 );
 app.use(morgan("dev"));
 app.use(express.json());
+
+app.get("/api/v1/openapi.json", (_req, res) => {
+  res.status(200).json(openApiDocument);
+});
+
+app.use(
+  "/api-docs",
+  (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';",
+    );
+    next();
+  },
+  swaggerUi.serve,
+  swaggerUi.setup(openApiDocument, {
+    explorer: true,
+    customSiteTitle: "EgoFlow API Docs",
+  }),
+);
 
 app.get("/api/v1/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
