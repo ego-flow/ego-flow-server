@@ -5,7 +5,7 @@ import { AppError } from "../lib/errors";
 import { requireAuth } from "../middleware/auth.middleware";
 import { repoAccess } from "../middleware/repo-access.middleware";
 import { validate } from "../middleware/validate.middleware";
-import { streamRegisterSchema, streamStopParamsSchema } from "../schemas/stream.schema";
+import { streamRegisterSchema } from "../schemas/stream.schema";
 import { streamService } from "../services/stream.service";
 
 const router = Router();
@@ -39,24 +39,6 @@ router.get(
     }
     const streams = await streamService.listActiveSessions(req.user.userId, req.user.role);
     res.status(200).json({ streams });
-  }),
-);
-
-router.delete(
-  "/:repositoryId",
-  requireAuth,
-  asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
-    const parsed = streamStopParamsSchema.safeParse(req.params);
-    if (!parsed.success) {
-      throw new AppError(400, "VALIDATION_ERROR", "Invalid stream session identifier.");
-    }
-
-    const response = await streamService.stopSession(req.user.userId, req.user.role, parsed.data.repositoryId);
-    res.status(200).json(response);
   }),
 );
 

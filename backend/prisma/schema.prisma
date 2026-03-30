@@ -50,6 +50,30 @@ enum VideoStatus {
   FAILED
 }
 
+enum RecordingSessionStatus {
+  PENDING
+  STREAMING
+  STOP_REQUESTED
+  FINALIZING
+  COMPLETED
+  FAILED
+  ABORTED
+}
+
+enum RecordingSessionEndReason {
+  USER_STOP
+  GLASSES_STOP
+  UNEXPECTED_DISCONNECT
+  REGISTRATION_TIMEOUT
+  INTERNAL_ERROR
+}
+
+enum RecordingSegmentStatus {
+  WRITING
+  COMPLETED
+  FAILED
+}
+
 model Repository {
   id          String         @id @default(uuid()) @db.Uuid
   name        String         @db.VarChar(64)
@@ -78,13 +102,58 @@ model RepoMember {
   @@map("repo_members")
 }
 
+model RecordingSession {
+  id              String                    @id @default(uuid()) @db.Uuid
+  repositoryId    String                    @map("repository_id") @db.Uuid
+  ownerId         String                    @map("owner_id") @db.VarChar(64)
+  userId          String                    @map("user_id") @db.VarChar(64)
+  deviceType      String?                   @map("device_type") @db.VarChar(100)
+  streamPath      String                    @map("stream_path") @db.VarChar(255)
+  status          RecordingSessionStatus
+  endReason       RecordingSessionEndReason? @map("end_reason")
+  targetDirectory String                    @map("target_directory") @db.VarChar(1024)
+  sourceId        String?                   @map("source_id") @db.VarChar(255)
+  sourceType      String?                   @map("source_type") @db.VarChar(50)
+  stopRequestedAt DateTime?                 @map("stop_requested_at")
+  readyAt         DateTime?                 @map("ready_at")
+  notReadyAt      DateTime?                 @map("not_ready_at")
+  finalizedAt     DateTime?                 @map("finalized_at")
+  createdAt       DateTime                  @default(now()) @map("created_at")
+  updatedAt       DateTime                  @updatedAt @map("updated_at")
+
+  segments RecordingSegment[]
+  video    Video?
+
+  @@index([repositoryId, status], map: "idx_recording_sessions_repo_status")
+  @@index([sourceId], map: "idx_recording_sessions_source_id")
+  @@index([userId, createdAt], map: "idx_recording_sessions_user_created_at")
+  @@map("recording_sessions")
+}
+
+model RecordingSegment {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  recordingSessionId String                 @map("recording_session_id") @db.Uuid
+  sequence           Int
+  rawPath            String                 @map("raw_path") @db.VarChar(1024)
+  durationSec        Float?                 @map("duration_sec")
+  status             RecordingSegmentStatus
+  createdAt          DateTime               @default(now()) @map("created_at")
+  completedAt        DateTime?              @map("completed_at")
+
+  recordingSession RecordingSession @relation(fields: [recordingSessionId], references: [id])
+
+  @@unique([recordingSessionId, rawPath], map: "uniq_recording_segments_session_raw_path")
+  @@index([recordingSessionId, sequence], map: "idx_recording_segments_session_sequence")
+  @@map("recording_segments")
+}
+
 model Video {
   id                    String      @id @default(uuid()) @db.Uuid
   repositoryId          String      @map("repository_id") @db.Uuid
+  recordingSessionId    String?     @unique @map("recording_session_id") @db.Uuid
   rawRecordingPath      String      @map("raw_recording_path") @db.VarChar(1024)
   streamPath            String?     @map("stream_path") @db.VarChar(255)
   deviceType            String?     @map("device_type") @db.VarChar(100)
-  sessionId             String?     @map("session_id") @db.VarChar(255)
   streamedAt            DateTime    @default(now()) @map("streamed_at")
   durationSec           Float?      @map("duration_sec")
   resolutionWidth       Int?        @map("resolution_width")
@@ -106,9 +175,11 @@ model Video {
   createdAt             DateTime    @default(now()) @map("created_at")
   updatedAt             DateTime    @updatedAt @map("updated_at")
 
+  recordingSession RecordingSession? @relation(fields: [recordingSessionId], references: [id])
+
   @@index([status])
   @@index([repositoryId], map: "idx_videos_repository_id")
   @@index([recordedAt], map: "idx_videos_recorded_at")
-  @@index([sessionId], map: "idx_videos_session")
+  @@index([recordingSessionId], map: "idx_videos_recording_session_id")
   @@map("videos")
 }

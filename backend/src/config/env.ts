@@ -32,7 +32,6 @@ const envSchema = z.object({
   RTMP_BASE_URL: z.string().min(1).default("rtmp://127.0.0.1:1935/live"),
   HLS_BASE_URL: z.string().min(1).default("http://127.0.0.1:8888"),
   MEDIAMTX_API_URL: z.string().min(1).default("http://127.0.0.1:9997"),
-  BULLMQ_QUEUE_NAME: z.string().min(1).default("video-processing"),
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
   DELETE_RAW_AFTER_PROCESSING: z.preprocess(
     (input) => (input === undefined ? "true" : input),

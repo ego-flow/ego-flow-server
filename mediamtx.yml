@@ -18,11 +18,12 @@ pathDefaults:
   recordPath: /data/raw/%path/%Y-%m-%d_%H-%M-%S-%f
   recordFormat: fmp4
   recordPartDuration: 1s
-  recordSegmentDuration: 1h
+  recordSegmentDuration: 12h
   recordDeleteAfter: 0s
-  runOnRecordSegmentComplete: >
-    wget -qO /dev/null
-    http://host.docker.internal:3000/api/v1/hooks/recording-complete?path=$MTX_PATH&recording_path=$MTX_SEGMENT_PATH
+  runOnReady: /mediamtx-hooks/stream-ready-wrapper.sh
+  runOnNotReady: /mediamtx-hooks/stream-not-ready-wrapper.sh
+  runOnRecordSegmentCreate: /mediamtx-hooks/segment-create-wrapper.sh
+  runOnRecordSegmentComplete: /mediamtx-hooks/segment-complete-wrapper.sh
 
 paths:
   "~^live/.+$":

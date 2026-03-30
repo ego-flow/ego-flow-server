@@ -33,7 +33,6 @@ CREATE TABLE "videos" (
     "raw_recording_path" VARCHAR(1024) NOT NULL,
     "stream_path" VARCHAR(255),
     "device_type" VARCHAR(100),
-    "session_id" VARCHAR(255),
     "streamed_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "duration_sec" DOUBLE PRECISION,
     "resolution_width" INTEGER,
@@ -71,7 +70,6 @@ CREATE INDEX "idx_videos_user_id" ON "videos"("user_id");
 CREATE INDEX "idx_videos_recorded_at" ON "videos"("recorded_at");
 
 -- CreateIndex
-CREATE INDEX "idx_videos_session" ON "videos"("session_id");
 
 -- AddForeignKey
 ALTER TABLE "videos" ADD CONSTRAINT "videos_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

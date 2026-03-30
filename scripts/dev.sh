@@ -15,7 +15,7 @@ Usage:
   ./scripts/dev.sh ps               # Show compose service status
   ./scripts/dev.sh logs [service]   # Follow compose logs
   ./scripts/dev.sh down             # Stop and remove the compose stack
-  ./scripts/dev.sh reset            # Remove containers, volumes, and local redis data
+  ./scripts/dev.sh reset            # Remove containers, volumes, and local bind-mount data
   ./scripts/dev.sh install-docker   # Ubuntu helper for Docker installation
 EOF
 }
@@ -156,8 +156,10 @@ reset_env() {
   echo "Removing containers and volumes..."
   docker compose down -v --remove-orphans
 
-  echo "Removing redis bind-mount data..."
+  echo "Removing local bind-mount data..."
   rm -rf "$ROOT_DIR/data/redis"
+  rm -rf "$ROOT_DIR/data/raw"
+  rm -rf "$ROOT_DIR/data/datasets"
 
   echo "Reset complete."
   echo "Next: ./scripts/dev.sh up"

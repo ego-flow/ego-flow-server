@@ -90,6 +90,7 @@ export class VideoService {
       select: {
         id: true,
         repositoryId: true,
+        recordingSessionId: true,
         status: true,
         errorMessage: true,
         processingStartedAt: true,
@@ -251,10 +252,8 @@ export class VideoService {
   }
 
   async getVideoStatus(videoId: string, requestUserId: string, requestUserRole: AppUserRole) {
-    const [{ video }, progress] = await Promise.all([
-      this.getAccessibleVideo(videoId, requestUserId, requestUserRole, "read"),
-      processingService.getVideoProcessingProgress(videoId),
-    ]);
+    const { video } = await this.getAccessibleVideo(videoId, requestUserId, requestUserRole, "read");
+    const progress = await processingService.getRecordingFinalizeProgress(video.recordingSessionId);
 
     return {
       id: video.id,

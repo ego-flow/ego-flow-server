@@ -1,12 +1,12 @@
-import { createVideoProcessingWorker } from "./workers/video-processing.worker";
+import { createRecordingFinalizeWorker } from "./workers/recording-finalize.worker";
 
-const worker = createVideoProcessingWorker();
+const finalizeWorker = createRecordingFinalizeWorker();
 
-console.log("EgoFlow worker started");
+console.log("EgoFlow workers started (recording-finalize)");
 
 const shutdown = async (signal: string) => {
   console.log(`[worker] received ${signal}, shutting down...`);
-  await worker.close();
+  await finalizeWorker.close();
   process.exit(0);
 };
 

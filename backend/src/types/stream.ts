@@ -1,20 +1,23 @@
-export interface StreamSessionCache {
-  userId: string;
+export interface RecordingSessionLiveCache {
+  recordingSessionId: string;
   repositoryId: string;
   repositoryName: string;
   ownerId: string;
+  userId: string;
   deviceType?: string;
   targetDirectory: string;
-  registeredAt: string;
-  sessionId: string;
-  stoppedAt?: string;
+  status: "PENDING" | "STREAMING" | "STOP_REQUESTED" | "FINALIZING";
+  sourceId?: string;
+  sourceType?: string;
+  readyAt?: string;
+  stopRequestedAt?: string;
 }
 
-export interface VideoProcessingJobData {
+export interface RecordingFinalizeJobData {
+  recordingSessionId: string;
   videoId: string;
   repositoryId: string;
   ownerId: string;
   repoName: string;
-  rawRecordingPath: string;
   targetDirectory: string;
 }

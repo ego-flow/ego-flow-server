@@ -1,75 +1,66 @@
 import { Router } from "express";
-import { VideoStatus } from "@prisma/client";
 
 import { asyncHandler } from "../lib/async-handler";
 import { AppError } from "../lib/errors";
-import { prisma } from "../lib/prisma";
-import { recordingCompleteSchema } from "../schemas/stream.schema";
-import { processingService } from "../services/processing.service";
-import { streamService } from "../services/stream.service";
+import {
+  streamReadyHookSchema,
+  streamNotReadyHookSchema,
+  segmentCreateHookSchema,
+  segmentCompleteHookSchema,
+} from "../schemas/stream.schema";
+import { recordingSessionService } from "../services/recording-session.service";
 
 const router = Router();
 
-router.all(
-  "/recording-complete",
+router.post(
+  "/stream-ready",
   asyncHandler(async (req, res) => {
-    const parsed = recordingCompleteSchema.safeParse({
-      path: typeof req.body?.path === "string" ? req.body.path : req.query.path,
-      recording_path:
-        typeof req.body?.recording_path === "string" ? req.body.recording_path : req.query.recording_path,
-    });
+    const parsed = streamReadyHookSchema.safeParse(req.body);
     if (!parsed.success) {
-      throw new AppError(400, "VALIDATION_ERROR", "Invalid recording completion payload.");
+      throw new AppError(400, "VALIDATION_ERROR", "Invalid stream-ready payload.");
     }
 
-    const payload = parsed.data;
+    await recordingSessionService.handleStreamReady(parsed.data);
+    res.status(200).json({ ok: true });
+  }),
+);
 
-    const existing = await prisma.video.findFirst({
-      where: {
-        rawRecordingPath: payload.recording_path,
-      },
-    });
-    if (existing) {
-      res.status(200).json({
-        video_id: existing.id,
-        status: existing.status,
-      });
-      return;
+router.post(
+  "/stream-not-ready",
+  asyncHandler(async (req, res) => {
+    const parsed = streamNotReadyHookSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new AppError(400, "VALIDATION_ERROR", "Invalid stream-not-ready payload.");
     }
 
-    const { repositoryName, session } = await streamService.getSessionForRecordingPath(payload.path);
+    await recordingSessionService.handleStreamNotReady(parsed.data);
+    res.status(200).json({ ok: true });
+  }),
+);
 
-    const video = await prisma.video.create({
-      data: {
-        repositoryId: session.repositoryId,
-        rawRecordingPath: payload.recording_path,
-        streamPath: payload.path,
-        deviceType: session.deviceType ?? null,
-        sessionId: session.sessionId,
-        status: VideoStatus.PENDING,
-      },
-    });
-
-    try {
-      await processingService.enqueueVideoProcessing({
-        videoId: video.id,
-        repositoryId: session.repositoryId,
-        ownerId: session.ownerId,
-        repoName: repositoryName,
-        rawRecordingPath: payload.recording_path,
-        targetDirectory: session.targetDirectory,
-      });
-    } catch (error) {
-      await prisma.video.delete({ where: { id: video.id } }).catch(() => {
-        // Ignore cleanup failure and surface the original enqueue error.
-      });
-      throw error;
+router.post(
+  "/recording-segment-create",
+  asyncHandler(async (req, res) => {
+    const parsed = segmentCreateHookSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new AppError(400, "VALIDATION_ERROR", "Invalid segment-create payload.");
     }
 
-    res.status(200).json({
-      video_id: video.id,
-      status: video.status,
-    });
+    await recordingSessionService.handleSegmentCreate(parsed.data);
+    res.status(200).json({ ok: true });
+  }),
+);
+
+router.post(
+  "/recording-segment-complete",
+  asyncHandler(async (req, res) => {
+    const parsed = segmentCompleteHookSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new AppError(400, "VALIDATION_ERROR", "Invalid segment-complete payload.");
+    }
+
+    await recordingSessionService.handleSegmentComplete(parsed.data);
+    res.status(200).json({ ok: true });
   }),
 );
 

@@ -18,6 +18,7 @@ export const openApiDocument = {
     { name: "Repositories" },
     { name: "Repository Members" },
     { name: "Streams" },
+    { name: "Recordings" },
     { name: "Hooks" },
     { name: "Videos" },
     { name: "Users" },
@@ -182,12 +183,13 @@ export const openApiDocument = {
       },
       StreamRegisterResponse: {
         type: "object",
-        required: ["repository_id", "repository_name", "rtmp_url", "status"],
+        required: ["recording_session_id", "repository_id", "repository_name", "rtmp_url", "status"],
         properties: {
+          recording_session_id: { type: "string", format: "uuid" },
           repository_id: { type: "string", format: "uuid" },
           repository_name: { type: "string", example: "daily_kitchen" },
           rtmp_url: { type: "string", example: "rtmp://127.0.0.1:1935/live/daily_kitchen?user=alice&pass=<jwt>" },
-          status: { type: "string", enum: ["ready"] },
+          status: { type: "string", enum: ["ready"], description: "Temporary reservation created; publish promotes it to an active session." },
         },
       },
       ActiveStream: {
@@ -213,20 +215,84 @@ export const openApiDocument = {
           },
         },
       },
-      StopStreamResponse: {
+      RecordingStopRequest: {
         type: "object",
-        required: ["repository_id", "status"],
         properties: {
-          repository_id: { type: "string", format: "uuid" },
-          status: { type: "string", enum: ["stopping"] },
+          reason: { type: "string", enum: ["USER_STOP", "GLASSES_STOP"], default: "USER_STOP" },
         },
       },
-      RecordingCompleteResponse: {
+      RecordingStopResponse: {
         type: "object",
-        required: ["video_id", "status"],
+        required: ["recording_session_id", "status"],
         properties: {
-          video_id: { type: "string", format: "uuid" },
-          status: { type: "string", enum: ["PENDING", "PROCESSING", "COMPLETED", "FAILED"] },
+          recording_session_id: { type: "string", format: "uuid" },
+          status: { type: "string", enum: ["stop_requested"] },
+        },
+      },
+      RecordingStatusResponse: {
+        type: "object",
+        required: ["id", "status", "end_reason", "segment_count", "video_id", "created_at", "ready_at", "not_ready_at", "finalized_at"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          status: {
+            type: "string",
+            enum: ["PENDING", "STREAMING", "STOP_REQUESTED", "FINALIZING", "COMPLETED", "FAILED", "ABORTED"],
+          },
+          end_reason: {
+            oneOf: [
+              { type: "string", enum: ["USER_STOP", "GLASSES_STOP", "UNEXPECTED_DISCONNECT", "REGISTRATION_TIMEOUT", "INTERNAL_ERROR"] },
+              { type: "null" },
+            ],
+          },
+          segment_count: { type: "integer", minimum: 0 },
+          video_id: { type: ["string", "null"], format: "uuid" },
+          created_at: { type: "string", format: "date-time" },
+          ready_at: { type: ["string", "null"], format: "date-time" },
+          not_ready_at: { type: ["string", "null"], format: "date-time" },
+          finalized_at: { type: ["string", "null"], format: "date-time" },
+        },
+      },
+      HookOkResponse: {
+        type: "object",
+        required: ["ok"],
+        properties: {
+          ok: { type: "boolean", example: true },
+        },
+      },
+      StreamReadyHookRequest: {
+        type: "object",
+        required: ["path", "source_id", "source_type"],
+        properties: {
+          path: { type: "string", example: "live/daily_kitchen" },
+          query: { type: "string", example: "user=alice&pass=<jwt>" },
+          source_id: { type: "string", example: "publisher-123" },
+          source_type: { type: "string", example: "rtmpConn" },
+        },
+      },
+      StreamNotReadyHookRequest: {
+        type: "object",
+        required: ["path", "source_id", "source_type"],
+        properties: {
+          path: { type: "string", example: "live/daily_kitchen" },
+          source_id: { type: "string", example: "publisher-123" },
+          source_type: { type: "string", example: "rtmpConn" },
+        },
+      },
+      RecordingSegmentCreateHookRequest: {
+        type: "object",
+        required: ["path", "segment_path"],
+        properties: {
+          path: { type: "string", example: "live/daily_kitchen" },
+          segment_path: { type: "string", example: "/data/raw/live/daily_kitchen/2026-03-30_10-20-30-000000" },
+        },
+      },
+      RecordingSegmentCompleteHookRequest: {
+        type: "object",
+        required: ["path", "segment_path"],
+        properties: {
+          path: { type: "string", example: "live/daily_kitchen" },
+          segment_path: { type: "string", example: "/data/raw/live/daily_kitchen/2026-03-30_10-20-30-000000" },
+          segment_duration: { type: "number", example: 15.2 },
         },
       },
       Video: {
@@ -813,17 +879,61 @@ export const openApiDocument = {
         },
       },
     },
-    "/streams/{repositoryId}": {
-      delete: {
-        tags: ["Streams"],
-        summary: "Request stream stop for a repository",
-        parameters: [{ $ref: "#/components/parameters/RepositoryId" }],
+    "/recordings/{recordingSessionId}/stop": {
+      post: {
+        tags: ["Recordings"],
+        summary: "Request stop for a recording session",
+        parameters: [
+          {
+            name: "recordingSessionId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/RecordingStopRequest" },
+            },
+          },
+        },
         responses: {
           "200": {
             description: "Stop requested",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/StopStreamResponse" },
+                schema: { $ref: "#/components/schemas/RecordingStopResponse" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+          "409": { $ref: "#/components/responses/Conflict" },
+        },
+      },
+    },
+    "/recordings/{recordingSessionId}": {
+      get: {
+        tags: ["Recordings"],
+        summary: "Get recording session status",
+        parameters: [
+          {
+            name: "recordingSessionId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Recording session status",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/RecordingStatusResponse" },
               },
             },
           },
@@ -834,68 +944,107 @@ export const openApiDocument = {
         },
       },
     },
-    "/hooks/recording-complete": {
-      get: {
-        tags: ["Hooks"],
-        summary: "Handle MediaMTX recording complete webhook",
-        security: [],
-        parameters: [
-          {
-            name: "path",
-            in: "query",
-            required: true,
-            schema: { type: "string" },
-          },
-          {
-            name: "recording_path",
-            in: "query",
-            required: true,
-            schema: { type: "string" },
-          },
-        ],
-        responses: {
-          "200": {
-            description: "Video row created or reused",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/RecordingCompleteResponse" },
-              },
-            },
-          },
-          "400": { $ref: "#/components/responses/BadRequest" },
-          "404": { $ref: "#/components/responses/NotFound" },
-        },
-      },
+    "/hooks/stream-ready": {
       post: {
         tags: ["Hooks"],
-        summary: "Handle MediaMTX recording complete webhook",
+        summary: "Handle MediaMTX stream-ready hook",
         security: [],
         requestBody: {
           required: true,
           content: {
             "application/json": {
-              schema: {
-                type: "object",
-                required: ["path", "recording_path"],
-                properties: {
-                  path: { type: "string" },
-                  recording_path: { type: "string" },
-                },
-              },
+              schema: { $ref: "#/components/schemas/StreamReadyHookRequest" },
             },
           },
         },
         responses: {
           "200": {
-            description: "Video row created or reused",
+            description: "Hook handled",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/RecordingCompleteResponse" },
+                schema: { $ref: "#/components/schemas/HookOkResponse" },
               },
             },
           },
           "400": { $ref: "#/components/responses/BadRequest" },
-          "404": { $ref: "#/components/responses/NotFound" },
+        },
+      },
+    },
+    "/hooks/stream-not-ready": {
+      post: {
+        tags: ["Hooks"],
+        summary: "Handle MediaMTX stream-not-ready hook",
+        security: [],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/StreamNotReadyHookRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Hook handled",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/HookOkResponse" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+        },
+      },
+    },
+    "/hooks/recording-segment-create": {
+      post: {
+        tags: ["Hooks"],
+        summary: "Handle MediaMTX recording-segment-create hook",
+        security: [],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/RecordingSegmentCreateHookRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Hook handled",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/HookOkResponse" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+        },
+      },
+    },
+    "/hooks/recording-segment-complete": {
+      post: {
+        tags: ["Hooks"],
+        summary: "Handle MediaMTX recording-segment-complete hook",
+        security: [],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/RecordingSegmentCompleteHookRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Hook handled",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/HookOkResponse" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
         },
       },
     },

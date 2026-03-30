@@ -64,13 +64,18 @@ export class AuthService {
         return false;
       }
 
-      const activeSession = await streamService.findSessionByStreamPath(input.path);
+      const activeSession = await streamService.findLiveSessionByStreamPath(input.path);
       if (!activeSession) {
         return false;
       }
 
       if (input.action === "publish") {
-        return activeSession.userId === authenticatedUser.userId;
+        if (activeSession.userId !== authenticatedUser.userId) {
+          return false;
+        }
+
+        const activatedSession = await streamService.activateSession(activeSession.recordingSessionId);
+        return Boolean(activatedSession);
       }
 
       if (input.action === "read" || input.action === "playback") {

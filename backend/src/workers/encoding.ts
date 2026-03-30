@@ -92,3 +92,20 @@ export const encodeThumbnail = async (inputPath: string, outputPath: string, see
 
   await run(command);
 };
+
+export const concatSegments = async (
+  segmentPaths: string[],
+  concatListPath: string,
+  outputPath: string,
+): Promise<void> => {
+  const concatContent = segmentPaths.map((p) => `file '${p}'`).join("\n");
+  await fs.writeFile(concatListPath, concatContent, "utf-8");
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+
+  const command = ffmpeg(concatListPath)
+    .inputOptions(["-f concat", "-safe 0"])
+    .outputOptions(["-c copy", "-movflags +faststart"])
+    .output(outputPath);
+
+  await run(command);
+};

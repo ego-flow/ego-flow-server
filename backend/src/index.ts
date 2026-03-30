@@ -16,10 +16,12 @@ import { requireFileAccess } from "./middleware/file-access.middleware";
 import { authRoutes } from "./routes/auth.routes";
 import { adminRoutes } from "./routes/admin.routes";
 import { hooksRoutes } from "./routes/hooks.routes";
+import { recordingsRoutes } from "./routes/recordings.routes";
 import { repositoriesRoutes } from "./routes/repositories.routes";
 import { streamsRoutes } from "./routes/streams.routes";
 import { usersRoutes } from "./routes/users.routes";
 import { videosRoutes } from "./routes/videos.routes";
+import { streamService } from "./services/stream.service";
 
 const app = express();
 
@@ -61,6 +63,7 @@ app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/repositories", repositoriesRoutes);
 app.use("/api/v1/streams", streamsRoutes);
 app.use("/api/v1/hooks", hooksRoutes);
+app.use("/api/v1/recordings", recordingsRoutes);
 app.use("/api/v1/users", usersRoutes);
 app.use("/api/v1/videos", videosRoutes);
 app.use(
@@ -88,6 +91,7 @@ app.use(errorMiddleware);
 
 const start = async () => {
   await initializeTargetDirectory();
+  streamService.startReconcileLoop();
 
   app.listen(env.PORT, () => {
     console.log(`EgoFlow backend listening on port ${env.PORT}`);

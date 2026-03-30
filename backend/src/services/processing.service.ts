@@ -1,31 +1,35 @@
 import { Queue } from "bullmq";
 
-import { env } from "../config/env";
 import { buildBullConnection } from "../lib/bullmq";
-import type { VideoProcessingJobData } from "../types/stream";
+import type { RecordingFinalizeJobData } from "../types/stream";
 
-const processingQueue = new Queue<VideoProcessingJobData, void, "video-processing">(env.BULLMQ_QUEUE_NAME, {
-  connection: buildBullConnection(),
-});
+const recordingFinalizeQueue = new Queue<RecordingFinalizeJobData, void, "recording-finalize">(
+  "recording-finalize",
+  { connection: buildBullConnection() },
+);
 
-export const buildVideoProcessingJobId = (videoId: string) => `video-${videoId}`;
+export const buildRecordingFinalizeJobId = (recordingSessionId: string) => `finalize-${recordingSessionId}`;
 
 export class ProcessingService {
-  async enqueueVideoProcessing(payload: VideoProcessingJobData) {
-    return processingQueue.add("video-processing", payload, {
-      jobId: buildVideoProcessingJobId(payload.videoId),
+  async enqueueRecordingFinalize(payload: RecordingFinalizeJobData) {
+    return recordingFinalizeQueue.add("recording-finalize", payload, {
+      jobId: buildRecordingFinalizeJobId(payload.recordingSessionId),
       attempts: 3,
       backoff: {
         type: "exponential",
-        delay: 2_000,
+        delay: 5_000,
       },
       removeOnComplete: 1000,
       removeOnFail: 2000,
     });
   }
 
-  async getVideoProcessingProgress(videoId: string): Promise<number | null> {
-    const job = await processingQueue.getJob(buildVideoProcessingJobId(videoId));
+  async getRecordingFinalizeProgress(recordingSessionId: string | null): Promise<number | null> {
+    if (!recordingSessionId) {
+      return null;
+    }
+
+    const job = await recordingFinalizeQueue.getJob(buildRecordingFinalizeJobId(recordingSessionId));
     if (!job || typeof job.progress !== "number") {
       return null;
     }

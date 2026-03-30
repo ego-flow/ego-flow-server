@@ -74,7 +74,7 @@ Command summary:
 - `ps`: shows current compose service status
 - `logs [service]`: follows logs for the whole stack or a single service
 - `down`: stops and removes the compose stack
-- `reset`: removes containers, volumes, and local Redis bind-mount data
+- `reset`: removes containers, volumes, and local Redis/raw/datasets bind-mount data
 - `install-docker`: Ubuntu-only Docker installer helper
 
 ## How Startup Works
