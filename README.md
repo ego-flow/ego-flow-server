@@ -20,8 +20,8 @@ pip install ego-flow
 
 ### Prerequisites
 
-- (Leave for Minsu, Dennis)
-- (include dockers, node minimum version)
+- Docker Engine or Docker Desktop with the Docker Compose v2 plugin installed, and a running Docker daemon.
+- Node.js `24` or later if you plan to run `npm` commands directly in `backend/` or `frontend/`. For the standard Docker-based workflow in this repository, a local Node.js installation is optional.
 
 Verify your environment:
 
@@ -92,7 +92,28 @@ Default seeded dashboard login:
 
 > *Warning: Files under `TARGET_DIRECTORY` that are not related to EgoFlow Server may be removed during server operations.*
 
-(leave for minsu, dennis)
+`TARGET_DIRECTORY` is the root directory that EgoFlow Server manages for processed outputs. Use a dedicated directory for EgoFlow only. In the default Docker Compose setup, the container path `/data/datasets` is bind-mounted to `./data/datasets` on the host.
+
+Raw ingest files are stored separately under `./data/raw` and are not part of `TARGET_DIRECTORY`.
+
+Typical layout under `TARGET_DIRECTORY`:
+
+```text
+{TARGET_DIRECTORY}/
+└── {owner_id}/
+    └── {repository_name}/
+        ├── {video_id}.mp4
+        ├── .dashboard/
+        │   └── {video_id}.mp4
+        └── .thumbnails/
+            └── {video_id}.jpg
+```
+
+- `{video_id}.mp4` is the processed dataset/VLM video.
+- `.dashboard/` stores the dashboard playback copy.
+- `.thumbnails/` stores generated preview images.
+- Temporary processing files may be created under `{TARGET_DIRECTORY}/.tmp/` while recordings are being finalized.
+- If `TARGET_DIRECTORY` changes, the backend migrates managed files to the new location on startup and rewrites stored paths.
 
 ## Configuration Details
 
