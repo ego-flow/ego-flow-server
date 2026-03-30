@@ -1,133 +1,207 @@
 # EgoFlow Server
 
-Docker-first full stack for EgoFlow.
+EgoFlow is a platform for collecting egocentric video from AR glasses (such as Ray-Ban Meta, Google Glass, and Samsung smart glasses). It supports both video capture and live streaming, and includes a web dashboard for managing recordings. You can also use our Python library to work with the collected data in your own projects.
 
-This repository packages the API server, dashboard, background worker, and supporting infrastructure into a single Docker Compose workflow. Standard local usage does not require a host-side Node.js installation.
+This repository contains the EgoFlow server stack that powers the app, Python library, and web dashboard.
 
-## What Runs
+The EgoFlow app is available on the App Store.
 
-- PostgreSQL
-- Redis
-- Express + TypeScript backend API
-- TanStack Start dashboard
-- BullMQ worker
-- MediaMTX
+| Android | IOS |
+| :--------------------------------: | :--------------------------------: |
+| App Store | [EgoFlow App](https://example.com) |
 
-## Prerequisites
 
-- Docker Engine
-- Docker Compose v2 plugin
+The EgoFlow Python package is available via:
+```bash
+pip install ego-flow
+```
+
+## Getting Started
+
+### Prerequisites
+
+- (Leave for Minsu, Dennis)
+- (include dockers, node minimum version)
 
 Verify your environment:
 
 ```bash
-cd ego-flow-server
-./scripts/dev.sh doctor
+./scripts/run.sh doctor
 ```
 
-If you are on Ubuntu and do not have Docker installed yet, an optional helper is included:
+### Configuration
+
+Set the required fields in `config.json` before starting the server. See [Config.json](#configjson) for more information.
+
+> *Warning: Files under `TARGET_DIRECTORY` that are not related to EgoFlow Server may be removed during server operations.*
+
+
+```json
+{
+    // Required
+    "TARGET_DIRECTORY": "/absolute/path/to/datasets",
+
+    // Optional
+    "PUBLIC_HTTP_PORT": 80,
+    "RTMP_PORT": 1935,
+    ...
+}
+```
+
+
+Set sensitive values in `.env`. See [.env](#env) for more information.
 
 ```bash
-./scripts/dev.sh install-docker
+# Required
+ADMIN_DEFAULT_PASSWORD=changeme123
+JWT_SECRET=replace-this-in-production
+
+# Optional
+HF_TOKEN=your-hf-token-for-hf-connection
+...
 ```
 
-After installation, restart your terminal session before retrying Docker commands.
-
-## Quick Start
-
-Clone the repository and start the full stack:
+### Start the Server
 
 ```bash
-cd ego-flow-server
-./scripts/dev.sh up
+./scripts/run.sh up
 ```
 
-When startup completes, these endpoints should be available:
+When startup finishes, the following endpoints should be available:
 
-- API health: `http://127.0.0.1:3000/api/v1/health`
-- Dashboard: `http://127.0.0.1:8088`
-- Live monitor: `http://127.0.0.1:8088/live`
-- RTMP ingest: `rtmp://127.0.0.1:1935/live`
-- HLS output: `http://127.0.0.1:8888`
+- API & Dashboard: `http://127.0.0.1:{PUBLIC_HTTP_PORT}`
+- RTMP ingest: `rtmp://127.0.0.1:{RTMP_PORT}/live`
+- HLS output: `http://127.0.0.1:{HLS_PORT}`
 
 Default seeded dashboard login:
 
-- id: `admin`
-- password: `changeme123` unless `ADMIN_DEFAULT_PASSWORD` is overridden
+- ID: `admin`
+- Password: `ADMIN_DEFAULT_PASSWORD`
 
-## Common Commands
+### Published Ports
+
+| Port | Default | Purpose |
+| --- | --- | --- |
+| `{PUBLIC_HTTP_PORT}` | `80` | Public entry point for both the API and dashboard |
+| `{RTMP_PORT}` | `1935` | RTMP ingest |
+| `{HLS_PORT}` | `8888` | HLS playback |
+| `{MEDIAMTX_API_PORT}` | `9997` | MediaMTX control API |
+
+
+## Storage and Target Directory
+
+> *Warning: Files under `TARGET_DIRECTORY` that are not related to EgoFlow Server may be removed during server operations.*
+
+(leave for minsu, dennis)
+
+## Configuration Details
+
+### config.json
+
+Only `TARGET_DIRECTORY` is required and does not have a default. Everything else is optional and has sensible defaults.
+
+*Warning: Files under `TARGET_DIRECTORY` may be removed during server operations.*
+
+```json
+{
+    // Required
+    "TARGET_DIRECTORY": "/absolute/path/to/datasets",
+
+    // Optional
+    "PUBLIC_HTTP_PORT": 80,
+    "RTMP_PORT": 1935,
+    "HLS_PORT": 8888,
+    "MEDIAMTX_API_PORT": 9997,
+
+    "JWT_EXPIRES_IN": "24h",
+    "JWT_REFRESH_THRESHOLD_SECONDS": 21600,
+
+    "CORS_ORIGIN": "*",
+    "WORKER_CONCURRENCY": 2,
+    "DELETE_RAW_AFTER_PROCESSING": true
+}
+```
+
+Here’s what each config field does.
+
+| Key | Required | Default | Description |
+| --- | --- | --- | --- |
+| `TARGET_DIRECTORY` | Yes | None | Root directory for server-managed files, including processed media and other files required for server operations. |
+| `PUBLIC_HTTP_PORT` | No | `80` | Public HTTP port exposed to users. Both the dashboard and API should sit behind this single entry point. |
+| `RTMP_PORT` | No | `1935` | Port used for RTMP ingest from the app or AR glasses. |
+| `HLS_PORT` | No | `8888` | Port used for HLS live playback output. |
+| `MEDIAMTX_API_PORT` | No | `9997` | Port used for the MediaMTX control API. |
+| `JWT_EXPIRES_IN` | No | `24h` | Access-token lifetime. |
+| `JWT_REFRESH_THRESHOLD_SECONDS` | No | `21600` | Remaining-token threshold for issuing a refreshed token in responses. |
+| `CORS_ORIGIN` | No | `*` | Allowed browser origin for dashboard/API requests. |
+| `WORKER_CONCURRENCY` | No | `2` | Number of recording finalize jobs the worker can process in parallel. |
+| `DELETE_RAW_AFTER_PROCESSING` | No | `true` | Whether raw recorded segments are deleted after successful post-processing. |
+
+
+### .env
+
+Required secrets should be set in `.env` before starting the server. Optional values can be added when needed.
 
 ```bash
-./scripts/dev.sh up
-./scripts/dev.sh doctor
-./scripts/dev.sh ps
-./scripts/dev.sh logs
-./scripts/dev.sh logs backend
-./scripts/dev.sh down
-./scripts/dev.sh reset
+# Required
+ADMIN_DEFAULT_PASSWORD=changeme123
+JWT_SECRET=replace-this-in-production
+
+# Optional
+DATABASE_URL=postgresql://...
+REDIS_URL=redis://...
+
+HF_TOKEN=your-hf-token-for-hf-connection
+```
+
+Here’s what each `.env` field does.
+
+| Key | Required | Default | Description |
+| --- | --- | --- | --- |
+| `ADMIN_DEFAULT_PASSWORD` | Yes | None | Default password for the seeded admin account. |
+| `JWT_SECRET` | Yes | None | Secret key used to sign and verify JWT access tokens. |
+| `DATABASE_URL` | No | `postgresql://postgres:postgres@127.0.0.1:5432/egoflow?schema=public` | PostgreSQL connection string used by the backend. |
+| `REDIS_URL` | No | `redis://127.0.0.1:6379` | Redis connection string used for caching and BullMQ. |
+| `HF_TOKEN` | No | None | Hugging Face token used for Hugging Face integration. |
+
+## Commands for run
+
+`./scripts/run.sh` is a convenience wrapper for managing the local Docker Compose stack.
+
+```bash
+  ./scripts/run.sh up               # Build and start the stack
+  ./scripts/run.sh down             # Stop the stack
+  ./scripts/run.sh doctor           # Check prerequisites
+  ./scripts/run.sh ps               # Show service status
+  ./scripts/run.sh logs [service]   # Follow logs
+  ./scripts/run.sh reset            # Remove containers, volumes, and data
+  ./scripts/run.sh install-docker   # Install Docker on Ubuntu
 ```
 
 Command summary:
 
-- `up`: checks Docker, builds images, and starts the full stack
-- `doctor`: validates Docker, Compose, daemon access, and compose file presence
-- `ps`: shows current compose service status
-- `logs [service]`: follows logs for the whole stack or a single service
-- `down`: stops and removes the compose stack
-- `reset`: removes containers, volumes, and local Redis/raw/datasets bind-mount data
-- `install-docker`: Ubuntu-only Docker installer helper
+- `./scripts/run.sh up`: Checks prerequisites, builds images, starts the full stack, and waits until the main services are ready.
+- `./scripts/run.sh down`: Stops and removes the Compose stack.
+- `./scripts/run.sh doctor`: Checks Docker, Docker Compose, and basic local prerequisites.
+- `./scripts/run.sh ps`: Shows the current status of Compose services.
+- `./scripts/run.sh logs [service]`: Follows logs for the full stack or for a specific service.
+- `./scripts/run.sh reset`: Removes containers, volumes, and local bind-mount data under `./data/`. This is destructive.
+- `./scripts/run.sh install-docker`: Runs the Ubuntu helper script to install Docker and Docker Compose.
 
-## How Startup Works
+## For Developers
 
-`./scripts/dev.sh up` starts all services defined in `docker-compose.yml`:
+If you want to customize or contribute to the project, please refer to the following documents:
 
-- `postgres`
-- `redis`
-- `backend`
-- `worker`
-- `dashboard`
-- `mediamtx`
+- [Backend development docs](./backend/README.md)
+- [Frontend development docs](./frontend/README.md)
+- Android app development docs (coming soon)
+- iOS app development docs (coming soon)
+- Python package docs (coming soon)
 
-The backend container performs database migration and seed work before starting the API process. The worker uses the same image as the backend but runs the queue processor entrypoint instead. The dashboard uses its own multi-stage Node image and serves the built TanStack Start app on port `8088`.
+## Project Status
 
-## Dashboard Capabilities
+This repository is currently in beta and remains under active development.
 
-The current dashboard exposes these flows:
+Planned and ongoing work:
 
-- `/login`: JWT login
-- `/videos`: processed video list with filter/sort UI
-- `/videos/:videoId`: playback, processing status, and delete action
-- `/live`: active stream list with HLS playback
-- `/admin/users`: admin-only user creation, password reset, and deactivation
-- `/admin/settings`: admin-only target directory management
-
-## Persistence
-
-Persistent data is stored through Docker volumes and bind mounts:
-
-- PostgreSQL uses a named Docker volume
-- Redis stores append-only data under `./data/redis`
-- Raw media is mounted from `./data/raw`
-- Generated datasets are mounted from `./data/datasets`
-
-`./scripts/dev.sh reset` is destructive and should only be used when you want to wipe local state.
-
-## Repository Layout
-
-- `backend/`: API server and worker source
-- `frontend/`: dashboard source and production runtime wrapper
-- `scripts/`: local development and operations helpers
-- `guide/`: implementation guide, roadmap, and API specification
-- `docker-compose.yml`: full local stack definition
-
-## Development Notes
-
-- The default workflow is Docker-first
-- Code changes are picked up by rebuilding with `./scripts/dev.sh up`
-- Standard usage does not depend on local `npm install` or any local `.env` bootstrap
-
-## Related Documentation
-
-- [Implementation guide](./guide/EgoFlow_IMPLEMENTATION_GUIDE.md)
-- [Task roadmap](./guide/EgoFlow_TASK_ROADMAP.md)
-- [API specification](./guide/EgoFlow_API_SPEC.md)
+- [ ] List major milestones or key objectives here.
