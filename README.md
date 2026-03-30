@@ -20,8 +20,8 @@ pip install ego-flow
 
 ### Prerequisites
 
-- Docker Engine or Docker Desktop with the Docker Compose v2 plugin installed, and a running Docker daemon.
-- Node.js `24` or later if you plan to run `npm` commands directly in `backend/` or `frontend/`. For the standard Docker-based workflow in this repository, a local Node.js installation is optional.
+- Docker Engine or Docker Desktop with Docker Compose v2.
+- Node.js `24+` only if you want to run `npm` directly in `backend/` or `frontend/`. It is not required for the default Docker workflow.
 
 Verify your environment:
 
