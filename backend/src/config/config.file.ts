@@ -1,0 +1,56 @@
+import fs from "fs";
+import path from "path";
+
+import { z } from "zod";
+
+const configFileSchema = z.object({
+  TARGET_DIRECTORY: z.string().min(1),
+  PUBLIC_HTTP_PORT: z.coerce.number().int().positive().default(80),
+  RTMP_PORT: z.coerce.number().int().positive().default(1935),
+  HLS_PORT: z.coerce.number().int().positive().default(8888),
+  MEDIAMTX_API_PORT: z.coerce.number().int().positive().default(9997),
+  CORS_ORIGIN: z.string().default("*"),
+  WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
+  DELETE_RAW_AFTER_PROCESSING: z.boolean().default(true),
+  JWT_EXPIRES_IN: z.string().default("24h"),
+  JWT_REFRESH_THRESHOLD_SECONDS: z.coerce.number().int().positive().default(6 * 60 * 60),
+});
+
+const getProjectRootDir = () => path.resolve(__dirname, "../../..");
+
+const resolveConfiguredPath = (value: string | undefined, fallbackName: string) => {
+  if (!value) {
+    return path.join(getProjectRootDir(), fallbackName);
+  }
+
+  return path.isAbsolute(value) ? value : path.resolve(getProjectRootDir(), value);
+};
+
+export const getConfigFilePath = () => resolveConfiguredPath(process.env.CONFIG_PATH, "config.json");
+
+const configFilePath = getConfigFilePath();
+
+if (!fs.existsSync(configFilePath)) {
+  console.error(`Missing config file: ${configFilePath}`);
+  console.error("Create it from config.json.example before starting the server.");
+  process.exit(1);
+}
+
+let parsedJson: unknown;
+try {
+  const raw = fs.readFileSync(configFilePath, "utf8");
+  parsedJson = JSON.parse(raw);
+} catch (error) {
+  const message = error instanceof Error ? error.message : "unknown error";
+  console.error(`Failed to read config file ${configFilePath}: ${message}`);
+  process.exit(1);
+}
+
+const parsed = configFileSchema.safeParse(parsedJson);
+
+if (!parsed.success) {
+  console.error("Invalid config.json:", parsed.error.flatten().fieldErrors);
+  process.exit(1);
+}
+
+export const fileConfig = parsed.data;

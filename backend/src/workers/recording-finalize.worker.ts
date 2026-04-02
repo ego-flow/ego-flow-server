@@ -7,7 +7,7 @@ import { RecordingSessionStatus, RecordingSegmentStatus, VideoStatus } from "@pr
 import { buildBullConnection } from "../lib/bullmq";
 import { probeVideoMetadata } from "../lib/ffprobe";
 import { prisma } from "../lib/prisma";
-import { env } from "../config/env";
+import { runtimeConfig as env } from "../config/runtime";
 import { waitForStableFile, formatErrorMessage } from "../lib/file-utils";
 import type { RecordingFinalizeJobData } from "../types/stream";
 import {

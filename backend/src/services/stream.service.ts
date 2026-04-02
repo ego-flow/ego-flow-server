@@ -4,7 +4,7 @@ import { AppError } from "../lib/errors";
 import { redis } from "../lib/redis";
 import { getTargetDirectory } from "../lib/storage";
 import { prisma } from "../lib/prisma";
-import { env } from "../config/env";
+import { runtimeConfig as env } from "../config/runtime";
 import type { AppUserRole } from "../types/auth";
 import type { StreamRegisterInput } from "../schemas/stream.schema";
 import type { RecordingSessionLiveCache } from "../types/stream";

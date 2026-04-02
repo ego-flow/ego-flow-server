@@ -9,4 +9,5 @@ data/redis/
 !data/datasets/.gitkeep
 
 .env
+config.json
 backend/.env

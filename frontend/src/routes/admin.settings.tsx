@@ -35,7 +35,7 @@ function AdminSettingsPage() {
         </div>
 
         <div className="space-y-2 text-sm text-[var(--sea-ink-soft)]">
-          <p>To change this path, update the server `TARGET_DIRECTORY` environment variable and restart the backend.</p>
+          <p>To change this path, update the server `config.json` file and restart the backend.</p>
           <p>When the configured path changes on boot, EgoFlow migrates existing generated datasets to the new directory automatically.</p>
         </div>
 

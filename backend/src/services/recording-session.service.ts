@@ -3,7 +3,7 @@ import { RecordingSessionStatus, RecordingSessionEndReason, RecordingSegmentStat
 import { AppError } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
-import { env } from "../config/env";
+import { runtimeConfig as env } from "../config/runtime";
 import { processingService } from "./processing.service";
 import type {
   RecordingSessionLiveCache,

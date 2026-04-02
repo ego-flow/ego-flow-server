@@ -5,7 +5,7 @@ import morgan from "morgan";
 import type { NextFunction, Request, Response } from "express";
 import swaggerUi from "swagger-ui-express";
 
-import { env } from "./config/env";
+import { runtimeConfig as env } from "./config/runtime";
 import { openApiDocument } from "./docs/openapi";
 import { AppError } from "./lib/errors";
 import { redis } from "./lib/redis";
@@ -25,6 +25,7 @@ import { streamService } from "./services/stream.service";
 
 const app = express();
 
+app.set("trust proxy", true);
 app.use(helmet());
 app.use(
   cors({
@@ -69,7 +70,7 @@ app.use("/api/v1/videos", videosRoutes);
 app.use(
   "/files",
   (_req, res, next) => {
-    // Dashboard runs on a different origin (:8088) and embeds media from the backend (:3000).
+    // Keep file responses embeddable whether the dashboard is same-origin behind the proxy or served elsewhere.
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     next();
   },

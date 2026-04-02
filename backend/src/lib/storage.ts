@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 
-import { env } from "../config/env";
+import { runtimeConfig as env } from "../config/runtime";
 import { prisma } from "./prisma";
 
 const TARGET_DIRECTORY_SETTING_KEY = "target_directory";

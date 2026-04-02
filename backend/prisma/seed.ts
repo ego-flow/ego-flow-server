@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { PrismaClient, UserRole } from "@prisma/client";
 
-import { env } from "../src/config/env";
+import { runtimeConfig as env } from "../src/config/runtime";
 
 const prisma = new PrismaClient();
 
