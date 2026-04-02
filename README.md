@@ -16,6 +16,19 @@ The EgoFlow Python package is available via:
 pip install ego-flow
 ```
 
+## Implementation Status
+
+Current implementation status for deployment:
+
+- `./scripts/run.sh` is the standard local entrypoint.
+- `./scripts/dev.sh` still works as a transition-period compatibility wrapper.
+- Compose is organized as `compose.yml` + `compose.local.yml` for local and `compose.yml` + `compose.prod.yml` for production.
+- `compose.yml` keeps the shared service contract, while published ports, bind mounts, and runtime file delivery live in the environment-specific override files.
+- `config.json` and `.env` are now the active runtime configuration inputs for backend and worker.
+- The EC2 deployment path keeps production runtime files under `/opt/egoflow/config` and release metadata under `/opt/egoflow/releases`.
+- `PUBLIC_HTTP_PORT` is now the single public HTTP entrypoint for both the API and dashboard.
+- backend `3000`, dashboard `8088`, and the MediaMTX control API are internal-only container ports.
+
 ## Getting Started
 
 ### Prerequisites
@@ -31,20 +44,32 @@ Verify your environment:
 
 ### Configuration
 
-Set the required fields in `config.json` before starting the server. See [Config.json](#configjson) for more information.
+Create `config.json` and `.env` before starting the server.
+
+The quickest local setup is:
+
+```bash
+cp ./config.json.example ./config.json
+cp ./.env.example ./.env
+```
+
+Then update the required values for your environment.
 
 > *Warning: Files under `TARGET_DIRECTORY` that are not related to EgoFlow Server may be removed during server operations.*
 
 
 ```json
 {
-    // Required
-    "TARGET_DIRECTORY": "/absolute/path/to/datasets",
-
-    // Optional
-    "PUBLIC_HTTP_PORT": 80,
-    "RTMP_PORT": 1935,
-    ...
+  "TARGET_DIRECTORY": "/data/datasets",
+  "PUBLIC_HTTP_PORT": 80,
+  "RTMP_PORT": 1935,
+  "HLS_PORT": 8888,
+  "MEDIAMTX_API_PORT": 9997,
+  "CORS_ORIGIN": "*",
+  "WORKER_CONCURRENCY": 2,
+  "DELETE_RAW_AFTER_PROCESSING": true,
+  "JWT_EXPIRES_IN": "24h",
+  "JWT_REFRESH_THRESHOLD_SECONDS": 21600
 }
 ```
 
@@ -57,8 +82,12 @@ ADMIN_DEFAULT_PASSWORD=changeme123
 JWT_SECRET=replace-this-in-production
 
 # Optional
+DATABASE_URL=postgresql://postgres:postgres@postgres:5432/egoflow?schema=public
+REDIS_URL=redis://redis:6379
 HF_TOKEN=your-hf-token-for-hf-connection
-...
+PUBLIC_RTMP_BASE_URL=rtmp://your-host:1935/live
+PUBLIC_HLS_BASE_URL=http://your-host:8888
+MEDIAMTX_API_URL=http://mediamtx:9997
 ```
 
 ### Start the Server
@@ -67,25 +96,27 @@ HF_TOKEN=your-hf-token-for-hf-connection
 ./scripts/run.sh up
 ```
 
-When startup finishes, the following endpoints should be available:
+When startup finishes, the current local stack exposes the following endpoints:
 
-- API & Dashboard: `http://127.0.0.1:{PUBLIC_HTTP_PORT}`
+- Backend health: `http://127.0.0.1:{PUBLIC_HTTP_PORT}/api/v1/health`
+- Swagger UI: `http://127.0.0.1:{PUBLIC_HTTP_PORT}/api-docs`
+- Dashboard: `http://127.0.0.1:{PUBLIC_HTTP_PORT}`
 - RTMP ingest: `rtmp://127.0.0.1:{RTMP_PORT}/live`
 - HLS output: `http://127.0.0.1:{HLS_PORT}`
 
-Default seeded dashboard login:
+Current local seeded dashboard login:
 
 - ID: `admin`
-- Password: `ADMIN_DEFAULT_PASSWORD`
+- Password: `changeme123`
 
 ### Published Ports
 
 | Port | Default | Purpose |
 | --- | --- | --- |
-| `{PUBLIC_HTTP_PORT}` | `80` | Public entry point for both the API and dashboard |
-| `{RTMP_PORT}` | `1935` | RTMP ingest |
-| `{HLS_PORT}` | `8888` | HLS playback |
-| `{MEDIAMTX_API_PORT}` | `9997` | MediaMTX control API |
+| `PUBLIC_HTTP_PORT` | `80` | Public HTTP entrypoint for dashboard, API, Swagger UI, OpenAPI JSON, and `/files/*` |
+| `RTMP_PORT` | `1935` | RTMP ingest |
+| `HLS_PORT` | `8888` | HLS playback |
+| `MEDIAMTX_API_PORT` | `9997` | Internal MediaMTX control API port used inside the Docker network |
 
 
 ## Storage and Target Directory
@@ -113,7 +144,7 @@ Typical layout under `TARGET_DIRECTORY`:
 - `.dashboard/` stores the dashboard playback copy.
 - `.thumbnails/` stores generated preview images.
 - Temporary processing files may be created under `{TARGET_DIRECTORY}/.tmp/` while recordings are being finalized.
-- If `TARGET_DIRECTORY` changes, the backend migrates managed files to the new location on startup and rewrites stored paths.
+- If `TARGET_DIRECTORY` changes, the backend migrates managed files to the new location on startup and rewrites stored paths. Treat this as an operations change with backup/rollback planning in production.
 
 ## Configuration Details
 
@@ -125,21 +156,16 @@ Only `TARGET_DIRECTORY` is required and does not have a default. Everything else
 
 ```json
 {
-    // Required
-    "TARGET_DIRECTORY": "/absolute/path/to/datasets",
-
-    // Optional
-    "PUBLIC_HTTP_PORT": 80,
-    "RTMP_PORT": 1935,
-    "HLS_PORT": 8888,
-    "MEDIAMTX_API_PORT": 9997,
-
-    "JWT_EXPIRES_IN": "24h",
-    "JWT_REFRESH_THRESHOLD_SECONDS": 21600,
-
-    "CORS_ORIGIN": "*",
-    "WORKER_CONCURRENCY": 2,
-    "DELETE_RAW_AFTER_PROCESSING": true
+  "TARGET_DIRECTORY": "/data/datasets",
+  "PUBLIC_HTTP_PORT": 80,
+  "RTMP_PORT": 1935,
+  "HLS_PORT": 8888,
+  "MEDIAMTX_API_PORT": 9997,
+  "JWT_EXPIRES_IN": "24h",
+  "JWT_REFRESH_THRESHOLD_SECONDS": 21600,
+  "CORS_ORIGIN": "*",
+  "WORKER_CONCURRENCY": 2,
+  "DELETE_RAW_AFTER_PROCESSING": true
 }
 ```
 
@@ -148,20 +174,24 @@ Here’s what each config field does.
 | Key | Required | Default | Description |
 | --- | --- | --- | --- |
 | `TARGET_DIRECTORY` | Yes | None | Root directory for server-managed files, including processed media and other files required for server operations. |
-| `PUBLIC_HTTP_PORT` | No | `80` | Public HTTP port exposed to users. Both the dashboard and API should sit behind this single entry point. |
+| `PUBLIC_HTTP_PORT` | No | `80` | Public HTTP port exposed to users. The reverse proxy serves both the dashboard and backend routes behind this single entry point. |
 | `RTMP_PORT` | No | `1935` | Port used for RTMP ingest from the app or AR glasses. |
 | `HLS_PORT` | No | `8888` | Port used for HLS live playback output. |
-| `MEDIAMTX_API_PORT` | No | `9997` | Port used for the MediaMTX control API. |
+| `MEDIAMTX_API_PORT` | No | `9997` | Internal port used for the MediaMTX control API. It is not published externally in the default stack. |
 | `JWT_EXPIRES_IN` | No | `24h` | Access-token lifetime. |
 | `JWT_REFRESH_THRESHOLD_SECONDS` | No | `21600` | Remaining-token threshold for issuing a refreshed token in responses. |
 | `CORS_ORIGIN` | No | `*` | Allowed browser origin for dashboard/API requests. |
 | `WORKER_CONCURRENCY` | No | `2` | Number of recording finalize jobs the worker can process in parallel. |
 | `DELETE_RAW_AFTER_PROCESSING` | No | `true` | Whether raw recorded segments are deleted after successful post-processing. |
 
+The reverse proxy listens on `PUBLIC_HTTP_PORT` and forwards `/api*`, `/api-docs*`, and `/files*` to the backend while sending all remaining web routes to the dashboard. backend `3000` and dashboard `8088` stay internal to the Docker network.
+
+The shared proxy policy lives in `ego-flow-server/Caddyfile` and is used by both the local compose stack and the EC2 compose stack.
+
 
 ### .env
 
-Required secrets should be set in `.env` before starting the server. Optional values can be added when needed.
+`.env` is required for startup because it holds the seeded admin password and JWT signing secret.
 
 ```bash
 # Required
@@ -169,10 +199,12 @@ ADMIN_DEFAULT_PASSWORD=changeme123
 JWT_SECRET=replace-this-in-production
 
 # Optional
-DATABASE_URL=postgresql://...
-REDIS_URL=redis://...
-
+DATABASE_URL=postgresql://postgres:postgres@postgres:5432/egoflow?schema=public
+REDIS_URL=redis://redis:6379
 HF_TOKEN=your-hf-token-for-hf-connection
+PUBLIC_RTMP_BASE_URL=rtmp://your-host:1935/live
+PUBLIC_HLS_BASE_URL=http://your-host:8888
+MEDIAMTX_API_URL=http://mediamtx:9997
 ```
 
 Here’s what each `.env` field does.
@@ -181,13 +213,20 @@ Here’s what each `.env` field does.
 | --- | --- | --- | --- |
 | `ADMIN_DEFAULT_PASSWORD` | Yes | None | Default password for the seeded admin account. |
 | `JWT_SECRET` | Yes | None | Secret key used to sign and verify JWT access tokens. |
-| `DATABASE_URL` | No | `postgresql://postgres:postgres@127.0.0.1:5432/egoflow?schema=public` | PostgreSQL connection string used by the backend. |
-| `REDIS_URL` | No | `redis://127.0.0.1:6379` | Redis connection string used for caching and BullMQ. |
+| `DATABASE_URL` | No | `postgresql://postgres:postgres@postgres:5432/egoflow?schema=public` | PostgreSQL connection string used by the backend. |
+| `REDIS_URL` | No | `redis://redis:6379` | Redis connection string used for caching and BullMQ. |
 | `HF_TOKEN` | No | None | Hugging Face token used for Hugging Face integration. |
+| `PUBLIC_RTMP_BASE_URL` | No | `rtmp://127.0.0.1:{RTMP_PORT}/live` | Public RTMP base URL returned to clients. Override this in non-local deployments. |
+| `PUBLIC_HLS_BASE_URL` | No | `http://127.0.0.1:{HLS_PORT}` | Public HLS base URL returned to clients. Override this in non-local deployments. |
+| `MEDIAMTX_API_URL` | No | `http://mediamtx:{MEDIAMTX_API_PORT}` | Internal MediaMTX API URL used by the backend. |
 
 ## Commands for run
 
-`./scripts/run.sh` is a convenience wrapper for managing the local Docker Compose stack.
+`./scripts/run.sh` is the standard entrypoint for managing the current local Docker Compose stack.
+
+`./scripts/dev.sh` remains available as a transition-period compatibility wrapper and forwards to `./scripts/run.sh`.
+
+The local stack is rendered from `compose.yml` and `compose.local.yml`.
 
 ```bash
   ./scripts/run.sh up               # Build and start the stack
@@ -203,11 +242,15 @@ Command summary:
 
 - `./scripts/run.sh up`: Checks prerequisites, builds images, starts the full stack, and waits until the main services are ready.
 - `./scripts/run.sh down`: Stops and removes the Compose stack.
-- `./scripts/run.sh doctor`: Checks Docker, Docker Compose, and basic local prerequisites.
+- `./scripts/run.sh doctor`: Checks Docker, Docker Compose, `config.json`, `.env`, and the configured public RTMP/HLS port values.
 - `./scripts/run.sh ps`: Shows the current status of Compose services.
 - `./scripts/run.sh logs [service]`: Follows logs for the full stack or for a specific service.
 - `./scripts/run.sh reset`: Removes containers, volumes, and local bind-mount data under `./data/`. This is destructive.
 - `./scripts/run.sh install-docker`: Runs the Ubuntu helper script to install Docker and Docker Compose.
+
+`./scripts/run.sh reset` is a local-development helper. It is not a production deployment procedure.
+
+Production data changes, schema migrations, backup/restore, and `TARGET_DIRECTORY` change procedures are documented in [deploy/ec2/data-operations.md](/home/dennis0405/ego-flow/deploy/ec2/data-operations.md).
 
 ## For Developers
 

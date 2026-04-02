@@ -1,31 +1,25 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: egoflow-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: egoflow
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-egoflow}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d egoflow"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-egoflow}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 20
 
   redis:
     image: redis:7-alpine
-    container_name: egoflow-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "6379:6379"
-    volumes:
-      - ./data/redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -33,10 +27,6 @@ services:
       retries: 20
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: egoflow-backend
     restart: unless-stopped
     depends_on:
       postgres:
@@ -46,28 +36,12 @@ services:
     environment: &backend_environment
       NODE_ENV: production
       PORT: 3000
-      CORS_ORIGIN: "*"
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/egoflow?schema=public
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: replace-this-in-production
-      JWT_EXPIRES_IN: 24h
-      JWT_REFRESH_THRESHOLD_SECONDS: 21600
-      ADMIN_DEFAULT_PASSWORD: changeme123
-      TARGET_DIRECTORY: /data/datasets
-      RTMP_BASE_URL: rtmp://127.0.0.1:1935/live
-      HLS_BASE_URL: http://127.0.0.1:8888
-      MEDIAMTX_API_URL: http://mediamtx:9997
-      WORKER_CONCURRENCY: 2
-      DELETE_RAW_AFTER_PROCESSING: "true"
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/egoflow?schema=public}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
     command: >
       sh -c "npm run prisma:migrate:deploy &&
       npm run db:seed:prod &&
       npm run start"
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./data/raw:/data/raw
-      - ./data/datasets:/data/datasets
     healthcheck:
       test:
         [
@@ -82,10 +56,6 @@ services:
       start_period: 20s
 
   worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: egoflow-worker
     restart: unless-stopped
     depends_on:
       postgres:
@@ -96,15 +66,8 @@ services:
         condition: service_healthy
     environment: *backend_environment
     command: ["npm", "run", "worker:start"]
-    volumes:
-      - ./data/raw:/data/raw
-      - ./data/datasets:/data/datasets
 
   dashboard:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: egoflow-dashboard
     restart: unless-stopped
     depends_on:
       backend:
@@ -113,8 +76,6 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 8088
-    ports:
-      - "8088:8088"
     healthcheck:
       test:
         [
@@ -128,23 +89,28 @@ services:
       retries: 12
       start_period: 20s
 
-  mediamtx:
-    image: bluenviron/mediamtx:latest-ffmpeg
-    container_name: egoflow-mediamtx
+  proxy:
+    image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "1935:1935"
-      - "8888:8888"
-      - "9997:9997"
-    volumes:
-      - ./mediamtx.yml:/mediamtx.yml:ro
-      - ./data/raw:/data/raw
-      - ./mediamtx-hooks:/mediamtx-hooks:ro
+      dashboard:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1/api/v1/health || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
-volumes:
-  postgres_data:
+  mediamtx:
+    image: bluenviron/mediamtx:latest-ffmpeg
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy

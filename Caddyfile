@@ -1,0 +1,12 @@
+:80 {
+	encode zstd gzip
+
+	@backend path /api* /api-docs* /files*
+	handle @backend {
+		reverse_proxy backend:3000
+	}
+
+	handle {
+		reverse_proxy dashboard:8088
+	}
+}

@@ -9,7 +9,7 @@ api: yes
 apiAddress: :9997
 
 authMethod: http
-authHTTPAddress: http://host.docker.internal:3000/api/v1/auth/rtmp
+authHTTPAddress: http://backend:3000/api/v1/auth/rtmp
 
 pathDefaults:
   source: publisher
