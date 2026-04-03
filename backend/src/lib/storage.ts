@@ -128,16 +128,20 @@ export const initializeTargetDirectory = async (): Promise<string> => {
     );
     await migrateDirectoryContents(previousTargetDirectory, configuredTargetDirectory);
     await rewriteManagedVideoPaths(previousTargetDirectory, configuredTargetDirectory);
+    await prisma.setting.update({
+      where: { key: TARGET_DIRECTORY_SETTING_KEY },
+      data: { value: configuredTargetDirectory },
+    });
   }
 
-  await prisma.setting.upsert({
-    where: { key: TARGET_DIRECTORY_SETTING_KEY },
-    update: { value: configuredTargetDirectory },
-    create: {
-      key: TARGET_DIRECTORY_SETTING_KEY,
-      value: configuredTargetDirectory,
-    },
-  });
+  if (!previousTargetDirectory) {
+    await prisma.setting.create({
+      data: {
+        key: TARGET_DIRECTORY_SETTING_KEY,
+        value: configuredTargetDirectory,
+      },
+    });
+  }
 
   activeTargetDirectory = configuredTargetDirectory;
   return activeTargetDirectory;
