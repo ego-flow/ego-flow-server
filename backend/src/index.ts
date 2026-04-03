@@ -91,11 +91,20 @@ app.use((_req, _res, next) => {
 app.use(errorMiddleware);
 
 const start = async () => {
+  console.log("[startup] initializing target directory");
   await initializeTargetDirectory();
+  console.log("[startup] target directory ready");
+  console.log("[startup] starting reconcile loop");
   streamService.startReconcileLoop();
+  console.log("[startup] reconcile loop started");
 
-  app.listen(env.PORT, "0.0.0.0", () => {
-    console.log(`EgoFlow backend listening on port ${env.PORT}`);
+  await new Promise<void>((resolve, reject) => {
+    const server = app.listen(env.PORT, "0.0.0.0", () => {
+      console.log(`EgoFlow backend listening on port ${env.PORT}`);
+      resolve();
+    });
+
+    server.on("error", reject);
   });
 };
 
