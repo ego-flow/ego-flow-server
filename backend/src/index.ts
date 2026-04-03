@@ -94,7 +94,7 @@ const start = async () => {
   await initializeTargetDirectory();
   streamService.startReconcileLoop();
 
-  app.listen(env.PORT, () => {
+  app.listen(env.PORT, "0.0.0.0", () => {
     console.log(`EgoFlow backend listening on port ${env.PORT}`);
   });
 };
