@@ -24,17 +24,26 @@ if (!fs.existsSync(dotenvPath)) {
 
 dotenv.config({ path: dotenvPath, override: false });
 
+const optionalNonEmptyString = z.preprocess((value) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}, z.string().min(1).optional());
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
-  DATABASE_URL: z.string().min(1).optional(),
-  REDIS_URL: z.string().min(1).optional(),
+  DATABASE_URL: optionalNonEmptyString,
+  REDIS_URL: optionalNonEmptyString,
   JWT_SECRET: z.string().min(16),
   ADMIN_DEFAULT_PASSWORD: z.string().min(8),
-  HF_TOKEN: z.string().min(1).optional(),
-  PUBLIC_RTMP_BASE_URL: z.string().min(1).optional(),
-  PUBLIC_HLS_BASE_URL: z.string().min(1).optional(),
-  MEDIAMTX_API_URL: z.string().min(1).optional(),
+  HF_TOKEN: optionalNonEmptyString,
+  PUBLIC_RTMP_BASE_URL: optionalNonEmptyString,
+  PUBLIC_HLS_BASE_URL: optionalNonEmptyString,
+  MEDIAMTX_API_URL: optionalNonEmptyString,
 });
 
 const parsed = envSchema.safeParse(process.env);
