@@ -16,19 +16,6 @@ The EgoFlow Python package is available via:
 pip install ego-flow
 ```
 
-## Implementation Status
-
-Current implementation status for deployment:
-
-- `./scripts/run.sh` is the standard local entrypoint.
-- `./scripts/dev.sh` still works as a transition-period compatibility wrapper.
-- Compose is organized as `compose.yml` + `compose.local.yml` for local and `compose.yml` + `compose.prod.yml` for production.
-- `compose.yml` keeps the shared service contract, while published ports, bind mounts, and runtime file delivery live in the environment-specific override files.
-- `config.json` and `.env` are now the active runtime configuration inputs for backend and worker.
-- The EC2 deployment path keeps production runtime files under `/opt/egoflow/config` and release metadata under `/opt/egoflow/releases`.
-- `PUBLIC_HTTP_PORT` is now the single public HTTP entrypoint for both the API and dashboard.
-- backend `3000`, dashboard `8088`, and the MediaMTX control API are internal-only container ports.
-
 ## Getting Started
 
 ### Prerequisites
@@ -53,42 +40,9 @@ cp ./config.json.example ./config.json
 cp ./.env.example ./.env
 ```
 
-Then update the required values for your environment.
+Then update the values for your environment.
 
-> *Warning: Files under `TARGET_DIRECTORY` that are not related to EgoFlow Server may be removed during server operations.*
-
-
-```json
-{
-  "TARGET_DIRECTORY": "/data/datasets",
-  "PUBLIC_HTTP_PORT": 80,
-  "RTMP_PORT": 1935,
-  "HLS_PORT": 8888,
-  "MEDIAMTX_API_PORT": 9997,
-  "CORS_ORIGIN": "*",
-  "WORKER_CONCURRENCY": 2,
-  "DELETE_RAW_AFTER_PROCESSING": true,
-  "JWT_EXPIRES_IN": "24h",
-  "JWT_REFRESH_THRESHOLD_SECONDS": 21600
-}
-```
-
-
-Set sensitive values in `.env`. See [.env](#env) for more information.
-
-```bash
-# Required
-ADMIN_DEFAULT_PASSWORD=changeme123
-JWT_SECRET=replace-this-in-production
-
-# Optional
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/egoflow?schema=public
-REDIS_URL=redis://redis:6379
-HF_TOKEN=your-hf-token-for-hf-connection
-PUBLIC_RTMP_BASE_URL=rtmp://your-host:1935/live
-PUBLIC_HLS_BASE_URL=http://your-host:8888
-MEDIAMTX_API_URL=http://mediamtx:9997
-```
+Configuration examples and field-by-field explanations are documented in [Configuration Details](#configuration-details).
 
 ### Start the Server
 
@@ -96,13 +50,19 @@ MEDIAMTX_API_URL=http://mediamtx:9997
 ./scripts/run.sh up
 ```
 
-When startup finishes, the current local stack exposes the following endpoints:
+When startup finishes, HTTP access goes through a single public entrypoint:
 
-- Backend health: `http://127.0.0.1:{PUBLIC_HTTP_PORT}/api/v1/health`
-- Swagger UI: `http://127.0.0.1:{PUBLIC_HTTP_PORT}/api-docs`
-- Dashboard: `http://127.0.0.1:{PUBLIC_HTTP_PORT}`
-- RTMP ingest: `rtmp://127.0.0.1:{RTMP_PORT}/live`
-- HLS output: `http://127.0.0.1:{HLS_PORT}`
+- `http://localhost` when `PUBLIC_HTTP_PORT` is `80`
+- `http://localhost:{PUBLIC_HTTP_PORT}` when you changed the public HTTP port
+
+Using that HTTP base URL, the current local stack exposes:
+
+- Backend health: `{PUBLIC_HTTP_BASE}/api/v1/health`
+- Swagger UI: `{PUBLIC_HTTP_BASE}/api-docs`
+- OpenAPI JSON: `{PUBLIC_HTTP_BASE}/api/v1/openapi.json`
+- Dashboard: `{PUBLIC_HTTP_BASE}`
+- RTMP ingest: `rtmp://localhost:{RTMP_PORT}/live`
+- HLS output: `http://localhost:{HLS_PORT}`
 
 Current local seeded dashboard login:
 
@@ -198,7 +158,9 @@ The shared proxy policy lives in `ego-flow-server/Caddyfile` and is used by both
 ADMIN_DEFAULT_PASSWORD=changeme123
 JWT_SECRET=replace-this-in-production
 
-# Optional
+# Optional overrides
+# Defaults exist for the bundled Compose stack.
+# Set these explicitly in production.
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/egoflow?schema=public
 REDIS_URL=redis://redis:6379
 HF_TOKEN=your-hf-token-for-hf-connection
@@ -213,18 +175,16 @@ Here’s what each `.env` field does.
 | --- | --- | --- | --- |
 | `ADMIN_DEFAULT_PASSWORD` | Yes | None | Default password for the seeded admin account. |
 | `JWT_SECRET` | Yes | None | Secret key used to sign and verify JWT access tokens. |
-| `DATABASE_URL` | No | `postgresql://postgres:postgres@postgres:5432/egoflow?schema=public` | PostgreSQL connection string used by the backend. |
-| `REDIS_URL` | No | `redis://redis:6379` | Redis connection string used for caching and BullMQ. |
+| `DATABASE_URL` | No | `postgresql://postgres:postgres@postgres:5432/egoflow?schema=public` | PostgreSQL connection string override. The bundled Compose stack works without setting it because this default is applied automatically. |
+| `REDIS_URL` | No | `redis://redis:6379` | Redis connection string override. The bundled Compose stack works without setting it because this default is applied automatically. |
 | `HF_TOKEN` | No | None | Hugging Face token used for Hugging Face integration. |
-| `PUBLIC_RTMP_BASE_URL` | No | `rtmp://127.0.0.1:{RTMP_PORT}/live` | Public RTMP base URL returned to clients. Override this in non-local deployments. |
-| `PUBLIC_HLS_BASE_URL` | No | `http://127.0.0.1:{HLS_PORT}` | Public HLS base URL returned to clients. Override this in non-local deployments. |
-| `MEDIAMTX_API_URL` | No | `http://mediamtx:{MEDIAMTX_API_PORT}` | Internal MediaMTX API URL used by the backend. |
+| `PUBLIC_RTMP_BASE_URL` | No | `rtmp://127.0.0.1:{RTMP_PORT}/live` | Public RTMP base URL returned to clients. Optional locally, but set it explicitly in non-local deployments. |
+| `PUBLIC_HLS_BASE_URL` | No | `http://127.0.0.1:{HLS_PORT}` | Public HLS base URL returned to clients. Optional locally, but set it explicitly in non-local deployments. |
+| `MEDIAMTX_API_URL` | No | `http://mediamtx:{MEDIAMTX_API_PORT}` | Internal MediaMTX API URL override used by the backend. |
 
 ## Commands for run
 
-`./scripts/run.sh` is the standard entrypoint for managing the current local Docker Compose stack.
-
-`./scripts/dev.sh` remains available as a transition-period compatibility wrapper and forwards to `./scripts/run.sh`.
+`./scripts/run.sh` is the only supported local entrypoint for managing the current Docker Compose stack.
 
 The local stack is rendered from `compose.yml` and `compose.local.yml`.
 

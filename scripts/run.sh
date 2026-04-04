@@ -74,6 +74,14 @@ load_port_overrides() {
   HLS_PORT="$(read_config_number "HLS_PORT" "8888")"
 }
 
+public_http_base() {
+  if [[ "$PUBLIC_HTTP_PORT" == "80" ]]; then
+    echo "http://localhost"
+  else
+    echo "http://localhost:${PUBLIC_HTTP_PORT}"
+  fi
+}
+
 check_prereqs() {
   require_cmd docker
   require_compose
@@ -173,6 +181,8 @@ wait_for_healthy() {
 
 up_stack() {
   check_prereqs
+  local http_base
+  http_base="$(public_http_base)"
 
   echo "[compose] Starting local stack: ${COMPOSE_SERVICES[*]}"
   compose_cmd up -d --build --remove-orphans "${COMPOSE_SERVICES[@]}"
@@ -187,11 +197,11 @@ up_stack() {
 
   echo
   echo "EgoFlow local stack is ready."
-  echo "Backend health: http://127.0.0.1:${PUBLIC_HTTP_PORT}/api/v1/health"
-  echo "Swagger UI:     http://127.0.0.1:${PUBLIC_HTTP_PORT}/api-docs"
-  echo "Dashboard:      http://127.0.0.1:${PUBLIC_HTTP_PORT}"
-  echo "RTMP ingest:    rtmp://127.0.0.1:${RTMP_PORT}/live"
-  echo "HLS output:     http://127.0.0.1:${HLS_PORT}"
+  echo "Backend health: ${http_base}/api/v1/health"
+  echo "Swagger UI:     ${http_base}/api-docs"
+  echo "Dashboard:      ${http_base}"
+  echo "RTMP ingest:    rtmp://localhost:${RTMP_PORT}/live"
+  echo "HLS output:     http://localhost:${HLS_PORT}"
 }
 
 doctor() {
