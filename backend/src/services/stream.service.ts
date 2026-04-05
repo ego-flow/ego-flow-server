@@ -17,9 +17,25 @@ const streamRepoKey = (repositoryId: string) => `stream:repo:${repositoryId}`;
 const streamPathKey = (repoName: string) => `stream:path:${repoName}`;
 const streamRecordingKey = (recordingSessionId: string) => `stream:recording:${recordingSessionId}`;
 
+/**
+ * 스트리밍 세션의 등록, 활성 조회, RTMP 인증 보조, reconcile 루프를 관리하는 서비스.
+ * RecordingSessionService와 협력하여 세션 라이프사이클 전반을 처리한다.
+ */
 export class StreamService {
   private reconcileTimer?: NodeJS.Timeout;
 
+  extractRepositoryName(streamPath: string) {
+    return recordingSessionService.extractRepositoryName(streamPath);
+  }
+
+  /**
+   * [1단계: 세션 등록]
+   * 앱에서 POST /api/v1/streams/register 호출 시 진입점.
+   * - repository maintain 권한 확인
+   * - 해당 repository에 이미 활성 스트림이 없는지 검증
+   * - RecordingSession을 PENDING 상태로 생성하고 Redis에 live pointer 저장
+   * - RTMP publish URL(JWT 포함)을 반환하여 앱이 MediaMTX에 직접 연결할 수 있게 함
+   */
   async registerSession(
     userId: string,
     userRole: AppUserRole,
@@ -49,6 +65,14 @@ export class StreamService {
     };
   }
 
+  /**
+   * [활성 스트림 목록 조회]
+   * DB에서 STREAMING 상태의 세션을 조회한 뒤:
+   * 1. 요청자의 repository read 권한으로 필터링
+   * 2. MediaMTX API에서 실제 active path와 교집합
+   * 3. HLS URL을 포함한 응답 반환
+   * 대시보드 Live 페이지에서 polling하여 사용한다.
+   */
   async listActiveSessions(requestUserId: string, requestUserRole: AppUserRole) {
     const sessions = await prisma.recordingSession.findMany({
       where: { status: RecordingSessionStatus.STREAMING },
@@ -80,7 +104,7 @@ export class StreamService {
       : visible;
 
     const hlsBase = env.HLS_BASE_URL.replace(/\/+$/, "");
-    return activeVisible
+    const streams = activeVisible
       .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1))
       .map((session) => {
         const repoName = recordingSessionService.extractRepositoryName(session.streamPath);
@@ -94,8 +118,31 @@ export class StreamService {
           registered_at: session.createdAt.toISOString(),
         };
       });
+
+    if (streams.length > 0) {
+      console.info("[streams.active] generated playback URLs", {
+        requestUserId,
+        requestUserRole,
+        hlsBase,
+        streamCount: streams.length,
+        streams: streams.map((stream) => ({
+          repository_id: stream.repository_id,
+          repository_name: stream.repository_name,
+          hls_url: stream.hls_url,
+          registered_at: stream.registered_at,
+        })),
+      });
+    }
+
+    return streams;
   }
 
+  /**
+   * [RTMP 인증 보조: live session 조회]
+   * RTMP publish/read 인증 시 auth.service에서 호출.
+   * Redis에서 stream path로 live cache를 조회하여 활성 세션 정보를 반환한다.
+   * FINALIZING 상태인 세션은 이미 종료된 것이므로 null을 반환한다.
+   */
   async findLiveSessionByStreamPath(streamPath: string): Promise<RecordingSessionLiveCache | null> {
     const cache = await recordingSessionService.getLiveCacheByPath(streamPath);
     if (!cache) {
@@ -109,6 +156,12 @@ export class StreamService {
     return cache;
   }
 
+  /**
+   * [RTMP publish 인증 시 세션 활성화]
+   * publish 인증 성공 시 호출. PENDING 상태의 Redis live pointer TTL을
+   * REGISTRATION_TTL(90초)에서 ACTIVE_TTL(24시간)로 연장한다.
+   * 이를 통해 RTMP 연결이 실제로 수립되었음을 표시한다.
+   */
   async activateSession(recordingSessionId: string): Promise<RecordingSessionLiveCache | null> {
     const cachedStr = await redis.get(streamRecordingKey(recordingSessionId));
     if (!cachedStr) {
@@ -130,6 +183,12 @@ export class StreamService {
     return cache;
   }
 
+  /**
+   * [상태 정합성 루프 시작]
+   * 서버 기동 시 15초 간격으로 reconcileSessions를 실행하는 타이머를 시작한다.
+   * PENDING 타임아웃, STREAMING/STOP_REQUESTED인데 MediaMTX에 path가 없는 경우 등
+   * hook 누락이나 비정상 종료로 인한 상태 불일치를 주기적으로 보정한다.
+   */
   startReconcileLoop() {
     if (this.reconcileTimer) {
       return;
@@ -145,6 +204,13 @@ export class StreamService {
     this.reconcileTimer.unref();
   }
 
+  /**
+   * [등록 전 중복 검사]
+   * 해당 repository에 이미 활성 스트림이 있는지 확인한다.
+   * MediaMTX active path와 DB(PENDING/STREAMING/STOP_REQUESTED)를 모두 체크하고,
+   * 90초 이상 지난 PENDING 세션은 ABORTED 처리하여 새 등록을 허용한다.
+   * Redis에 남아있는 stale pointer도 정리한다.
+   */
   private async ensureRepositoryPathIsAvailable(repositoryId: string, repositoryName: string) {
     const activeRepoNames = await this.getActiveRepositoryNames();
     if (activeRepoNames?.has(repositoryName)) {
@@ -196,6 +262,12 @@ export class StreamService {
     }
   }
 
+  /**
+   * [MediaMTX active path 조회]
+   * MediaMTX REST API(/v3/paths/list)를 호출하여 현재 실제로 송출 중인
+   * repository 이름(live/{repoName} 에서 추출) 집합을 반환한다.
+   * API 호출 실패 시 null을 반환하여 필터링을 건너뛰게 한다.
+   */
   private async getActiveRepositoryNames(): Promise<Set<string> | null> {
     const baseUrl = env.MEDIAMTX_API_URL.replace(/\/+$/, "");
 

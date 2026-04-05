@@ -12,6 +12,12 @@ import { recordingSessionService } from "../services/recording-session.service";
 
 const router = Router();
 
+/**
+ * [MediaMTX hook: stream-ready]
+ * MediaMTX runOnReady hook이 실제 RTMP 송출이 시작되었을 때 호출.
+ * RecordingSession을 PENDING → STREAMING으로 전환하고,
+ * sourceId/sourceType/readyAt을 기록하며 Redis live pointer를 갱신한다.
+ */
 router.post(
   "/stream-ready",
   asyncHandler(async (req, res) => {
@@ -25,6 +31,12 @@ router.post(
   }),
 );
 
+/**
+ * [MediaMTX hook: stream-not-ready]
+ * MediaMTX runOnNotReady hook이 RTMP 연결이 끊어졌을 때 호출.
+ * sourceId → path → DB fallback 순서로 세션을 찾아 FINALIZING으로 전환하고,
+ * Redis live pointer를 삭제한 뒤 finalize enqueue를 시도한다.
+ */
 router.post(
   "/stream-not-ready",
   asyncHandler(async (req, res) => {
@@ -38,6 +50,11 @@ router.post(
   }),
 );
 
+/**
+ * [MediaMTX hook: segment-create]
+ * MediaMTX가 새 녹화 세그먼트 파일을 생성하기 시작할 때 호출.
+ * RecordingSegment를 WRITING 상태로 upsert한다.
+ */
 router.post(
   "/recording-segment-create",
   asyncHandler(async (req, res) => {
@@ -51,6 +68,12 @@ router.post(
   }),
 );
 
+/**
+ * [MediaMTX hook: segment-complete]
+ * MediaMTX가 녹화 세그먼트 파일 쓰기를 완료했을 때 호출.
+ * RecordingSegment를 COMPLETED 상태로 전환하고, duration을 기록한다.
+ * 세션이 이미 FINALIZING이면 finalize enqueue를 재시도한다.
+ */
 router.post(
   "/recording-segment-complete",
   asyncHandler(async (req, res) => {

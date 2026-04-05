@@ -19,6 +19,18 @@ import {
   ensureOutputDirectories,
 } from "./encoding";
 
+/**
+ * [최종 비디오 생성 워커]
+ * BullMQ recording-finalize 큐의 job을 처리하는 메인 함수.
+ * 처리 흐름:
+ * 1. COMPLETED 세그먼트 조회 (없으면 FAILED)
+ * 2. 세그먼트가 1개면 그대로, 2개 이상이면 ffmpeg concat으로 병합
+ * 3. raw 파일이 안정화될 때까지 대기
+ * 4. ffprobe로 메타데이터(duration, resolution, fps 등) 추출
+ * 5. VLM용 비디오, 대시보드용 비디오, 썸네일을 병렬로 인코딩
+ * 6. Video를 COMPLETED, RecordingSession을 COMPLETED로 전환
+ * 7. 설정에 따라 raw 세그먼트 파일 삭제
+ */
 const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
   const { recordingSessionId, videoId, repositoryId, ownerId, repoName, targetDirectory } = job.data;
 
@@ -154,6 +166,12 @@ const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
   await job.updateProgress(100);
 };
 
+/**
+ * [finalize 워커 생성]
+ * recording-finalize BullMQ 큐를 소비하는 Worker 인스턴스를 생성한다.
+ * WORKER_CONCURRENCY 설정값만큼 병렬 처리가 가능하다.
+ * job 실패 시 RecordingSession을 FAILED로, Video를 FAILED로 전환한다.
+ */
 export const createRecordingFinalizeWorker = () => {
   const worker = new Worker<RecordingFinalizeJobData, void, "recording-finalize">(
     "recording-finalize",

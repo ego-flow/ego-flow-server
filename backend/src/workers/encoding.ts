@@ -28,6 +28,10 @@ export interface EncodedOutputPaths {
   thumbnailPath: string;
 }
 
+/**
+ * [출력 경로 생성]
+ * targetDirectory/{ownerId}/{repoName}/ 하위에 VLM 비디오, 대시보드 비디오, 썸네일 경로를 생성한다.
+ */
 export const buildOutputPaths = (
   targetDirectory: string,
   ownerId: string,
@@ -43,6 +47,7 @@ export const buildOutputPaths = (
   };
 };
 
+/** [출력 디렉토리 생성] VLM, 대시보드, 썸네일 경로의 부모 디렉토리를 재귀적으로 생성한다. */
 export const ensureOutputDirectories = async (outputs: EncodedOutputPaths) => {
   await Promise.all([
     fs.mkdir(path.dirname(outputs.vlmVideoPath), { recursive: true }),
@@ -51,6 +56,10 @@ export const ensureOutputDirectories = async (outputs: EncodedOutputPaths) => {
   ]);
 };
 
+/**
+ * [VLM용 비디오 인코딩]
+ * baseline H.264 + AAC로 인코딩. Python 라이브러리나 VLM에서 사용하는 데이터셋 비디오.
+ */
 export const encodeVlmVideo = async (inputPath: string, outputPath: string) => {
   const command = ffmpeg(inputPath)
     .videoCodec("libx264")
@@ -67,6 +76,10 @@ export const encodeVlmVideo = async (inputPath: string, outputPath: string) => {
   await run(command);
 };
 
+/**
+ * [대시보드용 비디오 인코딩]
+ * main H.264 + AAC로 인코딩. 웹 대시보드에서 재생하는 용도.
+ */
 export const encodeDashboardVideo = async (inputPath: string, outputPath: string) => {
   const command = ffmpeg(inputPath)
     .videoCodec("libx264")
@@ -83,6 +96,7 @@ export const encodeDashboardVideo = async (inputPath: string, outputPath: string
   await run(command);
 };
 
+/** [썸네일 생성] 비디오 중간 지점에서 320px 너비의 프레임 1장을 추출한다. */
 export const encodeThumbnail = async (inputPath: string, outputPath: string, seekSeconds: number) => {
   const command = ffmpeg(inputPath)
     .seekInput(Math.max(seekSeconds, 0))
@@ -93,6 +107,11 @@ export const encodeThumbnail = async (inputPath: string, outputPath: string, see
   await run(command);
 };
 
+/**
+ * [세그먼트 병합]
+ * 2개 이상의 녹화 세그먼트를 ffmpeg concat demuxer로 무재인코딩 병합한다.
+ * 병합된 파일은 .tmp/{sessionId}/merged.mp4에 생성된다.
+ */
 export const concatSegments = async (
   segmentPaths: string[],
   concatListPath: string,

@@ -26,7 +26,24 @@ const streamPathKey = (repoName: string) => `stream:path:${repoName}`;
 const streamSourceKey = (sourceId: string) => `stream:source:${sourceId}`;
 const streamRecordingKey = (recordingSessionId: string) => `stream:recording:${recordingSessionId}`;
 
+/**
+ * RecordingSession 라이프사이클 전체를 관리하는 핵심 서비스.
+ *
+ * 상태 흐름:
+ *   PENDING → STREAMING → STOP_REQUESTED → FINALIZING → COMPLETED/FAILED
+ *   PENDING → ABORTED (타임아웃)
+ *   STREAMING → FINALIZING (비정상 종료)
+ *
+ * Redis live cache를 통해 실시간 세션 조회 성능을 확보하고,
+ * MediaMTX hook 이벤트와 reconcile 루프를 통해 상태를 진행시킨다.
+ */
 export class RecordingSessionService {
+  /**
+   * [세션 생성 - PENDING]
+   * stream 등록 시 호출. RecordingSession을 PENDING 상태로 DB에 생성하고,
+   * Redis에 recording/repo/path 키를 90초 TTL로 저장한다.
+   * 90초 이내에 RTMP publish가 시작되지 않으면 reconcile에서 ABORTED 처리된다.
+   */
   async createSession(params: {
     repositoryId: string;
     ownerId: string;
@@ -71,6 +88,13 @@ export class RecordingSessionService {
     return session;
   }
 
+  /**
+   * [stream-ready hook 처리 - PENDING → STREAMING]
+   * MediaMTX가 실제 RTMP 송출 시작을 감지하면 호출.
+   * 1. path(Redis) 또는 path+query(DB)로 PENDING 세션을 조회
+   * 2. DB 상태를 STREAMING으로 전환, readyAt/sourceId/sourceType 기록
+   * 3. Redis live cache를 24시간 TTL로 갱신하고 source pointer 추가
+   */
   async handleStreamReady(input: StreamReadyHookInput) {
     const repoName = this.extractRepositoryName(input.path);
     const recordingSessionId = await this.resolveRecordingSessionIdForReady(input.path, input.query);
@@ -122,6 +146,14 @@ export class RecordingSessionService {
       .exec();
   }
 
+  /**
+   * [stream-not-ready hook 처리 - → FINALIZING]
+   * MediaMTX가 RTMP 연결 종료를 감지하면 호출.
+   * 1. sourceId(Redis) → path(Redis) → DB 순으로 세션 조회
+   * 2. STREAMING 또는 STOP_REQUESTED 상태일 때만 처리
+   * 3. FINALIZING으로 전환, endReason 결정 (STOP_REQUESTED면 기존 reason 유지, 아니면 UNEXPECTED_DISCONNECT)
+   * 4. Redis live pointer 삭제 후 finalize enqueue 시도
+   */
   async handleStreamNotReady(input: StreamNotReadyHookInput) {
     let recordingSessionId = await redis.get(streamSourceKey(input.source_id));
     if (!recordingSessionId) {
@@ -184,6 +216,12 @@ export class RecordingSessionService {
     await this.tryEnqueueFinalize(recordingSessionId);
   }
 
+  /**
+   * [segment-create hook 처리]
+   * MediaMTX가 새 녹화 세그먼트 파일 쓰기를 시작할 때 호출.
+   * stream path로 세션을 찾고, RecordingSegment를 WRITING 상태로 upsert한다.
+   * sequence 번호는 기존 최대값 + 1로 자동 결정된다.
+   */
   async handleSegmentCreate(input: SegmentCreateHookInput) {
     let recordingSessionId = await this.resolveRecordingSessionIdForSegment(input.path);
     if (!recordingSessionId) {
@@ -214,6 +252,13 @@ export class RecordingSessionService {
     });
   }
 
+  /**
+   * [segment-complete hook 처리]
+   * MediaMTX가 세그먼트 파일 쓰기를 완료하면 호출.
+   * segment를 COMPLETED로 전환하고 duration을 기록한다.
+   * segment-create가 누락되었을 경우 여기서 직접 생성도 처리한다.
+   * 세션이 이미 FINALIZING이면 finalize enqueue를 재시도한다.
+   */
   async handleSegmentComplete(input: SegmentCompleteHookInput) {
     const segment = await prisma.recordingSegment.findFirst({
       where: { rawPath: input.segment_path },
@@ -269,6 +314,14 @@ export class RecordingSessionService {
     }
   }
 
+  /**
+   * [명시적 종료 요청 - → STOP_REQUESTED]
+   * 앱에서 POST /api/v1/recordings/:id/stop 호출 시 진입.
+   * PENDING 또는 STREAMING 상태의 세션을 STOP_REQUESTED로 전환하고,
+   * endReason(USER_STOP/GLASSES_STOP)과 stopRequestedAt을 기록한다.
+   * Redis live cache의 status도 갱신한다.
+   * 이후 MediaMTX가 RTMP 연결 종료를 감지하면 stream-not-ready hook이 호출되어 FINALIZING으로 진행한다.
+   */
   async requestStop(recordingSessionId: string, reason: string) {
     const session = await prisma.recordingSession.findUnique({
       where: { id: recordingSessionId },
@@ -351,6 +404,15 @@ export class RecordingSessionService {
     return session.repositoryId;
   }
 
+  /**
+   * [finalize job enqueue 시도]
+   * FINALIZING 상태에서 실제 후처리 작업을 BullMQ 큐에 넣을 수 있는지 판단한다.
+   * 판단 순서:
+   * 1. WRITING 세그먼트가 남아있으면 대기 (max wait 초과 시 FAILED)
+   * 2. COMPLETED 세그먼트가 없으면 대기 (grace period 초과 시 FAILED)
+   * 3. 모든 조건 충족 시: Video 레코드를 PENDING으로 upsert하고, finalize job을 enqueue
+   * stream-not-ready, reconcile, segment-complete에서 반복 호출될 수 있다.
+   */
   async tryEnqueueFinalize(recordingSessionId: string): Promise<boolean> {
     const session = await prisma.recordingSession.findUnique({
       where: { id: recordingSessionId },
@@ -439,6 +501,13 @@ export class RecordingSessionService {
     return true;
   }
 
+  /**
+   * [상태 정합성 보정 - reconcile]
+   * 15초 간격으로 실행. hook 누락이나 비정상 종료로 인한 상태 불일치를 보정한다.
+   * - FINALIZING: finalize enqueue 재시도
+   * - PENDING: 90초 초과 시 ABORTED + REGISTRATION_TIMEOUT
+   * - STREAMING/STOP_REQUESTED: MediaMTX에 해당 path가 없으면 FINALIZING 전환 후 finalize 시도
+   */
   async reconcileSessions() {
     const activeSessions = await prisma.recordingSession.findMany({
       where: {
@@ -499,6 +568,11 @@ export class RecordingSessionService {
     }
   }
 
+  /**
+   * [Redis live cache 조회]
+   * stream path에서 repository 이름을 추출하여 Redis path pointer → recording cache 순으로 조회.
+   * RTMP 인증(auth.service) 시 활성 세션 존재 여부를 빠르게 확인하는 데 사용된다.
+   */
   async getLiveCacheByPath(streamPath: string): Promise<RecordingSessionLiveCache | null> {
     const repoName = this.extractRepositoryName(streamPath);
     const recordingSessionId = await redis.get(streamPathKey(repoName));
@@ -518,6 +592,11 @@ export class RecordingSessionService {
     }
   }
 
+  /**
+   * [Redis live pointer TTL 연장]
+   * RTMP publish 인증 성공 시 호출. recording/repo/path/source 키의 TTL을
+   * 24시간으로 연장하여 활성 세션이 만료되지 않게 한다.
+   */
   async promoteLivePointerTtl(recordingSessionId: string) {
     const cachedStr = await redis.get(streamRecordingKey(recordingSessionId));
     if (!cachedStr) {
@@ -542,6 +621,12 @@ export class RecordingSessionService {
     await pipeline.exec();
   }
 
+  /**
+   * [Redis live pointer 삭제]
+   * 스트림 종료(not-ready) 또는 reconcile 시 호출.
+   * repo/path/recording/source 키를 삭제하여 해당 세션의 live 상태를 해제한다.
+   * 다른 세션이 같은 키를 사용 중이면 해당 키는 삭제하지 않는다.
+   */
   private async clearLivePointers(
     recordingSessionId: string,
     repositoryId: string,
@@ -567,6 +652,11 @@ export class RecordingSessionService {
     }
   }
 
+  /**
+   * [stream path → repository 이름 추출]
+   * "live/{repoName}" 형식의 stream path에서 repository 이름 부분을 추출한다.
+   * 형식이 맞지 않으면 에러를 던진다.
+   */
   extractRepositoryName(streamPath: string): string {
     const normalized = streamPath.trim().replace(/^\/+/, "");
     const parts = normalized.split("/");
@@ -576,6 +666,11 @@ export class RecordingSessionService {
     return parts[1];
   }
 
+  /**
+   * [segment hook용 세션 ID 조회]
+   * Redis path pointer를 먼저 확인하고, 없으면 DB에서
+   * FINALIZING/STOP_REQUESTED/STREAMING 상태의 최신 세션을 조회한다.
+   */
   private async resolveRecordingSessionIdForSegment(streamPath: string) {
     const repoName = this.extractRepositoryName(streamPath);
     const liveRecordingSessionId = await redis.get(streamPathKey(repoName));
@@ -601,6 +696,11 @@ export class RecordingSessionService {
     return session?.id ?? null;
   }
 
+  /**
+   * [stream-ready hook용 세션 ID 조회]
+   * Redis path pointer를 먼저 확인하고, 없으면 DB에서 PENDING 상태의 세션을 조회한다.
+   * query에 user 파라미터가 있으면 해당 사용자의 세션만 조회한다.
+   */
   private async resolveRecordingSessionIdForReady(streamPath: string, query?: string) {
     const repoName = this.extractRepositoryName(streamPath);
     const liveRecordingSessionId = await redis.get(streamPathKey(repoName));
@@ -632,6 +732,11 @@ export class RecordingSessionService {
     return session.notReadyAt ?? session.stopRequestedAt ?? session.readyAt ?? session.createdAt;
   }
 
+  /**
+   * [세션 실패 처리]
+   * segment 대기 타임아웃 등으로 finalize를 진행할 수 없을 때 호출.
+   * RecordingSession을 FAILED 상태로 전환하고 finalizedAt을 기록한다.
+   */
   private async markSessionFailed(
     recordingSessionId: string,
     endReason: RecordingSessionEndReason | null,
@@ -646,6 +751,11 @@ export class RecordingSessionService {
     });
   }
 
+  /**
+   * [MediaMTX active path 조회]
+   * MediaMTX API에서 현재 active path 목록을 가져와 repository 이름 집합으로 반환한다.
+   * reconcile 시 DB 상태와 대조하여 실제로 송출이 끊긴 세션을 감지하는 데 사용된다.
+   */
   private async getActiveRepositoryNames(): Promise<Set<string> | null> {
     const baseUrl = env.MEDIAMTX_API_URL.replace(/\/+$/, "");
 

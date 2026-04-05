@@ -94,6 +94,15 @@ const start = async () => {
   console.log("[startup] initializing target directory");
   await initializeTargetDirectory();
   console.log("[startup] target directory ready");
+  console.log("[startup] runtime playback config", {
+    publicHttpPort: env.PUBLIC_HTTP_PORT,
+    rtmpPort: env.RTMP_PORT,
+    hlsPort: env.HLS_PORT,
+    mediamtxApiPort: env.MEDIAMTX_API_PORT,
+    rtmpBaseUrl: env.RTMP_BASE_URL,
+    hlsBaseUrl: env.HLS_BASE_URL,
+    mediamtxApiUrl: env.MEDIAMTX_API_URL,
+  });
   console.log("[startup] starting reconcile loop");
   streamService.startReconcileLoop();
   console.log("[startup] reconcile loop started");

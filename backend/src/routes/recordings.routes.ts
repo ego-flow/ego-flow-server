@@ -10,6 +10,13 @@ import { repositoryService } from "../services/repository.service";
 
 const router = Router();
 
+/**
+ * [녹화 중지 요청]
+ * 앱에서 Stop 버튼 또는 glasses 촬영 종료 시 호출.
+ * repository maintain 권한을 확인한 뒤 세션을 STOP_REQUESTED 상태로 전환한다.
+ * reason은 "USER_STOP" 또는 "GLASSES_STOP".
+ * 이후 앱이 RTMP 연결을 끊으면 MediaMTX stream-not-ready hook이 FINALIZING을 트리거한다.
+ */
 router.post(
   "/:recordingSessionId/stop",
   requireAuth,
@@ -37,6 +44,11 @@ router.post(
   }),
 );
 
+/**
+ * [녹화 세션 상태 조회]
+ * 특정 RecordingSession의 현재 상태, segment 수, video ID 등을 반환한다.
+ * repository read 권한이 필요하다.
+ */
 router.get(
   "/:recordingSessionId",
   requireAuth,
