@@ -5,9 +5,12 @@ import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { runtimeConfig as env } from "../config/runtime";
 import { processingService } from "./processing.service";
+import { streamOwnershipService } from "./stream-ownership.service";
 import type {
   RecordingSessionLiveCache,
   RecordingFinalizeJobData,
+  SegmentOwnershipMapping,
+  StreamSourceMapping,
 } from "../types/stream";
 import type {
   StreamReadyHookInput,
@@ -16,7 +19,7 @@ import type {
   SegmentCompleteHookInput,
 } from "../schemas/stream.schema";
 
-const REGISTRATION_TTL_SECONDS = 90;
+const REGISTRATION_TTL_SECONDS = 5 * 60;
 const ACTIVE_TTL_SECONDS = 24 * 60 * 60;
 const FINALIZE_GRACE_PERIOD_MS = 30 * 1000;
 const FINALIZE_MAX_WAIT_MS = 2 * 60 * 1000;
@@ -25,6 +28,8 @@ const streamRepoKey = (repositoryId: string) => `stream:repo:${repositoryId}`;
 const streamPathKey = (repoName: string) => `stream:path:${repoName}`;
 const streamSourceKey = (sourceId: string) => `stream:source:${sourceId}`;
 const streamRecordingKey = (recordingSessionId: string) => `stream:recording:${recordingSessionId}`;
+const streamSegmentKey = (segmentPath: string) => `segment:${segmentPath}`;
+const SEGMENT_MAPPING_TTL_SECONDS = 24 * 60 * 60;
 
 /**
  * RecordingSession 라이프사이클 전체를 관리하는 핵심 서비스.
@@ -41,8 +46,8 @@ export class RecordingSessionService {
   /**
    * [세션 생성 - PENDING]
    * stream 등록 시 호출. RecordingSession을 PENDING 상태로 DB에 생성하고,
-   * Redis에 recording/repo/path 키를 90초 TTL로 저장한다.
-   * 90초 이내에 RTMP publish가 시작되지 않으면 reconcile에서 ABORTED 처리된다.
+   * Redis에 recording/repo/path 키를 5분 TTL로 저장한다.
+   * 5분 이내에 첫 RTMP publish가 시작되지 않으면 reconcile에서 ABORTED 처리된다.
    */
   async createSession(params: {
     repositoryId: string;
@@ -85,37 +90,132 @@ export class RecordingSessionService {
       .set(streamPathKey(repoName), session.id, "EX", REGISTRATION_TTL_SECONDS)
       .exec();
 
+    console.info("[rtmp-state] pending-created", {
+      recordingSessionId: session.id,
+      repositoryId: session.repositoryId,
+      repositoryName: repoName,
+      ownerId: session.ownerId,
+      userId: session.userId,
+      deviceType: session.deviceType,
+      streamPath: session.streamPath,
+      registrationTtlSec: REGISTRATION_TTL_SECONDS,
+    });
+
     return session;
   }
 
   /**
-   * [stream-ready hook 처리 - PENDING → STREAMING]
+   * [stream-ready hook 처리 - PENDING/STREAMING → STREAMING]
    * MediaMTX가 실제 RTMP 송출 시작을 감지하면 호출.
-   * 1. path(Redis) 또는 path+query(DB)로 PENDING 세션을 조회
-   * 2. DB 상태를 STREAMING으로 전환, readyAt/sourceId/sourceType 기록
-   * 3. Redis live cache를 24시간 TTL로 갱신하고 source pointer 추가
+   * 1. query의 publish ticket와 현재 owner/connection lease를 먼저 검증한다.
+   * 2. ticket가 가리키는 PENDING 또는 같은 STREAMING 세션만 DB에서 조회한다.
+   * 3. ticket를 consumed로 전환한 뒤 owner refresh가 성공할 때만 DB/Redis를 갱신한다.
+   * 4. Redis live cache를 24시간 TTL로 갱신하고 reconnect면 이전 source pointer를 교체한다.
    */
   async handleStreamReady(input: StreamReadyHookInput) {
-    const repoName = this.extractRepositoryName(input.path);
-    const recordingSessionId = await this.resolveRecordingSessionIdForReady(input.path, input.query);
-    if (!recordingSessionId) {
-      console.warn(`[recording-session] stream-ready: no session found for path ${input.path}`);
+    const ticketValidation = await streamOwnershipService.validatePublishTicket(input.path, input.query);
+    if (!ticketValidation.ok) {
+      console.warn("[rtmp-ticket] stream-ready-validation-rejected", {
+        path: input.path,
+        sourceId: input.source_id,
+        sourceType: input.source_type,
+        reason: ticketValidation.reason,
+        ticketId: ticketValidation.ticketId,
+      });
       return;
     }
 
+    const recordingSessionId = ticketValidation.ticket.recordingSessionId;
     const session = await prisma.recordingSession.findUnique({
       where: { id: recordingSessionId },
     });
-    if (!session || session.status !== RecordingSessionStatus.PENDING) {
-      console.warn(`[recording-session] stream-ready: session ${recordingSessionId} not in PENDING state`);
+    if (
+      !session ||
+      (session.status !== RecordingSessionStatus.PENDING &&
+        session.status !== RecordingSessionStatus.STREAMING)
+    ) {
+      console.warn("[rtmp-state] stream-ready-session-not-active", {
+        recordingSessionId,
+        path: input.path,
+        sourceId: input.source_id,
+        sourceType: input.source_type,
+        status: session?.status ?? null,
+      });
       return;
     }
+
+    if (
+      session.repositoryId !== ticketValidation.ticket.repositoryId ||
+      session.userId !== ticketValidation.ticket.userId ||
+      session.streamPath !== ticketValidation.ticket.streamPath
+    ) {
+      console.warn("[rtmp-ticket] stream-ready-session-metadata-mismatch", {
+        recordingSessionId,
+        sessionRepositoryId: session.repositoryId,
+        ticketRepositoryId: ticketValidation.ticket.repositoryId,
+        sessionUserId: session.userId,
+        ticketUserId: ticketValidation.ticket.userId,
+        sessionStreamPath: session.streamPath,
+        ticketStreamPath: ticketValidation.ticket.streamPath,
+        ticketId: ticketValidation.ticket.ticketId,
+      });
+      return;
+    }
+
+    const consumedTicket = await streamOwnershipService.consumePublishTicket(input.path, input.query);
+    if (!consumedTicket.ok) {
+      console.warn("[rtmp-ticket] consume-rejected", {
+        recordingSessionId,
+        path: input.path,
+        sourceId: input.source_id,
+        sourceType: input.source_type,
+        reason: consumedTicket.reason,
+        ticketId: consumedTicket.ticketId,
+      });
+      return;
+    }
+
+    const repoName = ticketValidation.ticket.repositoryName;
+    const existingLiveCache = await this.getLiveCacheByRecordingSessionId(recordingSessionId);
+    const ownerRefresh = await streamOwnershipService.refreshConnectionLease({
+      repositoryId: session.repositoryId,
+      recordingSessionId,
+      connectionId: consumedTicket.ticket.connectionId,
+      generation: consumedTicket.ticket.generation,
+      sourceId: input.source_id,
+      sourceType: input.source_type,
+    });
+
+    if (ownerRefresh.outcome === "rejected") {
+      console.warn("[rtmp-owner] stream-ready-publishing-refresh-rejected", {
+        recordingSessionId,
+        repositoryId: session.repositoryId,
+        repositoryName: repoName,
+        connectionId: consumedTicket.ticket.connectionId,
+        generation: consumedTicket.ticket.generation,
+        reason: ownerRefresh.reason,
+        sourceId: input.source_id,
+        sourceType: input.source_type,
+      });
+      return;
+    }
+
+    const readyAt = session.readyAt ?? new Date();
+    const previousSourceId = existingLiveCache?.sourceId ?? session.sourceId ?? undefined;
+    const sourceMapping: StreamSourceMapping = {
+      recordingSessionId,
+      repositoryId: session.repositoryId,
+      connectionId: consumedTicket.ticket.connectionId,
+      generation: consumedTicket.ticket.generation,
+      sourceId: input.source_id,
+      sourceType: input.source_type,
+    };
 
     await prisma.recordingSession.update({
       where: { id: recordingSessionId },
       data: {
         status: RecordingSessionStatus.STREAMING,
-        readyAt: new Date(),
+        ...(session.readyAt ? {} : { readyAt }),
         sourceId: input.source_id,
         sourceType: input.source_type,
       },
@@ -131,58 +231,88 @@ export class RecordingSessionService {
       status: "STREAMING",
       sourceId: input.source_id,
       sourceType: input.source_type,
-      readyAt: new Date().toISOString(),
+      ...(existingLiveCache?.publishTicketIssuedAt
+        ? { publishTicketIssuedAt: existingLiveCache.publishTicketIssuedAt }
+        : {}),
+      readyAt: readyAt.toISOString(),
     };
     if (session.deviceType) {
       liveCache.deviceType = session.deviceType;
     }
 
-    await redis
+    const pipeline = redis
       .multi()
       .set(streamRecordingKey(recordingSessionId), JSON.stringify(liveCache), "EX", ACTIVE_TTL_SECONDS)
       .set(streamRepoKey(session.repositoryId), recordingSessionId, "EX", ACTIVE_TTL_SECONDS)
       .set(streamPathKey(repoName), recordingSessionId, "EX", ACTIVE_TTL_SECONDS)
-      .set(streamSourceKey(input.source_id), recordingSessionId, "EX", ACTIVE_TTL_SECONDS)
-      .exec();
+      .set(streamSourceKey(input.source_id), JSON.stringify(sourceMapping), "EX", ACTIVE_TTL_SECONDS);
+
+    if (previousSourceId && previousSourceId !== input.source_id) {
+      pipeline.del(streamSourceKey(previousSourceId));
+    }
+
+    await pipeline.exec();
+
+    console.info("[rtmp-ticket] consumed", {
+      recordingSessionId: consumedTicket.ticket.recordingSessionId,
+      repositoryId: consumedTicket.ticket.repositoryId,
+      repositoryName: consumedTicket.ticket.repositoryName,
+      userId: consumedTicket.ticket.userId,
+      ticketId: consumedTicket.ticket.ticketId,
+      connectionId: consumedTicket.ticket.connectionId,
+      generation: consumedTicket.ticket.generation,
+    });
+
+    console.info(
+      session.status === RecordingSessionStatus.PENDING
+        ? "[rtmp-state] pending-to-streaming"
+        : "[rtmp-state] streaming-source-refreshed",
+      {
+        recordingSessionId,
+        repositoryId: session.repositoryId,
+        repositoryName: repoName,
+        userId: session.userId,
+        previousSourceId: previousSourceId ?? null,
+        sourceId: input.source_id,
+        sourceType: input.source_type,
+        connectionId: consumedTicket.ticket.connectionId,
+        generation: consumedTicket.ticket.generation,
+        activeTtlSec: ACTIVE_TTL_SECONDS,
+      },
+    );
   }
 
   /**
    * [stream-not-ready hook 처리 - → FINALIZING]
    * MediaMTX가 RTMP 연결 종료를 감지하면 호출.
-   * 1. sourceId(Redis) → path(Redis) → DB 순으로 세션 조회
-   * 2. STREAMING 또는 STOP_REQUESTED 상태일 때만 처리
-   * 3. FINALIZING으로 전환, endReason 결정 (STOP_REQUESTED면 기존 reason 유지, 아니면 UNEXPECTED_DISCONNECT)
-   * 4. Redis live pointer 삭제 후 finalize enqueue 시도
+   * 1. `stream:source:{sourceId}` authoritative mapping으로 connection/generation/session을 복원한다.
+   * 2. generation match release가 성공한 경우에만 해당 세션을 FINALIZING으로 전환한다.
+   * 3. mapping miss 또는 generation mismatch는 no-op + 경고 로그로 처리한다.
    */
   async handleStreamNotReady(input: StreamNotReadyHookInput) {
-    let recordingSessionId = await redis.get(streamSourceKey(input.source_id));
-    if (!recordingSessionId) {
-      const repoName = this.extractRepositoryName(input.path);
-      recordingSessionId = await redis.get(streamPathKey(repoName));
-    }
-    if (!recordingSessionId) {
-      const session = await prisma.recordingSession.findFirst({
-        where: {
-          streamPath: input.path,
-          status: {
-            in: [RecordingSessionStatus.STREAMING, RecordingSessionStatus.STOP_REQUESTED],
-          },
-        },
-        orderBy: { createdAt: "desc" },
-        select: { id: true },
+    const sourceMapping = await this.getSourceMapping(input.source_id);
+    if (!sourceMapping) {
+      console.warn("[rtmp-state] stream-not-ready-source-mapping-missing", {
+        path: input.path,
+        sourceId: input.source_id,
+        sourceType: input.source_type,
       });
-      recordingSessionId = session?.id ?? null;
-    }
-    if (!recordingSessionId) {
-      console.warn(`[recording-session] stream-not-ready: no session found for path ${input.path}`);
       return;
     }
 
+    const recordingSessionId = sourceMapping.recordingSessionId;
     const session = await prisma.recordingSession.findUnique({
       where: { id: recordingSessionId },
     });
     if (!session) {
-      console.warn(`[recording-session] stream-not-ready: session ${recordingSessionId} not found in DB`);
+      console.warn("[rtmp-state] stream-not-ready-session-missing", {
+        recordingSessionId,
+        path: input.path,
+        sourceId: input.source_id,
+        sourceType: input.source_type,
+        connectionId: sourceMapping.connectionId,
+        generation: sourceMapping.generation,
+      });
       return;
     }
 
@@ -190,9 +320,37 @@ export class RecordingSessionService {
       session.status !== RecordingSessionStatus.STREAMING &&
       session.status !== RecordingSessionStatus.STOP_REQUESTED
     ) {
-      console.warn(
-        `[recording-session] stream-not-ready: session ${recordingSessionId} in ${session.status}, skipping`,
-      );
+      console.warn("[rtmp-state] stream-not-ready-session-skipped", {
+        recordingSessionId,
+        repositoryId: session.repositoryId,
+        repositoryName: this.extractRepositoryName(session.streamPath),
+        sourceId: input.source_id,
+        sourceType: input.source_type,
+        connectionId: sourceMapping.connectionId,
+        generation: sourceMapping.generation,
+        status: session.status,
+      });
+      return;
+    }
+
+    const releaseResult = await streamOwnershipService.releaseConnectionLease({
+      repositoryId: session.repositoryId,
+      recordingSessionId: sourceMapping.recordingSessionId,
+      connectionId: sourceMapping.connectionId,
+      generation: sourceMapping.generation,
+    });
+
+    if (releaseResult.outcome !== "released") {
+      console.warn("[rtmp-owner] generation-mismatch", {
+        recordingSessionId: sourceMapping.recordingSessionId,
+        repositoryId: session.repositoryId,
+        repositoryName: this.extractRepositoryName(session.streamPath),
+        sourceId: input.source_id,
+        sourceType: input.source_type,
+        connectionId: sourceMapping.connectionId,
+        generation: sourceMapping.generation,
+        reason: releaseResult.reason,
+      });
       return;
     }
 
@@ -213,21 +371,47 @@ export class RecordingSessionService {
     const repoName = this.extractRepositoryName(session.streamPath);
     await this.clearLivePointers(recordingSessionId, session.repositoryId, repoName, session.sourceId ?? undefined);
 
+    console.info("[rtmp-state] stream-to-finalizing", {
+      recordingSessionId,
+      repositoryId: session.repositoryId,
+      repositoryName: repoName,
+      previousStatus: session.status,
+      endReason,
+      sourceId: session.sourceId,
+      hookSourceId: input.source_id,
+      connectionId: sourceMapping.connectionId,
+      generation: sourceMapping.generation,
+    });
+
     await this.tryEnqueueFinalize(recordingSessionId);
   }
 
   /**
    * [segment-create hook 처리]
    * MediaMTX가 새 녹화 세그먼트 파일 쓰기를 시작할 때 호출.
-   * stream path로 세션을 찾고, RecordingSegment를 WRITING 상태로 upsert한다.
-   * sequence 번호는 기존 최대값 + 1로 자동 결정된다.
+   * authoritative source mapping으로 세션을 찾고, `segment:{segmentPath}` 매핑을 저장한 뒤
+   * RecordingSegment를 WRITING 상태로 upsert한다.
    */
   async handleSegmentCreate(input: SegmentCreateHookInput) {
-    let recordingSessionId = await this.resolveRecordingSessionIdForSegment(input.path);
-    if (!recordingSessionId) {
-      console.warn(`[recording-session] segment-create: no session found for path ${input.path}`);
+    const sourceMapping = await this.resolveSegmentSourceMapping(input.path, input.source_id);
+    if (!sourceMapping) {
+      console.warn("[rtmp-segment] source-mapping-missing", {
+        path: input.path,
+        sourceId: input.source_id ?? null,
+        segmentPath: input.segment_path,
+      });
       return;
     }
+
+    const recordingSessionId = sourceMapping.recordingSessionId;
+    const segmentMapping: SegmentOwnershipMapping = {
+      recordingSessionId,
+      repositoryId: sourceMapping.repositoryId,
+      connectionId: sourceMapping.connectionId,
+      generation: sourceMapping.generation,
+      sourceId: sourceMapping.sourceId,
+      segmentPath: input.segment_path,
+    };
 
     const maxSeq = await prisma.recordingSegment.aggregate({
       where: { recordingSessionId },
@@ -250,26 +434,65 @@ export class RecordingSessionService {
       },
       update: {},
     });
+
+    await redis.set(
+      streamSegmentKey(input.segment_path),
+      JSON.stringify(segmentMapping),
+      "EX",
+      SEGMENT_MAPPING_TTL_SECONDS,
+    );
+
+    console.info("[rtmp-segment] writing-created", {
+      recordingSessionId,
+      path: input.path,
+      sourceId: sourceMapping.sourceId ?? input.source_id ?? null,
+      segmentPath: input.segment_path,
+      connectionId: sourceMapping.connectionId,
+      generation: sourceMapping.generation,
+      sequence: nextSequence,
+    });
   }
 
   /**
    * [segment-complete hook 처리]
    * MediaMTX가 세그먼트 파일 쓰기를 완료하면 호출.
-   * segment를 COMPLETED로 전환하고 duration을 기록한다.
-   * segment-create가 누락되었을 경우 여기서 직접 생성도 처리한다.
-   * 세션이 이미 FINALIZING이면 finalize enqueue를 재시도한다.
+   * `segment:{segmentPath}` authoritative mapping만 사용하여 segment를 COMPLETED로 전환한다.
+   * mapping miss는 no-op + 경고 로그로 처리한다.
    */
   async handleSegmentComplete(input: SegmentCompleteHookInput) {
+    let segmentMapping = await this.getSegmentMapping(input.segment_path);
+    if (!segmentMapping) {
+      const sourceMapping = await this.resolveSegmentSourceMapping(input.path, input.source_id);
+      if (sourceMapping) {
+        segmentMapping = {
+          recordingSessionId: sourceMapping.recordingSessionId,
+          repositoryId: sourceMapping.repositoryId,
+          connectionId: sourceMapping.connectionId,
+          generation: sourceMapping.generation,
+          sourceId: sourceMapping.sourceId,
+          segmentPath: input.segment_path,
+        };
+      }
+    }
+
+    if (!segmentMapping) {
+      console.warn("[rtmp-segment] mapping-missing", {
+        path: input.path,
+        sourceId: input.source_id ?? null,
+        segmentPath: input.segment_path,
+      });
+      return;
+    }
+
     const segment = await prisma.recordingSegment.findFirst({
-      where: { rawPath: input.segment_path },
+      where: {
+        rawPath: input.segment_path,
+        recordingSessionId: segmentMapping.recordingSessionId,
+      },
     });
 
     if (!segment) {
-      const recordingSessionId = await this.resolveRecordingSessionIdForSegment(input.path);
-      if (!recordingSessionId) {
-        console.warn(`[recording-session] segment-complete: no session found for segment ${input.segment_path}`);
-        return;
-      }
+      const recordingSessionId = segmentMapping.recordingSessionId;
 
       const maxSeq = await prisma.recordingSegment.aggregate({
         where: { recordingSessionId },
@@ -288,6 +511,17 @@ export class RecordingSessionService {
         },
       });
 
+      console.info("[rtmp-segment] completed-created", {
+        recordingSessionId,
+        path: input.path,
+        sourceId: input.source_id ?? segmentMapping.sourceId ?? null,
+        segmentPath: input.segment_path,
+        connectionId: segmentMapping.connectionId,
+        generation: segmentMapping.generation,
+        sequence: nextSequence,
+        durationSec: input.segment_duration ?? null,
+      });
+
       const session = await prisma.recordingSession.findUnique({
         where: { id: recordingSessionId },
       });
@@ -304,6 +538,17 @@ export class RecordingSessionService {
         durationSec: input.segment_duration ?? null,
         completedAt: new Date(),
       },
+    });
+
+    console.info("[rtmp-segment] completed", {
+      recordingSessionId: segment.recordingSessionId,
+      path: input.path,
+      sourceId: input.source_id ?? segmentMapping.sourceId ?? null,
+      segmentPath: input.segment_path,
+      connectionId: segmentMapping.connectionId,
+      generation: segmentMapping.generation,
+      sequence: segment.sequence,
+      durationSec: input.segment_duration ?? null,
     });
 
     const session = await prisma.recordingSession.findUnique({
@@ -361,6 +606,14 @@ export class RecordingSessionService {
         // Ignore parse failures.
       }
     }
+
+    console.info("[rtmp-state] stop-requested", {
+      recordingSessionId,
+      repositoryId: updated.repositoryId,
+      repositoryName: this.extractRepositoryName(updated.streamPath),
+      userId: updated.userId,
+      reason: endReason,
+    });
 
     return updated;
   }
@@ -437,9 +690,14 @@ export class RecordingSessionService {
     if (writingCount > 0) {
       if (elapsedMs > FINALIZE_MAX_WAIT_MS) {
         await this.markSessionFailed(recordingSessionId, session.endReason);
-        console.warn(
-          `[recording-session] tryEnqueueFinalize: session ${recordingSessionId} failed — writing segments remained for ${elapsedMs}ms`,
-        );
+        console.warn("[rtmp-finalize] failed-writing-segments-timeout", {
+          recordingSessionId,
+          repositoryId: session.repositoryId,
+          repositoryName: this.extractRepositoryName(session.streamPath),
+          elapsedMs,
+          writingCount,
+          endReason: session.endReason ?? null,
+        });
       }
       return false;
     }
@@ -453,10 +711,30 @@ export class RecordingSessionService {
 
     if (completedCount === 0) {
       if (elapsedMs > FINALIZE_GRACE_PERIOD_MS) {
-        await this.markSessionFailed(recordingSessionId, session.endReason);
-        console.warn(
-          `[recording-session] tryEnqueueFinalize: session ${recordingSessionId} failed — no completed segments after ${elapsedMs}ms`,
-        );
+        if (
+          session.endReason === RecordingSessionEndReason.USER_STOP ||
+          session.endReason === RecordingSessionEndReason.GLASSES_STOP
+        ) {
+          await this.markSessionAborted(recordingSessionId, session.endReason);
+          console.info("[rtmp-finalize] empty-session-aborted", {
+            recordingSessionId,
+            repositoryId: session.repositoryId,
+            repositoryName: this.extractRepositoryName(session.streamPath),
+            elapsedMs,
+            completedCount,
+            endReason: session.endReason,
+          });
+        } else {
+          await this.markSessionFailed(recordingSessionId, session.endReason);
+          console.warn("[rtmp-finalize] failed-missing-completed-segments", {
+            recordingSessionId,
+            repositoryId: session.repositoryId,
+            repositoryName: this.extractRepositoryName(session.streamPath),
+            elapsedMs,
+            completedCount,
+            endReason: session.endReason ?? null,
+          });
+        }
       }
       return false;
     }
@@ -498,15 +776,24 @@ export class RecordingSessionService {
     };
 
     await processingService.enqueueRecordingFinalize(payload);
+    console.info("[rtmp-finalize] enqueued", {
+      recordingSessionId: session.id,
+      repositoryId: session.repositoryId,
+      repositoryName: repoName,
+      videoId: video.id,
+      completedSegmentCount: completedCount,
+      firstSegmentPath: firstSegment!.rawPath,
+    });
     return true;
   }
 
   /**
    * [상태 정합성 보정 - reconcile]
-   * 15초 간격으로 실행. hook 누락이나 비정상 종료로 인한 상태 불일치를 보정한다.
+   * 5초 간격으로 실행. hook 누락이나 비정상 종료로 인한 상태 불일치를 보정한다.
    * - FINALIZING: finalize enqueue 재시도
-   * - PENDING: 90초 초과 시 ABORTED + REGISTRATION_TIMEOUT
-   * - STREAMING/STOP_REQUESTED: MediaMTX에 해당 path가 없으면 FINALIZING 전환 후 finalize 시도
+   * - PENDING: register timeout 또는 claimed owner lease 만료 시 ABORTED
+   * - STREAMING/STOP_REQUESTED: owner lease stale, owner mismatch, active path 없음일 때 FINALIZING 전환 후 finalize 시도
+   * - orphan connection metadata: current owner와 연결되지 않은 conn:* key 정리
    */
   async reconcileSessions() {
     const activeSessions = await prisma.recordingSession.findMany({
@@ -522,12 +809,13 @@ export class RecordingSessionService {
       },
     });
 
+    const now = Date.now();
     if (activeSessions.length === 0) {
+      await this.cleanupOrphanConnections([], now);
       return;
     }
 
     const activeRepoNames = await this.getActiveRepositoryNames();
-    const now = Date.now();
 
     for (const session of activeSessions) {
       const repoName = this.extractRepositoryName(session.streamPath);
@@ -537,7 +825,42 @@ export class RecordingSessionService {
         continue;
       }
 
+      let currentOwner = await streamOwnershipService.getCurrentOwnerForRepository(session.repositoryId);
+      let ownerMatchesSession = currentOwner?.recordingSessionId === session.id;
+      let ownerIsStale = currentOwner ? streamOwnershipService.isStaleOwner(currentOwner, now) : true;
+
       if (session.status === RecordingSessionStatus.PENDING) {
+        const liveCache = await this.getLiveCacheByRecordingSessionId(session.id);
+        const publishTicketIssuedAtMs = liveCache?.publishTicketIssuedAt
+          ? Date.parse(liveCache.publishTicketIssuedAt)
+          : Number.NaN;
+        const hasPublishTicketIssuedAt = Number.isFinite(publishTicketIssuedAtMs);
+
+        if (
+          hasPublishTicketIssuedAt &&
+          (!currentOwner || !ownerMatchesSession || ownerIsStale)
+        ) {
+          await prisma.recordingSession.update({
+            where: { id: session.id },
+            data: {
+              status: RecordingSessionStatus.ABORTED,
+              endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
+              finalizedAt: new Date(),
+            },
+          });
+          await this.clearLivePointers(session.id, session.repositoryId, repoName, session.sourceId ?? undefined);
+          console.info("[rtmp-reconcile] pending-claimed-owner-missing-or-stale", {
+            recordingSessionId: session.id,
+            repositoryId: session.repositoryId,
+            repositoryName: repoName,
+            publishTicketIssuedAt: liveCache?.publishTicketIssuedAt ?? null,
+            ownerConnectionId: currentOwner?.connectionId ?? null,
+            ownerGeneration: currentOwner?.generation ?? null,
+            ownerLeaseExpiresAt: currentOwner ? new Date(currentOwner.leaseExpiresAt).toISOString() : null,
+          });
+          continue;
+        }
+
         const age = now - session.createdAt.getTime();
         if (age > REGISTRATION_TTL_SECONDS * 1000) {
           await prisma.recordingSession.update({
@@ -549,23 +872,137 @@ export class RecordingSessionService {
             },
           });
           await this.clearLivePointers(session.id, session.repositoryId, repoName, session.sourceId ?? undefined);
+          console.info("[rtmp-reconcile] pending-timeout-aborted", {
+            recordingSessionId: session.id,
+            repositoryId: session.repositoryId,
+            repositoryName: repoName,
+            ageMs: age,
+            registrationTtlSec: REGISTRATION_TTL_SECONDS,
+          });
         }
         continue;
       }
 
-      if (activeRepoNames && !activeRepoNames.has(repoName)) {
-        await prisma.recordingSession.update({
-          where: { id: session.id },
-          data: {
-            status: RecordingSessionStatus.FINALIZING,
-            notReadyAt: new Date(),
-            ...(session.endReason ? {} : { endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT }),
-          },
+      if (currentOwner && ownerMatchesSession && (session.status === RecordingSessionStatus.STOP_REQUESTED || ownerIsStale)) {
+        const releaseReason =
+          session.status === RecordingSessionStatus.STOP_REQUESTED
+            ? "stop-requested-owner-cleanup"
+            : "stale-owner-cleanup";
+        const releaseResult = await streamOwnershipService.releaseConnectionLease({
+          repositoryId: session.repositoryId,
+          recordingSessionId: session.id,
+          connectionId: currentOwner.connectionId,
+          generation: currentOwner.generation,
         });
-        await this.clearLivePointers(session.id, session.repositoryId, repoName, session.sourceId ?? undefined);
-        await this.tryEnqueueFinalize(session.id);
+
+        if (releaseResult.outcome === "released") {
+          console.info(`[rtmp-reconcile] ${releaseReason}`, {
+            recordingSessionId: session.id,
+            repositoryId: session.repositoryId,
+            repositoryName: repoName,
+            connectionId: currentOwner.connectionId,
+            generation: currentOwner.generation,
+            previousStatus: session.status,
+            ownerLeaseExpired: currentOwner.leaseExpiresAt <= now,
+          });
+          currentOwner = null;
+          ownerMatchesSession = false;
+          ownerIsStale = true;
+        } else {
+          console.warn("[rtmp-owner] generation-mismatch", {
+            recordingSessionId: session.id,
+            repositoryId: session.repositoryId,
+            repositoryName: repoName,
+            connectionId: currentOwner.connectionId,
+            generation: currentOwner.generation,
+            previousStatus: session.status,
+            reason: releaseResult.reason,
+          });
+          currentOwner = await streamOwnershipService.getCurrentOwnerForRepository(session.repositoryId);
+          ownerMatchesSession = currentOwner?.recordingSessionId === session.id;
+          ownerIsStale = currentOwner ? streamOwnershipService.isStaleOwner(currentOwner, now) : true;
+        }
+      }
+
+      const activePathMissing = activeRepoNames ? !activeRepoNames.has(repoName) : false;
+      const sourceMappingPresent = session.sourceId ? Boolean(await this.getSourceMapping(session.sourceId)) : false;
+      const missingOrForeignOwner = !currentOwner || !ownerMatchesSession;
+      const shouldFinalize =
+        activePathMissing ||
+        missingOrForeignOwner ||
+        !sourceMappingPresent ||
+        ownerIsStale;
+
+      if (shouldFinalize) {
+        if (currentOwner && ownerMatchesSession) {
+          const releaseResult = await streamOwnershipService.releaseConnectionLease({
+            repositoryId: session.repositoryId,
+            recordingSessionId: session.id,
+            connectionId: currentOwner.connectionId,
+            generation: currentOwner.generation,
+          });
+
+          if (releaseResult.outcome === "released") {
+            console.info("[rtmp-reconcile] finalize-owner-release", {
+              recordingSessionId: session.id,
+              repositoryId: session.repositoryId,
+              repositoryName: repoName,
+              connectionId: currentOwner.connectionId,
+              generation: currentOwner.generation,
+              previousStatus: session.status,
+            });
+            currentOwner = null;
+            ownerMatchesSession = false;
+            ownerIsStale = true;
+          } else {
+            console.warn("[rtmp-owner] generation-mismatch", {
+              recordingSessionId: session.id,
+              repositoryId: session.repositoryId,
+              repositoryName: repoName,
+              connectionId: currentOwner.connectionId,
+              generation: currentOwner.generation,
+              previousStatus: session.status,
+              reason: releaseResult.reason,
+            });
+            currentOwner = await streamOwnershipService.getCurrentOwnerForRepository(session.repositoryId);
+            ownerMatchesSession = currentOwner?.recordingSessionId === session.id;
+            ownerIsStale = currentOwner ? streamOwnershipService.isStaleOwner(currentOwner, now) : true;
+
+            if (currentOwner && ownerMatchesSession && !ownerIsStale) {
+              console.info("[rtmp-reconcile] finalize-deferred-owner-still-attached", {
+                recordingSessionId: session.id,
+                repositoryId: session.repositoryId,
+                repositoryName: repoName,
+                connectionId: currentOwner.connectionId,
+                generation: currentOwner.generation,
+                previousStatus: session.status,
+              });
+              continue;
+            }
+          }
+        }
+
+        const reconcileReason = activePathMissing
+          ? "missing-active-path-finalizing"
+          : !sourceMappingPresent
+            ? "missing-source-mapping-finalizing"
+            : missingOrForeignOwner
+            ? "owner-mismatch-finalizing"
+            : "stale-owner-finalizing";
+        await this.transitionSessionToFinalizing(session, reconcileReason, {
+          repositoryName: repoName,
+          activeRepoNames: activeRepoNames ? Array.from(activeRepoNames.values()) : null,
+          ownerConnectionId: currentOwner?.connectionId ?? null,
+          ownerGeneration: currentOwner?.generation ?? null,
+          ownerStatus: currentOwner?.status ?? null,
+          ownerLeaseExpiresAt: currentOwner ? new Date(currentOwner.leaseExpiresAt).toISOString() : null,
+          ownerLastHeartbeatAt: currentOwner ? new Date(currentOwner.lastHeartbeatAt).toISOString() : null,
+          sourceMappingPresent,
+        });
       }
     }
+
+    await this.cleanupOrphanConnections(activeSessions, now);
   }
 
   /**
@@ -580,6 +1017,10 @@ export class RecordingSessionService {
       return null;
     }
 
+    return this.getLiveCacheByRecordingSessionId(recordingSessionId);
+  }
+
+  async getLiveCacheByRecordingSessionId(recordingSessionId: string): Promise<RecordingSessionLiveCache | null> {
     const cachedStr = await redis.get(streamRecordingKey(recordingSessionId));
     if (!cachedStr) {
       return null;
@@ -593,11 +1034,10 @@ export class RecordingSessionService {
   }
 
   /**
-   * [Redis live pointer TTL 연장]
-   * RTMP publish 인증 성공 시 호출. recording/repo/path/source 키의 TTL을
-   * 24시간으로 연장하여 활성 세션이 만료되지 않게 한다.
+   * [publish ticket 발급 시각 기록]
+   * PENDING 세션에서 첫 publish attempt 정합성 판단을 위해 live cache에 마지막 ticket 발급 시각을 남긴다.
    */
-  async promoteLivePointerTtl(recordingSessionId: string) {
+  async markPublishTicketIssued(recordingSessionId: string) {
     const cachedStr = await redis.get(streamRecordingKey(recordingSessionId));
     if (!cachedStr) {
       return;
@@ -611,14 +1051,54 @@ export class RecordingSessionService {
     }
 
     const repoName = cache.repositoryName;
+    const ttlSeconds = cache.status === "PENDING" ? REGISTRATION_TTL_SECONDS : ACTIVE_TTL_SECONDS;
+    const nextCache: RecordingSessionLiveCache = {
+      ...cache,
+      publishTicketIssuedAt: new Date().toISOString(),
+    };
     const pipeline = redis.multi();
-    pipeline.expire(streamRecordingKey(recordingSessionId), ACTIVE_TTL_SECONDS);
-    pipeline.expire(streamRepoKey(cache.repositoryId), ACTIVE_TTL_SECONDS);
-    pipeline.expire(streamPathKey(repoName), ACTIVE_TTL_SECONDS);
+    pipeline.set(streamRecordingKey(recordingSessionId), JSON.stringify(nextCache), "EX", ttlSeconds);
+    pipeline.expire(streamRepoKey(cache.repositoryId), ttlSeconds);
+    pipeline.expire(streamPathKey(repoName), ttlSeconds);
     if (cache.sourceId) {
-      pipeline.expire(streamSourceKey(cache.sourceId), ACTIVE_TTL_SECONDS);
+      pipeline.expire(streamSourceKey(cache.sourceId), ttlSeconds);
     }
     await pipeline.exec();
+  }
+
+  private async transitionSessionToFinalizing(
+    session: {
+      id: string;
+      repositoryId: string;
+      streamPath: string;
+      status: RecordingSessionStatus;
+      endReason: RecordingSessionEndReason | null;
+      sourceId: string | null;
+    },
+    reconcileReason: string,
+    details: Record<string, unknown> = {},
+  ) {
+    await prisma.recordingSession.update({
+      where: { id: session.id },
+      data: {
+        status: RecordingSessionStatus.FINALIZING,
+        notReadyAt: new Date(),
+        ...(session.endReason ? {} : { endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT }),
+      },
+    });
+
+    const repoName = this.extractRepositoryName(session.streamPath);
+    await this.clearLivePointers(session.id, session.repositoryId, repoName, session.sourceId ?? undefined);
+
+    console.info(`[rtmp-reconcile] ${reconcileReason}`, {
+      recordingSessionId: session.id,
+      repositoryId: session.repositoryId,
+      repositoryName: repoName,
+      previousStatus: session.status,
+      ...details,
+    });
+
+    await this.tryEnqueueFinalize(session.id);
   }
 
   /**
@@ -642,14 +1122,60 @@ export class RecordingSessionService {
       keys.push(streamSourceKey(sourceId));
     }
 
+    const clearedKeys: string[] = [];
     for (const key of keys) {
       const value = await redis.get(key);
       if (value === recordingSessionId) {
         await redis.del(key);
+        clearedKeys.push(key);
+      } else if (key === streamSourceKey(sourceId ?? "")) {
+        const sourceMapping = this.parseRedisRecord<StreamSourceMapping>(value);
+        if (sourceMapping?.recordingSessionId === recordingSessionId) {
+          await redis.del(key);
+          clearedKeys.push(key);
+        }
       } else if (key === streamRecordingKey(recordingSessionId)) {
         await redis.del(key);
+        clearedKeys.push(key);
       }
     }
+
+    if (clearedKeys.length > 0) {
+      console.info("[rtmp-state] live-pointers-cleared", {
+        recordingSessionId,
+        repositoryId,
+        repositoryName,
+        sourceId: sourceId ?? null,
+        clearedKeys,
+      });
+    }
+  }
+
+  async getSourceMapping(sourceId: string): Promise<StreamSourceMapping | null> {
+    return this.parseRedisRecord<StreamSourceMapping>(await redis.get(streamSourceKey(sourceId)));
+  }
+
+  async getSegmentMapping(segmentPath: string): Promise<SegmentOwnershipMapping | null> {
+    return this.parseRedisRecord<SegmentOwnershipMapping>(await redis.get(streamSegmentKey(segmentPath)));
+  }
+
+  private async resolveSegmentSourceMapping(
+    streamPath: string,
+    sourceId?: string,
+  ): Promise<StreamSourceMapping | null> {
+    if (sourceId) {
+      const sourceMapping = await this.getSourceMapping(sourceId);
+      if (sourceMapping) {
+        return sourceMapping;
+      }
+    }
+
+    const liveCache = await this.getLiveCacheByPath(streamPath);
+    if (!liveCache?.sourceId) {
+      return null;
+    }
+
+    return this.getSourceMapping(liveCache.sourceId);
   }
 
   /**
@@ -664,63 +1190,6 @@ export class RecordingSessionService {
       throw new AppError(400, "VALIDATION_ERROR", "Invalid stream path format.");
     }
     return parts[1];
-  }
-
-  /**
-   * [segment hook용 세션 ID 조회]
-   * Redis path pointer를 먼저 확인하고, 없으면 DB에서
-   * FINALIZING/STOP_REQUESTED/STREAMING 상태의 최신 세션을 조회한다.
-   */
-  private async resolveRecordingSessionIdForSegment(streamPath: string) {
-    const repoName = this.extractRepositoryName(streamPath);
-    const liveRecordingSessionId = await redis.get(streamPathKey(repoName));
-    if (liveRecordingSessionId) {
-      return liveRecordingSessionId;
-    }
-
-    const session = await prisma.recordingSession.findFirst({
-      where: {
-        streamPath,
-        status: {
-          in: [
-            RecordingSessionStatus.FINALIZING,
-            RecordingSessionStatus.STOP_REQUESTED,
-            RecordingSessionStatus.STREAMING,
-          ],
-        },
-      },
-      orderBy: [{ createdAt: "desc" }],
-      select: { id: true },
-    });
-
-    return session?.id ?? null;
-  }
-
-  /**
-   * [stream-ready hook용 세션 ID 조회]
-   * Redis path pointer를 먼저 확인하고, 없으면 DB에서 PENDING 상태의 세션을 조회한다.
-   * query에 user 파라미터가 있으면 해당 사용자의 세션만 조회한다.
-   */
-  private async resolveRecordingSessionIdForReady(streamPath: string, query?: string) {
-    const repoName = this.extractRepositoryName(streamPath);
-    const liveRecordingSessionId = await redis.get(streamPathKey(repoName));
-    if (liveRecordingSessionId) {
-      return liveRecordingSessionId;
-    }
-
-    const queryParams = new URLSearchParams(query ?? "");
-    const requestedUserId = queryParams.get("user");
-    const session = await prisma.recordingSession.findFirst({
-      where: {
-        streamPath,
-        status: RecordingSessionStatus.PENDING,
-        ...(requestedUserId ? { userId: requestedUserId } : {}),
-      },
-      orderBy: [{ createdAt: "desc" }],
-      select: { id: true },
-    });
-
-    return session?.id ?? null;
   }
 
   private getFinalizeReferenceAt(session: {
@@ -746,6 +1215,20 @@ export class RecordingSessionService {
       data: {
         status: RecordingSessionStatus.FAILED,
         endReason: endReason ?? RecordingSessionEndReason.INTERNAL_ERROR,
+        finalizedAt: new Date(),
+      },
+    });
+  }
+
+  private async markSessionAborted(
+    recordingSessionId: string,
+    endReason: RecordingSessionEndReason | null,
+  ) {
+    await prisma.recordingSession.update({
+      where: { id: recordingSessionId },
+      data: {
+        status: RecordingSessionStatus.ABORTED,
+        endReason,
         finalizedAt: new Date(),
       },
     });
@@ -782,7 +1265,62 @@ export class RecordingSessionService {
       return names;
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown error";
-      console.warn(`[recording-session] failed to query MediaMTX active paths: ${message}`);
+      console.warn("[rtmp-reconcile] active-path-query-failed", {
+        reason: message,
+      });
+      return null;
+    }
+  }
+
+  private async cleanupOrphanConnections(
+    activeSessions: Array<{
+      id: string;
+      repositoryId: string;
+      status: RecordingSessionStatus;
+    }>,
+    now: number,
+  ) {
+    const sessionStatusById = new Map(activeSessions.map((session) => [session.id, session.status]));
+    const connections = await streamOwnershipService.listConnections();
+
+    for (const connection of connections) {
+      const currentOwner = await streamOwnershipService.getCurrentOwner(connection.streamId);
+      const isCurrentOwnerConnection =
+        currentOwner?.recordingSessionId === connection.recordingSessionId &&
+        currentOwner.connectionId === connection.connectionId &&
+        currentOwner.generation === connection.generation;
+
+      if (isCurrentOwnerConnection) {
+        continue;
+      }
+
+      await redis.del(`conn:${connection.connectionId}`);
+      console.info("[rtmp-reconcile] orphan-connection-cleanup", {
+        recordingSessionId: connection.recordingSessionId,
+        repositoryId: connection.repositoryId,
+        connectionId: connection.connectionId,
+        generation: connection.generation,
+        connectionStatus: connection.status,
+        connectionLeaseExpiresAt: new Date(connection.leaseExpiresAt).toISOString(),
+        connectionLastHeartbeatAt: new Date(connection.lastHeartbeatAt).toISOString(),
+        connectionIsStale: streamOwnershipService.isStaleOwner(connection, now),
+        ownerRecordingSessionId: currentOwner?.recordingSessionId ?? null,
+        ownerConnectionId: currentOwner?.connectionId ?? null,
+        ownerGeneration: currentOwner?.generation ?? null,
+        ownerStatus: currentOwner?.status ?? null,
+        sessionStatus: sessionStatusById.get(connection.recordingSessionId) ?? null,
+      });
+    }
+  }
+
+  private parseRedisRecord<T>(raw: string | null): T | null {
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(raw) as T;
+    } catch (_error) {
       return null;
     }
   }

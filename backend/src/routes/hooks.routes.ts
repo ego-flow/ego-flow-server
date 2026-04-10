@@ -34,8 +34,8 @@ router.post(
 /**
  * [MediaMTX hook: stream-not-ready]
  * MediaMTX runOnNotReady hook이 RTMP 연결이 끊어졌을 때 호출.
- * sourceId → path → DB fallback 순서로 세션을 찾아 FINALIZING으로 전환하고,
- * Redis live pointer를 삭제한 뒤 finalize enqueue를 시도한다.
+ * authoritative `stream:source:{sourceId}` mapping으로 connection/generation을 복원하고,
+ * generation match release가 성공한 경우에만 해당 세션을 FINALIZING으로 전환한다.
  */
 router.post(
   "/stream-not-ready",
@@ -53,6 +53,7 @@ router.post(
 /**
  * [MediaMTX hook: segment-create]
  * MediaMTX가 새 녹화 세그먼트 파일을 생성하기 시작할 때 호출.
+ * authoritative `source_id`로 세션을 찾고 segment ownership mapping을 저장한 뒤
  * RecordingSegment를 WRITING 상태로 upsert한다.
  */
 router.post(
@@ -71,7 +72,7 @@ router.post(
 /**
  * [MediaMTX hook: segment-complete]
  * MediaMTX가 녹화 세그먼트 파일 쓰기를 완료했을 때 호출.
- * RecordingSegment를 COMPLETED 상태로 전환하고, duration을 기록한다.
+ * stored segment ownership mapping만 사용해 RecordingSegment를 COMPLETED 상태로 전환하고, duration을 기록한다.
  * 세션이 이미 FINALIZING이면 finalize enqueue를 재시도한다.
  */
 router.post(

@@ -97,6 +97,11 @@ const start = async () => {
   console.log("[startup] runtime playback config", {
     publicHttpPort: env.PUBLIC_HTTP_PORT,
     rtmpPort: env.RTMP_PORT,
+    rtmpsPort: env.RTMPS_PORT,
+    rtmpsEnabled: env.RTMPS_ENABLED,
+    rtmpsEncryptionMode: env.RTMPS_ENCRYPTION_MODE,
+    rtmpsCertPath: env.RTMPS_CERT_PATH,
+    rtmpsKeyPath: env.RTMPS_KEY_PATH,
     hlsPort: env.HLS_PORT,
     mediamtxApiPort: env.MEDIAMTX_API_PORT,
     rtmpBaseUrl: env.RTMP_BASE_URL,

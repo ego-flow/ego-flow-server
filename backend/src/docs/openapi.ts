@@ -183,13 +183,64 @@ export const openApiDocument = {
       },
       StreamRegisterResponse: {
         type: "object",
-        required: ["recording_session_id", "repository_id", "repository_name", "rtmp_url", "status"],
+        required: ["recording_session_id", "repository_id", "repository_name", "stream_path", "status"],
         properties: {
           recording_session_id: { type: "string", format: "uuid" },
           repository_id: { type: "string", format: "uuid" },
           repository_name: { type: "string", example: "daily_kitchen" },
-          rtmp_url: { type: "string", example: "rtmp://127.0.0.1:1935/live/daily_kitchen?user=alice&pass=<jwt>" },
-          status: { type: "string", enum: ["ready"], description: "Temporary reservation created; publish promotes it to an active session." },
+          stream_path: { type: "string", example: "live/daily_kitchen" },
+          status: { type: "string", enum: ["pending"], description: "Temporary reservation created; publish-ticket must be issued before RTMP publish." },
+        },
+      },
+      PublishTicketResponse: {
+        type: "object",
+        required: [
+          "recording_session_id",
+          "repository_id",
+          "repository_name",
+          "stream_path",
+          "connection_id",
+          "generation",
+          "publish_ticket",
+          "publish_ticket_expires_at",
+          "rtmp_publish_base_url",
+        ],
+        properties: {
+          recording_session_id: { type: "string", format: "uuid" },
+          repository_id: { type: "string", format: "uuid" },
+          repository_name: { type: "string", example: "daily_kitchen" },
+          stream_path: { type: "string", example: "live/daily_kitchen" },
+          connection_id: { type: "string", example: "conn_3f8f9ec5-7cbc-4a0d-9d30-e25b085b1a47" },
+          generation: { type: "integer", example: 1 },
+          publish_ticket: { type: "string", example: "t_0d87967b-903e-4f69-af58-24fdd6dd2a82" },
+          publish_ticket_expires_at: { type: "string", format: "date-time" },
+          rtmp_publish_base_url: { type: "string", example: "rtmp://127.0.0.1:1935/live" },
+        },
+      },
+      StreamConnectionHeartbeatRequest: {
+        type: "object",
+        required: ["generation"],
+        properties: {
+          generation: { type: "integer", example: 1 },
+        },
+      },
+      StreamConnectionHeartbeatResponse: {
+        type: "object",
+        required: [
+          "ok",
+          "recording_session_id",
+          "connection_id",
+          "generation",
+          "lease_expires_at",
+          "owner_status",
+        ],
+        properties: {
+          ok: { type: "boolean", example: true },
+          recording_session_id: { type: "string", format: "uuid" },
+          connection_id: { type: "string", example: "conn_3f8f9ec5-7cbc-4a0d-9d30-e25b085b1a47" },
+          generation: { type: "integer", example: 1 },
+          lease_expires_at: { type: "string", format: "date-time" },
+          owner_status: { type: "string", enum: ["claimed", "publishing"], example: "publishing" },
         },
       },
       ActiveStream: {
@@ -262,12 +313,12 @@ export const openApiDocument = {
       StreamReadyHookRequest: {
         type: "object",
         required: ["path", "source_id", "source_type"],
-        properties: {
-          path: { type: "string", example: "live/daily_kitchen" },
-          query: { type: "string", example: "user=alice&pass=<jwt>" },
-          source_id: { type: "string", example: "publisher-123" },
-          source_type: { type: "string", example: "rtmpConn" },
-        },
+          properties: {
+            path: { type: "string", example: "live/daily_kitchen" },
+            query: { type: "string", example: "ticket=t_opaque" },
+            source_id: { type: "string", example: "publisher-123" },
+            source_type: { type: "string", example: "rtmpConn" },
+          },
       },
       StreamNotReadyHookRequest: {
         type: "object",
@@ -280,17 +331,19 @@ export const openApiDocument = {
       },
       RecordingSegmentCreateHookRequest: {
         type: "object",
-        required: ["path", "segment_path"],
+        required: ["path", "source_id", "segment_path"],
         properties: {
           path: { type: "string", example: "live/daily_kitchen" },
+          source_id: { type: "string", example: "publisher-123" },
           segment_path: { type: "string", example: "/data/raw/live/daily_kitchen/2026-03-30_10-20-30-000000" },
         },
       },
       RecordingSegmentCompleteHookRequest: {
         type: "object",
-        required: ["path", "segment_path"],
+        required: ["path", "source_id", "segment_path"],
         properties: {
           path: { type: "string", example: "live/daily_kitchen" },
+          source_id: { type: "string", example: "publisher-123" },
           segment_path: { type: "string", example: "/data/raw/live/daily_kitchen/2026-03-30_10-20-30-000000" },
           segment_duration: { type: "number", example: 15.2 },
         },
@@ -836,7 +889,7 @@ export const openApiDocument = {
     "/streams/register": {
       post: {
         tags: ["Streams"],
-        summary: "Register a stream session before RTMP publish",
+        summary: "Register a recording session before publish-ticket issuance",
         requestBody: {
           required: true,
           content: {
@@ -851,6 +904,77 @@ export const openApiDocument = {
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/StreamRegisterResponse" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+          "409": { $ref: "#/components/responses/Conflict" },
+        },
+      },
+    },
+    "/streams/{recordingSessionId}/publish-ticket": {
+      post: {
+        tags: ["Streams"],
+        summary: "Issue a short-lived publish ticket for a recording session",
+        parameters: [
+          {
+            name: "recordingSessionId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Publish ticket issued",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PublishTicketResponse" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+          "409": { $ref: "#/components/responses/Conflict" },
+        },
+      },
+    },
+    "/streams/{recordingSessionId}/connections/{connectionId}/heartbeat": {
+      post: {
+        tags: ["Streams"],
+        summary: "Refresh the owner lease for the active publish connection",
+        parameters: [
+          {
+            name: "recordingSessionId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            name: "connectionId",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/StreamConnectionHeartbeatRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Owner lease refreshed",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/StreamConnectionHeartbeatResponse" },
               },
             },
           },
@@ -999,7 +1123,7 @@ export const openApiDocument = {
     "/hooks/recording-segment-create": {
       post: {
         tags: ["Hooks"],
-        summary: "Handle MediaMTX recording-segment-create hook",
+        summary: "Handle MediaMTX recording-segment-create hook with authoritative source mapping",
         security: [],
         requestBody: {
           required: true,
@@ -1025,7 +1149,7 @@ export const openApiDocument = {
     "/hooks/recording-segment-complete": {
       post: {
         tags: ["Hooks"],
-        summary: "Handle MediaMTX recording-segment-complete hook",
+        summary: "Handle MediaMTX recording-segment-complete hook with authoritative segment mapping",
         security: [],
         requestBody: {
           required: true,

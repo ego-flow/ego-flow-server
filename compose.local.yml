@@ -47,8 +47,10 @@ services:
   mediamtx:
     ports:
       - "${RTMP_PORT:-1935}:1935"
+      - "${RTMPS_PORT:-1936}:1936"
       - "${HLS_PORT:-8888}:8888"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
       - ./mediamtx-hooks:/mediamtx-hooks:ro
+      - ./certs:/certs:ro
       - ./data/raw:/data/raw

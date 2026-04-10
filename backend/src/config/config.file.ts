@@ -7,6 +7,7 @@ const configFileSchema = z.object({
   TARGET_DIRECTORY: z.string().min(1),
   PUBLIC_HTTP_PORT: z.coerce.number().int().positive().default(80),
   RTMP_PORT: z.coerce.number().int().positive().default(1935),
+  RTMPS_PORT: z.coerce.number().int().positive().default(1936),
   HLS_PORT: z.coerce.number().int().positive().default(8888),
   MEDIAMTX_API_PORT: z.coerce.number().int().positive().default(9997),
   CORS_ORIGIN: z.string().default("*"),

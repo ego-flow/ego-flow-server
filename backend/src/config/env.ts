@@ -44,6 +44,9 @@ const envSchema = z.object({
   PUBLIC_RTMP_BASE_URL: optionalNonEmptyString,
   PUBLIC_HLS_BASE_URL: optionalNonEmptyString,
   MEDIAMTX_API_URL: optionalNonEmptyString,
+  RTMPS_ENCRYPTION_MODE: z.enum(["no", "optional", "strict"]).optional(),
+  RTMPS_CERT_PATH: optionalNonEmptyString,
+  RTMPS_KEY_PATH: optionalNonEmptyString,
 });
 
 const parsed = envSchema.safeParse(process.env);
