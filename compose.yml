@@ -3,9 +3,9 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-egoflow}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - "${TARGET_DIRECTORY}/postgres:/var/lib/postgresql/data"
@@ -13,7 +13,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-egoflow}",
+          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
         ]
       interval: 5s
       timeout: 5s
@@ -47,8 +47,8 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOST_HOME: ${HOST_HOME:-}
-      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/egoflow?schema=public}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
     volumes:
       - ./config.json:/app/config.json:ro
       - ./.env:/app/.env:ro

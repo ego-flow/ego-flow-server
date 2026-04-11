@@ -3,9 +3,6 @@ import path from "path";
 import { fileConfig } from "./config.file";
 import { env } from "./env";
 
-const defaultDatabaseUrl = "postgresql://postgres:postgres@postgres:5432/egoflow?schema=public";
-const defaultRedisUrl = "redis://redis:6379";
-
 export const runtimeConfig = {
   NODE_ENV: env.NODE_ENV,
   PORT: env.PORT,
@@ -23,8 +20,8 @@ export const runtimeConfig = {
   JWT_REFRESH_THRESHOLD_SECONDS: fileConfig.JWT_REFRESH_THRESHOLD_SECONDS,
   ADMIN_DEFAULT_PASSWORD: env.ADMIN_DEFAULT_PASSWORD,
   JWT_SECRET: env.JWT_SECRET,
-  DATABASE_URL: env.DATABASE_URL ?? defaultDatabaseUrl,
-  REDIS_URL: env.REDIS_URL ?? defaultRedisUrl,
+  DATABASE_URL: env.DATABASE_URL,
+  REDIS_URL: env.REDIS_URL,
   HF_TOKEN: env.HF_TOKEN,
   RTMPS_ENCRYPTION_MODE: env.RTMPS_ENCRYPTION_MODE ?? "no",
   RTMPS_ENABLED: (env.RTMPS_ENCRYPTION_MODE ?? "no") !== "no",
