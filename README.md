@@ -115,7 +115,7 @@ Only `TARGET_DIRECTORY` is required and does not have a default. Everything else
 
 ```json
 {
-  "TARGET_DIRECTORY": "~/ego-flow-data/datasets",
+  "TARGET_DIRECTORY": "~/ego-flow-data",
   "PUBLIC_HTTP_PORT": 80,
   "RTMP_PORT": 1935,
   "RTMPS_PORT": 1936,
@@ -201,10 +201,10 @@ Command summary:
 
 - `up`: Checks prerequisites, builds images, starts the full stack, and waits until the main services are ready.
 - `down`: Stops and removes the Compose stack.
-- `doctor`: Checks Docker, Docker Compose, `config.json`, `.env`, the configured public ports, and prints the current/previous target directory state from `.run/target-directory`.
+- `doctor`: Checks Docker, Docker Compose, `config.json`, `.env`, the configured public ports, and prints the previous/current target directory state from `.run/target-directory`.
 - `ps`: Shows the current status of Compose services.
 - `logs [service]`: Follows logs for the full stack or for a specific service.
-- `reset`: Removes containers, volumes, and all data under `TARGET_DIRECTORY`. This is destructive and intended only for disposable development/test environments. If host deletion hits Docker-owned files, the script falls back to Docker-assisted cleanup.
+- `reset`: Removes containers, volumes, all data under `TARGET_DIRECTORY`, and the persisted `.run/target-directory` state. This is destructive and intended only for disposable development/test environments. If host deletion hits Docker-owned files, the script falls back to Docker-assisted cleanup.
 - `install-docker`: Runs the Ubuntu helper script to install Docker and Docker Compose.
 
 ## For Developers

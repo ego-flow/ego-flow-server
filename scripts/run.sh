@@ -238,8 +238,8 @@ show_target_directory_status() {
 
   previous_target="$(read_persisted_target_directory)"
 
-  echo "Current target directory: ${TARGET_DIRECTORY}"
   echo "Previous target directory: ${previous_target}"
+  echo "Current target directory: ${TARGET_DIRECTORY}"
 }
 
 move_path() {
@@ -486,12 +486,17 @@ reset_env() {
   check_prereqs
 
   echo "Warning: reset removes containers, volumes, and all data under TARGET_DIRECTORY."
+  echo "It also clears the persisted target-directory state used for future migration detection."
   echo "Use this only for disposable development/test environments."
   echo "Removing containers and volumes..."
   compose_cmd down -v --remove-orphans
 
   echo "Removing target directory..."
   remove_directory_tree "$TARGET_DIRECTORY"
+
+  echo "Clearing persisted target-directory state..."
+  rm -f "$TARGET_DIRECTORY_STATE_FILE"
+  rmdir "$RUN_STATE_DIR" 2>/dev/null || true
 
   echo "Reset complete."
   echo "Next: ./scripts/run.sh up"
