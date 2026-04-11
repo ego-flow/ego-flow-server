@@ -1,6 +1,10 @@
 :80 {
 	encode zstd gzip
 
+	handle_path /hls/* {
+		reverse_proxy mediamtx:8888
+	}
+
 	@backend path /api* /api-docs* /files*
 	handle @backend {
 		reverse_proxy backend:3000
