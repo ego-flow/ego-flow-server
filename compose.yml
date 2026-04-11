@@ -47,7 +47,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOST_HOME: ${HOST_HOME:-}
-      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
       REDIS_URL: ${REDIS_URL}
     volumes:
       - ./config.json:/app/config.json:ro
