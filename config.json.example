@@ -1,5 +1,5 @@
 {
-  "TARGET_DIRECTORY": "/data/datasets",
+  "TARGET_DIRECTORY": "~/ego-flow-data",
   "PUBLIC_HTTP_PORT": 80,
   "RTMP_PORT": 1935,
   "RTMPS_PORT": 1936,

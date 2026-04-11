@@ -483,7 +483,7 @@ export const openApiDocument = {
             type: "object",
             required: ["target_directory"],
             properties: {
-              target_directory: { type: "string", example: "/data/datasets" },
+              target_directory: { type: "string", example: "/home/egoflow/ego-flow-data/datasets" },
             },
           },
         },

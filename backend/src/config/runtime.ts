@@ -1,3 +1,5 @@
+import path from "path";
+
 import { fileConfig } from "./config.file";
 import { env } from "./env";
 
@@ -7,7 +9,8 @@ const defaultRedisUrl = "redis://redis:6379";
 export const runtimeConfig = {
   NODE_ENV: env.NODE_ENV,
   PORT: env.PORT,
-  TARGET_DIRECTORY: fileConfig.TARGET_DIRECTORY,
+  DATA_ROOT: fileConfig.TARGET_DIRECTORY,
+  TARGET_DIRECTORY: path.join(fileConfig.TARGET_DIRECTORY, "datasets"),
   PUBLIC_HTTP_PORT: fileConfig.PUBLIC_HTTP_PORT,
   RTMP_PORT: fileConfig.RTMP_PORT,
   RTMPS_PORT: fileConfig.RTMPS_PORT,

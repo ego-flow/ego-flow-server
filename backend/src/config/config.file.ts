@@ -1,10 +1,20 @@
 import fs from "fs";
-import path from "path";
 
 import { z } from "zod";
+import { normalizeTargetDirectory, resolveConfiguredPath } from "./path-utils";
 
 const configFileSchema = z.object({
-  TARGET_DIRECTORY: z.string().min(1),
+  TARGET_DIRECTORY: z.string().transform((value, ctx) => {
+    try {
+      return normalizeTargetDirectory(value);
+    } catch (error) {
+      ctx.addIssue({
+        code: "custom",
+        message: error instanceof Error ? error.message : "Invalid TARGET_DIRECTORY.",
+      });
+      return z.NEVER;
+    }
+  }),
   PUBLIC_HTTP_PORT: z.coerce.number().int().positive().default(80),
   RTMP_PORT: z.coerce.number().int().positive().default(1935),
   RTMPS_PORT: z.coerce.number().int().positive().default(1936),
@@ -16,16 +26,6 @@ const configFileSchema = z.object({
   JWT_EXPIRES_IN: z.string().default("24h"),
   JWT_REFRESH_THRESHOLD_SECONDS: z.coerce.number().int().positive().default(6 * 60 * 60),
 });
-
-const getProjectRootDir = () => path.resolve(__dirname, "../../..");
-
-const resolveConfiguredPath = (value: string | undefined, fallbackName: string) => {
-  if (!value) {
-    return path.join(getProjectRootDir(), fallbackName);
-  }
-
-  return path.isAbsolute(value) ? value : path.resolve(getProjectRootDir(), value);
-};
 
 export const getConfigFilePath = () => resolveConfiguredPath(process.env.CONFIG_PATH, "config.json");
 

@@ -6,6 +6,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-egoflow}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - "${TARGET_DIRECTORY}/postgres:/var/lib/postgresql/data"
     healthcheck:
       test:
         [
@@ -20,6 +23,8 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - "${TARGET_DIRECTORY}/redis:/data"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -27,17 +32,28 @@ services:
       retries: 20
 
   backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    env_file:
+      - ./.env
     environment: &backend_environment
       NODE_ENV: production
       PORT: 3000
+      HOST_HOME: ${HOST_HOME:-}
       DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/egoflow?schema=public}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./.env:/app/.env:ro
+      - "${TARGET_DIRECTORY}/raw:/data/raw"
+      - "${TARGET_DIRECTORY}/datasets:${TARGET_DIRECTORY}/datasets"
     command: >
       sh -c "npm run prisma:migrate:deploy &&
       npm run db:seed:prod &&
@@ -56,6 +72,9 @@ services:
       start_period: 20s
 
   worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
       postgres:
@@ -64,10 +83,20 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
+    env_file:
+      - ./.env
     environment: *backend_environment
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./.env:/app/.env:ro
+      - "${TARGET_DIRECTORY}/raw:/data/raw"
+      - "${TARGET_DIRECTORY}/datasets:${TARGET_DIRECTORY}/datasets"
     command: ["npm", "run", "worker:start"]
 
   dashboard:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
       backend:
@@ -97,6 +126,10 @@ services:
         condition: service_healthy
       dashboard:
         condition: service_healthy
+    ports:
+      - "${PUBLIC_HTTP_PORT:-80}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
     healthcheck:
       test:
         [
@@ -119,3 +152,12 @@ services:
       MTX_RTMPSADDRESS: :${RTMPS_PORT:-1936}
       MTX_RTMPSERVERCERT: ${RTMPS_CERT_PATH:-/certs/server.crt}
       MTX_RTMPSERVERKEY: ${RTMPS_KEY_PATH:-/certs/server.key}
+    ports:
+      - "${RTMP_PORT:-1935}:1935"
+      - "${RTMPS_PORT:-1936}:1936"
+      - "${HLS_PORT:-8888}:8888"
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+      - ./mediamtx-hooks:/mediamtx-hooks:ro
+      - ./certs:/certs:ro
+      - "${TARGET_DIRECTORY}/raw:/data/raw"
