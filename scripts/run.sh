@@ -233,27 +233,13 @@ persist_target_directory_state() {
   printf '%s\n' "$TARGET_DIRECTORY" > "$TARGET_DIRECTORY_STATE_FILE"
 }
 
-select_previous_data_root() {
-  local persisted_target=""
+show_target_directory_status() {
+  local previous_target=""
 
-  persisted_target="$(read_persisted_target_directory)"
-  if [[ -n "$persisted_target" && "$persisted_target" != "$TARGET_DIRECTORY" ]]; then
-    if [[ -d "$persisted_target" ]]; then
-      echo "$persisted_target"
-      return
-    fi
+  previous_target="$(read_persisted_target_directory)"
 
-    echo "[storage] Ignoring missing previous target_directory state: ${persisted_target}" >&2
-  fi
-
-  if [[ -d "$ROOT_DIR/data" && "$ROOT_DIR/data" != "$TARGET_DIRECTORY" ]]; then
-    echo "$ROOT_DIR/data"
-    return
-  fi
-
-  if [[ -d "/opt/egoflow/data" && "/opt/egoflow/data" != "$TARGET_DIRECTORY" ]]; then
-    echo "/opt/egoflow/data"
-  fi
+  echo "Current target directory: ${TARGET_DIRECTORY}"
+  echo "Previous target directory: ${previous_target}"
 }
 
 move_path() {
@@ -378,10 +364,23 @@ prepare_target_directory() {
 migrate_previous_data_root_if_needed() {
   local previous_data_root=""
   local destination_path source_path
+  local entries=()
 
-  previous_data_root="$(select_previous_data_root)"
+  previous_data_root="$(read_persisted_target_directory)"
 
   if [[ -z "$previous_data_root" ]]; then
+    echo "[storage] No previous target directory recorded. Skipping migration."
+    return
+  fi
+
+  if [[ "$previous_data_root" == "$TARGET_DIRECTORY" ]]; then
+    echo "[storage] Previous target directory matches current target. Skipping migration."
+    return
+  fi
+
+  if [[ ! -d "$previous_data_root" ]]; then
+    echo "[storage] Previous target directory from state file does not exist on disk: ${previous_data_root}"
+    echo "[storage] Skipping host data migration."
     return
   fi
 
@@ -393,10 +392,11 @@ migrate_previous_data_root_if_needed() {
   mkdir -p "$TARGET_DIRECTORY"
 
   shopt -s dotglob nullglob
-  local entries=("$previous_data_root"/*)
+  entries=("$previous_data_root"/*)
   shopt -u dotglob nullglob
 
   if [[ ${#entries[@]} -eq 0 ]]; then
+    echo "[storage] Previous target directory is empty. Nothing to migrate."
     rmdir "$previous_data_root" 2>/dev/null || true
     return
   fi
@@ -405,8 +405,10 @@ migrate_previous_data_root_if_needed() {
 
   for source_path in "${entries[@]}"; do
     destination_path="$TARGET_DIRECTORY/$(basename "$source_path")"
+    echo "[storage] Moving $(basename "$source_path") -> ${destination_path}"
     if [[ -e "$destination_path" ]]; then
       if [[ -d "$destination_path" ]] && directory_is_empty "$destination_path"; then
+        echo "[storage] Removing empty destination placeholder: ${destination_path}"
         rmdir "$destination_path"
       else
         echo "target_directory migration aborted because destination already contains: ${destination_path}"
@@ -417,6 +419,7 @@ migrate_previous_data_root_if_needed() {
   done
 
   rmdir "$previous_data_root" 2>/dev/null || true
+  echo "[storage] Host data root migration complete."
 }
 
 up_stack() {
@@ -424,6 +427,7 @@ up_stack() {
   local http_base
   http_base="$(public_http_base)"
 
+  show_target_directory_status
   migrate_previous_data_root_if_needed
   prepare_target_directory
   persist_target_directory_state
@@ -451,6 +455,7 @@ up_stack() {
 
 doctor() {
   check_prereqs
+  show_target_directory_status
   echo "Compose file:"
   echo "  - $COMPOSE_BASE_FILE"
   echo "Config file:"

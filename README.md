@@ -80,7 +80,7 @@ That helper lives in the parent repository root. It stops the running stack, pul
 
 `TARGET_DIRECTORY` is the host data root that EgoFlow Server uses for all persistent files. Use a dedicated directory for EgoFlow only. The value must resolve to an absolute host path. `~/...` shorthand is supported and expanded to your home directory before the stack starts.
 
-`./scripts/run.sh up` stores the last active host data root in `.run/target-directory`. When `TARGET_DIRECTORY` changes, the script migrates from that previously recorded root before starting Docker Compose, including changes to another absolute host path outside the project tree. For older layouts, it also falls back to legacy `./data` or `/opt/egoflow/data` when possible.
+`./scripts/run.sh up` stores the last active host data root in `.run/target-directory`. When `TARGET_DIRECTORY` changes, the script migrates from that previously recorded root before starting Docker Compose, including changes to another absolute host path outside the project tree. If `.run/target-directory` is missing or blank, host data migration is skipped.
 
 Current host layout under `TARGET_DIRECTORY`:
 
@@ -201,7 +201,7 @@ Command summary:
 
 - `up`: Checks prerequisites, builds images, starts the full stack, and waits until the main services are ready.
 - `down`: Stops and removes the Compose stack.
-- `doctor`: Checks Docker, Docker Compose, `config.json`, `.env`, the configured public ports, and the resolved target directory.
+- `doctor`: Checks Docker, Docker Compose, `config.json`, `.env`, the configured public ports, and prints the current/previous target directory state from `.run/target-directory`.
 - `ps`: Shows the current status of Compose services.
 - `logs [service]`: Follows logs for the full stack or for a specific service.
 - `reset`: Removes containers, volumes, and all data under `TARGET_DIRECTORY`. This is destructive and intended only for disposable development/test environments. If host deletion hits Docker-owned files, the script falls back to Docker-assisted cleanup.
