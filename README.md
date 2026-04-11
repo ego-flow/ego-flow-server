@@ -143,7 +143,7 @@ Only `TARGET_DIRECTORY` is required and does not have a default. Everything else
 | `WORKER_CONCURRENCY` | No | `2` | Number of recording finalize jobs the worker can process in parallel. |
 | `DELETE_RAW_AFTER_PROCESSING` | No | `true` | Whether raw recorded segments are deleted after successful post-processing. |
 
-The reverse proxy listens on `PUBLIC_HTTP_PORT` and forwards `/api*`, `/api-docs*`, and `/files*` to the backend while sending all remaining web routes to the dashboard. backend `3000` and dashboard `8088` stay internal to the Docker network.
+The reverse proxy listens on `PUBLIC_HTTP_PORT` and forwards `/api*`, `/api-docs*`, and `/files*` to the backend, `/hls*` to MediaMTX, while sending all remaining web routes to the dashboard. backend `3000`, dashboard `8088`, and MediaMTX HLS `8888` stay internal to the Docker network unless explicitly exposed.
 
 ### .env
 
@@ -160,7 +160,7 @@ REDIS_URL=redis://redis:6379
 
 # Optional public URL overrides
 # PUBLIC_RTMP_BASE_URL=rtmp://your-host:1935/live
-# PUBLIC_HLS_BASE_URL=http://your-host:8888
+# PUBLIC_HLS_BASE_URL=http://your-host/hls
 # RTMPS_ENCRYPTION_MODE=no
 # RTMPS_CERT_PATH=/certs/server.crt
 # RTMPS_KEY_PATH=/certs/server.key
@@ -177,7 +177,7 @@ REDIS_URL=redis://redis:6379
 | `REDIS_URL` | No | `redis://redis:6379` | Redis connection string override. |
 | `HF_TOKEN` | No | None | Hugging Face token used for Hugging Face integration. |
 | `PUBLIC_RTMP_BASE_URL` | No | `rtmp://127.0.0.1:{RTMP_PORT}/live` | Public RTMP base URL returned to clients. Set it explicitly on any machine that other devices connect to. |
-| `PUBLIC_HLS_BASE_URL` | No | `http://127.0.0.1:{HLS_PORT}` | Public HLS base URL returned to clients. Set it explicitly on any machine that other devices connect to. |
+| `PUBLIC_HLS_BASE_URL` | No | `http://127.0.0.1:{HLS_PORT}` | Public HLS base URL returned to clients. For remote deployments, prefer a reverse-proxied path such as `http://your-host/hls` unless port `8888` is intentionally exposed to clients. |
 | `MEDIAMTX_API_URL` | No | `http://mediamtx:{MEDIAMTX_API_PORT}` | Internal MediaMTX API URL override used by the backend. |
 | `RTMPS_ENCRYPTION_MODE` | No | `no` | MediaMTX RTMP encryption mode. |
 | `RTMPS_CERT_PATH` | No | `/certs/server.crt` | MediaMTX RTMPS server certificate path. |
