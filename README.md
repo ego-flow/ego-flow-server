@@ -1,6 +1,6 @@
 # EgoFlow Server
 
-EgoFlow is a platform for collecting egocentric video from AR glasses and serving it through a backend API, a live/dashboard UI, and a MediaMTX-based streaming stack.
+EgoFlow is a platform for collecting egocentric video from smart glasses and serving it through a backend API, a live/dashboard UI, and a MediaMTX-based streaming stack.
 
 ## Getting Started
 
