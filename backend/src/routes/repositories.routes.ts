@@ -5,12 +5,17 @@ import { AppError } from "../lib/errors";
 import { repoAccess } from "../middleware/repo-access.middleware";
 import { requireAuth } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
-import type { RepositoryIdParamInput, RepositoryMemberParamInput } from "../schemas/repository.schema";
+import type {
+  RepositoryIdParamInput,
+  RepositoryMemberParamInput,
+  RepositoryResolveQueryInput,
+} from "../schemas/repository.schema";
 import {
   createRepositoryMemberSchema,
   createRepositorySchema,
   repositoryIdParamSchema,
   repositoryMemberParamSchema,
+  repositoryResolveQuerySchema,
   updateRepositoryMemberSchema,
   updateRepositorySchema,
 } from "../schemas/repository.schema";
@@ -53,6 +58,40 @@ router.get(
     }
 
     const response = await repositoryService.listAccessibleRepositories(req.user.userId, req.user.role);
+    res.status(200).json(response);
+  }),
+);
+
+router.get(
+  "/resolve",
+  validate(repositoryResolveQuerySchema, "query"),
+  asyncHandler(async (req, res) => {
+    if (!req.user) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
+    }
+
+    const query = req.query as unknown as RepositoryResolveQueryInput;
+    let ownerId: string;
+    let repoName: string;
+
+    if (query.slug) {
+      const parts = query.slug.split("/");
+      if (parts.length !== 2 || !parts[0] || !parts[1]) {
+        throw new AppError(400, "INVALID_SLUG", "Slug must be in 'owner/name' format.");
+      }
+
+      [ownerId, repoName] = parts;
+    } else {
+      ownerId = query.owner_id!;
+      repoName = query.name!;
+    }
+
+    const response = await repositoryService.resolveRepository(
+      req.user.userId,
+      req.user.role,
+      ownerId,
+      repoName,
+    );
     res.status(200).json(response);
   }),
 );

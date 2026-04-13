@@ -13,6 +13,16 @@ export const repositoryMemberParamSchema = z.object({
   userId: userIdSchema,
 });
 
+export const repositoryResolveQuerySchema = z
+  .object({
+    slug: z.string().trim().min(1).optional(),
+    owner_id: userIdSchema.optional(),
+    name: repositoryNameSchema.optional(),
+  })
+  .refine((value) => Boolean(value.slug) || Boolean(value.owner_id && value.name), {
+    message: "Either 'slug' or both 'owner_id' and 'name' are required.",
+  });
+
 export const createRepositorySchema = z.object({
   name: repositoryNameSchema,
   visibility: z.nativeEnum(RepoVisibility).default(RepoVisibility.private),
@@ -40,6 +50,7 @@ export const updateRepositoryMemberSchema = z.object({
 
 export type RepositoryIdParamInput = z.infer<typeof repositoryIdParamSchema>;
 export type RepositoryMemberParamInput = z.infer<typeof repositoryMemberParamSchema>;
+export type RepositoryResolveQueryInput = z.infer<typeof repositoryResolveQuerySchema>;
 export type CreateRepositoryInput = z.infer<typeof createRepositorySchema>;
 export type UpdateRepositoryInput = z.infer<typeof updateRepositorySchema>;
 export type CreateRepositoryMemberInput = z.infer<typeof createRepositoryMemberSchema>;

@@ -6,3 +6,9 @@ export interface AuthTokenPayload {
   iat?: number;
   exp?: number;
 }
+
+export interface AuthenticatedUser {
+  userId: string;
+  role: AppUserRole;
+  displayName: string | null;
+}

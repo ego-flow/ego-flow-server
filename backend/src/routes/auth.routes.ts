@@ -48,6 +48,24 @@ router.get(
   }),
 );
 
+router.get(
+  "/validate",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (!req.user) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
+    }
+
+    res.status(200).json({
+      user: {
+        id: req.user.userId,
+        role: req.user.role,
+        display_name: req.user.displayName,
+      },
+    });
+  }),
+);
+
 router.delete(
   "/tokens/:tokenId",
   requireAuth,

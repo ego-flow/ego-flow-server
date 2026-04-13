@@ -58,6 +58,7 @@ test("requireAuth accepts ef_ static tokens without emitting a refreshed header"
   adminService.getAuthenticatedUser = async (userId: string) => ({
     userId,
     role: "user",
+    displayName: "Alice Kim",
   });
   (jwtLib as any).verifyAccessToken = (() => {
     jwtVerified = true;
@@ -82,6 +83,7 @@ test("requireAuth accepts ef_ static tokens without emitting a refreshed header"
   assert.deepEqual(req.user, {
     userId: "alice",
     role: "user",
+    displayName: "Alice Kim",
   });
   assert.equal(res.headers["X-Refreshed-Token"], undefined);
 });
@@ -96,6 +98,7 @@ test("requireAuth keeps the JWT refresh behavior for non-static bearer tokens", 
   adminService.getAuthenticatedUser = async () => ({
     userId: "alice",
     role: "user",
+    displayName: "Alice Kim",
   });
 
   const req: any = {
@@ -115,6 +118,7 @@ test("requireAuth keeps the JWT refresh behavior for non-static bearer tokens", 
   assert.deepEqual(req.user, {
     userId: "alice",
     role: "user",
+    displayName: "Alice Kim",
   });
   assert.equal(res.headers["X-Refreshed-Token"], "refreshed.jwt");
 });

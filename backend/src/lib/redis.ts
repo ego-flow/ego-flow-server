@@ -8,8 +8,10 @@ declare global {
 }
 
 const createRedisClient = () => {
+  const isTestEnv = process.env.NODE_ENV === "test";
   const client = new Redis(env.REDIS_URL, {
     maxRetriesPerRequest: null,
+    lazyConnect: isTestEnv,
     retryStrategy: (attempt) => {
       if (attempt > 3) {
         console.error("[redis] reconnect stopped after 3 attempts");

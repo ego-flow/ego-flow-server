@@ -10,6 +10,7 @@ import { getTargetDirectory } from "../lib/storage";
 import type {
   CreateRepositoryInput,
   CreateRepositoryMemberInput,
+  RepositoryResolveQueryInput,
   UpdateRepositoryInput,
   UpdateRepositoryMemberInput,
 } from "../schemas/repository.schema";
@@ -242,6 +243,44 @@ export class RepositoryService {
     const access = await this.assertRepositoryAccess(userId, userRole, repositoryId, "read");
     return {
       repository: toRepositoryResponse(access.repository, access.effectiveRole),
+    };
+  }
+
+  async resolveRepository(
+    requestUserId: string,
+    requestUserRole: AppUserRole,
+    ownerId: string,
+    repoName: string,
+  ) {
+    const repository = await prisma.repository.findUnique({
+      where: {
+        ownerId_name: {
+          ownerId,
+          name: repoName,
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        ownerId: true,
+        visibility: true,
+        description: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!repository) {
+      throw new AppError(404, "NOT_FOUND", "Repository not found.");
+    }
+
+    const access = await this.getRepositoryAccess(requestUserId, requestUserRole, repository.id);
+    if (!access) {
+      throw new AppError(404, "NOT_FOUND", "Repository not found.");
+    }
+
+    return {
+      repository: toRepositoryResponse(toRepositoryRecord(repository), access.effectiveRole),
     };
   }
 

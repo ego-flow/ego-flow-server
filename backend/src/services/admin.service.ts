@@ -5,6 +5,7 @@ import { AppError } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { getTargetDirectory } from "../lib/storage";
 import type { CreateAdminUserInput, ResetUserPasswordInput } from "../schemas/admin.schema";
+import type { AuthenticatedUser } from "../types/auth";
 
 const toUserRole = (role: UserRole): "admin" | "user" => (role === UserRole.admin ? "admin" : "user");
 
@@ -135,13 +136,14 @@ export class AdminService {
     };
   }
 
-  async getAuthenticatedUser(userId: string) {
+  async getAuthenticatedUser(userId: string): Promise<AuthenticatedUser | null> {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
         role: true,
         isActive: true,
+        displayName: true,
       },
     });
 
@@ -152,6 +154,7 @@ export class AdminService {
     return {
       userId: user.id,
       role: toUserRole(user.role),
+      displayName: user.displayName,
     };
   }
 }

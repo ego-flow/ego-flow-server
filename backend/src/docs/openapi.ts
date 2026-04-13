@@ -69,11 +69,53 @@ export const openApiDocument = {
           user: { $ref: "#/components/schemas/AuthUser" },
         },
       },
+      ValidateAuthResponse: {
+        type: "object",
+        required: ["user"],
+        properties: {
+          user: {
+            type: "object",
+            required: ["id", "role", "display_name"],
+            properties: {
+              id: { type: "string", example: "alice" },
+              role: { type: "string", enum: ["admin", "user"] },
+              display_name: { type: ["string", "null"], example: "Alice Kim" },
+            },
+          },
+        },
+      },
       HealthResponse: {
         type: "object",
         required: ["status"],
         properties: {
           status: { type: "string", example: "ok" },
+        },
+      },
+      InfoResponse: {
+        type: "object",
+        required: ["api_version", "server_version", "capabilities", "urls"],
+        properties: {
+          api_version: { type: "string", example: "v1" },
+          server_version: { type: "string", example: "0.1.0" },
+          capabilities: {
+            type: "object",
+            required: ["dataset_manifest", "video_download", "thumbnail_download", "live_streams", "static_tokens"],
+            properties: {
+              dataset_manifest: { type: "boolean" },
+              video_download: { type: "boolean" },
+              thumbnail_download: { type: "boolean" },
+              live_streams: { type: "boolean" },
+              static_tokens: { type: "boolean" },
+            },
+          },
+          urls: {
+            type: "object",
+            required: ["api_base", "hls_base"],
+            properties: {
+              api_base: { type: "string", example: "/api/v1" },
+              hls_base: { type: "string", example: "http://127.0.0.1:8888" },
+            },
+          },
         },
       },
       Repository: {
@@ -654,6 +696,23 @@ export const openApiDocument = {
         },
       },
     },
+    "/info": {
+      get: {
+        tags: ["System"],
+        summary: "Server capability metadata",
+        security: [],
+        responses: {
+          "200": {
+            description: "Server capability metadata",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/InfoResponse" },
+              },
+            },
+          },
+        },
+      },
+    },
     "/openapi.json": {
       get: {
         tags: ["System"],
@@ -734,6 +793,23 @@ export const openApiDocument = {
             },
           },
           "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/auth/validate": {
+      get: {
+        tags: ["Auth"],
+        summary: "Validate the current bearer token",
+        responses: {
+          "200": {
+            description: "Authenticated user",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ValidateAuthResponse" },
+              },
+            },
+          },
           "401": { $ref: "#/components/responses/Unauthorized" },
         },
       },
@@ -829,6 +905,45 @@ export const openApiDocument = {
           },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "409": { $ref: "#/components/responses/Conflict" },
+        },
+      },
+    },
+    "/repositories/resolve": {
+      get: {
+        tags: ["Repositories"],
+        summary: "Resolve owner/name to an accessible repository",
+        parameters: [
+          {
+            name: "slug",
+            in: "query",
+            required: false,
+            schema: { type: "string", example: "alice/daily-kitchen" },
+          },
+          {
+            name: "owner_id",
+            in: "query",
+            required: false,
+            schema: { type: "string", pattern: "^[a-z0-9_]+$", maxLength: 64 },
+          },
+          {
+            name: "name",
+            in: "query",
+            required: false,
+            schema: { type: "string", pattern: "^[a-z0-9_-]+$", maxLength: 64 },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Resolved repository detail",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/RepositoryDetailResponse" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "404": { $ref: "#/components/responses/NotFound" },
         },
       },
     },

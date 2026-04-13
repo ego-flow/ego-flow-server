@@ -9,6 +9,7 @@ import { runtimeConfig as env } from "./config/runtime";
 import { openApiDocument } from "./docs/openapi";
 import { AppError } from "./lib/errors";
 import { redis } from "./lib/redis";
+import { getServerInfo } from "./lib/server-info";
 import { getTargetDirectory, initializeTargetDirectory } from "./lib/storage";
 import { requireAuthWithQueryToken } from "./middleware/auth.middleware";
 import { errorMiddleware } from "./middleware/error.middleware";
@@ -57,6 +58,10 @@ app.use(
 
 app.get("/api/v1/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
+});
+
+app.get("/api/v1/info", (_req, res) => {
+  res.status(200).json(getServerInfo());
 });
 
 app.use("/api/v1/auth", authRoutes);

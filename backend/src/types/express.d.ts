@@ -1,9 +1,9 @@
-import type { AuthTokenPayload } from "./auth";
+import type { AuthenticatedUser } from "./auth";
 import type { RepositoryAccessContext } from "./repository";
 
 declare module "express-serve-static-core" {
   interface Request {
-    user?: Pick<AuthTokenPayload, "userId" | "role">;
+    user?: AuthenticatedUser;
     repositoryAccess?: RepositoryAccessContext;
   }
 }
