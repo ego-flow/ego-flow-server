@@ -9,13 +9,12 @@ export type SortOrder = 'asc' | 'desc'
 export interface VideoListFilters {
   page?: number
   limit?: number
-  repositoryId?: string
   status?: VideoStatus | 'ALL'
   sortBy?: VideoSortBy
   sortOrder?: SortOrder
 }
 
-interface VideoApiRecord {
+interface RepositoryVideoApiRecord {
   id: string
   repository_id: string
   repository_name: string
@@ -28,8 +27,7 @@ interface VideoApiRecord {
   codec: string | null
   recorded_at: string | null
   thumbnail_url: string | null
-  dashboard_video_url: string | null
-  vlm_video_path: string | null
+  dashboard_video_url?: string | null
   scene_summary: string | null
   clip_segments: unknown
   created_at: string
@@ -39,7 +37,7 @@ interface VideoListApiResponse {
   total: number
   page: number
   limit: number
-  data: VideoApiRecord[]
+  data: RepositoryVideoApiRecord[]
 }
 
 export interface VideoRecord {
@@ -56,7 +54,6 @@ export interface VideoRecord {
   recordedAt: string | null
   thumbnailUrl: string | null
   dashboardVideoUrl: string | null
-  vlmVideoPath: string | null
   sceneSummary: string | null
   clipSegments: unknown
   createdAt: string
@@ -79,7 +76,7 @@ export interface VideoStatusResponse {
   processingCompletedAt: string | null
 }
 
-function normalizeVideo(video: VideoApiRecord): VideoRecord {
+function normalizeVideo(video: RepositoryVideoApiRecord): VideoRecord {
   return {
     id: video.id,
     repositoryId: video.repository_id,
@@ -93,26 +90,27 @@ function normalizeVideo(video: VideoApiRecord): VideoRecord {
     codec: video.codec,
     recordedAt: video.recorded_at,
     thumbnailUrl: resolveBackendUrl(video.thumbnail_url),
-    dashboardVideoUrl: resolveBackendUrl(video.dashboard_video_url),
-    vlmVideoPath: video.vlm_video_path,
+    dashboardVideoUrl: resolveBackendUrl(video.dashboard_video_url ?? null),
     sceneSummary: video.scene_summary,
     clipSegments: video.clip_segments,
     createdAt: video.created_at,
   }
 }
 
-export async function requestVideos(filters: VideoListFilters) {
-  const response = await apiClient.get<VideoListApiResponse>('/videos', {
-    params: {
-      page: filters.page ?? 1,
-      limit: filters.limit ?? 20,
-      repository_id: filters.repositoryId || undefined,
-      status:
-        filters.status && filters.status !== 'ALL' ? filters.status : undefined,
-      sort_by: filters.sortBy ?? 'created_at',
-      sort_order: filters.sortOrder ?? 'desc',
+export async function requestVideos(repositoryId: string, filters: VideoListFilters) {
+  const response = await apiClient.get<VideoListApiResponse>(
+    `/repositories/${repositoryId}/videos`,
+    {
+      params: {
+        page: filters.page ?? 1,
+        limit: filters.limit ?? 20,
+        status:
+          filters.status && filters.status !== 'ALL' ? filters.status : undefined,
+        sort_by: filters.sortBy ?? 'created_at',
+        sort_order: filters.sortOrder ?? 'desc',
+      },
     },
-  })
+  )
 
   return {
     total: response.data.total,
@@ -122,7 +120,7 @@ export async function requestVideos(filters: VideoListFilters) {
   } satisfies VideoListResponse
 }
 
-export async function requestVideoStatus(videoId: string) {
+export async function requestVideoStatus(repositoryId: string, videoId: string) {
   const response = await apiClient.get<{
     id: string
     repository_id: string
@@ -131,7 +129,7 @@ export async function requestVideoStatus(videoId: string) {
     error_message: string | null
     processing_started_at: string | null
     processing_completed_at: string | null
-  }>(`/videos/${videoId}/status`)
+  }>(`/repositories/${repositoryId}/videos/${videoId}/status`)
 
   return {
     id: response.data.id,
@@ -144,59 +142,21 @@ export async function requestVideoStatus(videoId: string) {
   } satisfies VideoStatusResponse
 }
 
-export async function requestVideoDetail(videoId: string) {
-  const response = await apiClient.get<VideoApiRecord>(`/videos/${videoId}`)
+export async function requestVideoDetail(repositoryId: string, videoId: string) {
+  const response = await apiClient.get<RepositoryVideoApiRecord>(
+    `/repositories/${repositoryId}/videos/${videoId}`,
+  )
   return normalizeVideo(response.data)
 }
 
-export async function requestDeleteVideo(videoId: string) {
+export async function requestDeleteVideo(repositoryId: string, videoId: string) {
   const response = await apiClient.delete<{ id: string; deleted: boolean }>(
-    `/videos/${videoId}`,
+    `/repositories/${repositoryId}/videos/${videoId}`,
   )
 
   return response.data
 }
 
-export function formatDuration(durationSec: number | null) {
-  if (typeof durationSec !== 'number' || Number.isNaN(durationSec)) {
-    return 'Unknown length'
-  }
-
-  const totalSeconds = Math.max(0, Math.round(durationSec))
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds
-      .toString()
-      .padStart(2, '0')}`
-  }
-
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`
-}
-
-export function formatDateTime(value: string | null) {
-  if (!value) {
-    return 'Unavailable'
-  }
-
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) {
-    return value
-  }
-
-  return parsed.toLocaleString()
-}
-
-export function formatResolution(video: Pick<VideoRecord, 'resolutionWidth' | 'resolutionHeight'>) {
-  if (!video.resolutionWidth || !video.resolutionHeight) {
-    return 'Unavailable'
-  }
-
-  return `${video.resolutionWidth} × ${video.resolutionHeight}`
-}
-
 export function primeVideoDetailCache(queryClient: QueryClient, video: VideoRecord) {
-  queryClient.setQueryData(['video-detail', video.id], video)
+  queryClient.setQueryData(['video-detail', video.repositoryId, video.id], video)
 }

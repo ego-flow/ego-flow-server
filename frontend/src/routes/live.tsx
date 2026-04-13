@@ -4,10 +4,10 @@ import { Navigate, createFileRoute } from '@tanstack/react-router'
 import { Activity, RadioTower, RefreshCcw } from 'lucide-react'
 
 import { getApiErrorMessage } from '#/api/client'
-import { requestActiveStreams, type ActiveStream } from '#/api/streams'
-import { formatDateTime } from '#/api/videos'
+import { requestActiveStreams } from '#/api/streams'
 import { Button } from '#/components/ui/button'
 import { useAuth } from '#/hooks/useAuth'
+import { formatDateTime } from '#/lib/format'
 
 const HlsPlayer = lazy(() => import('#/components/HlsPlayer'))
 

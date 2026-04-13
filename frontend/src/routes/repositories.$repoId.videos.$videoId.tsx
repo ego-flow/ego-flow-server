@@ -1,11 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Link, createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { AlertTriangle, Trash2 } from 'lucide-react'
 
 import {
-  formatDateTime,
-  formatDuration,
-  formatResolution,
   requestDeleteVideo,
   requestVideoDetail,
   requestVideoStatus,
@@ -13,6 +10,7 @@ import {
 import { getApiErrorMessage, withAccessToken } from '#/api/client'
 import { Button } from '#/components/ui/button'
 import { useAuth } from '#/hooks/useAuth'
+import { formatDateTime, formatDuration, formatResolution } from '#/lib/format'
 import { removeVideoSnapshot } from '#/lib/video-snapshots'
 
 export const Route = createFileRoute('/repositories/$repoId/videos/$videoId')({
@@ -49,15 +47,16 @@ function RepositoryVideoDetailPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { session } = useAuth()
+  const repositorySearch = useSearch({ from: '/repositories/$repoId' })
 
   const detailQuery = useQuery({
-    queryKey: ['video-detail', videoId],
-    queryFn: () => requestVideoDetail(videoId),
+    queryKey: ['video-detail', repoId, videoId],
+    queryFn: () => requestVideoDetail(repoId, videoId),
   })
 
   const statusQuery = useQuery({
-    queryKey: ['video-status', videoId],
-    queryFn: () => requestVideoStatus(videoId),
+    queryKey: ['video-status', repoId, videoId],
+    queryFn: () => requestVideoStatus(repoId, videoId),
     refetchInterval: (query) =>
       query.state.data?.status === 'PROCESSING' || query.state.data?.status === 'PENDING'
         ? 5000
@@ -65,11 +64,15 @@ function RepositoryVideoDetailPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: () => requestDeleteVideo(videoId),
+    mutationFn: () => requestDeleteVideo(repoId, videoId),
     onSuccess: async () => {
       removeVideoSnapshot(videoId)
-      await queryClient.invalidateQueries({ queryKey: ['videos'] })
-      await navigate({ to: '/repositories/$repoId', params: { repoId } })
+      await queryClient.invalidateQueries({ queryKey: ['videos', 'repository', repoId] })
+      await navigate({
+        to: '/repositories/$repoId',
+        params: { repoId },
+        search: repositorySearch,
+      })
     },
   })
 
@@ -83,6 +86,7 @@ function RepositoryVideoDetailPage() {
         <Link
           to="/repositories/$repoId"
           params={{ repoId }}
+          search={repositorySearch}
           className="text-sm font-semibold text-[var(--lagoon-deep)] no-underline hover:underline"
         >
           Back to repository

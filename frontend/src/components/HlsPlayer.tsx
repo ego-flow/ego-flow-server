@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ErrorData } from 'hls.js'
 
 interface HlsPlayerProps {
   src: string | null
@@ -50,7 +51,7 @@ export default function HlsPlayer({ src, authToken, poster, className }: HlsPlay
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: true,
-          xhrSetup: (xhr) => {
+          xhrSetup: (xhr: XMLHttpRequest) => {
             if (authToken) {
               xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
             }
@@ -59,7 +60,7 @@ export default function HlsPlayer({ src, authToken, poster, className }: HlsPlay
 
         hls.loadSource(src)
         hls.attachMedia(video)
-        hls.on(Hls.Events.ERROR, (_event, data) => {
+        hls.on(Hls.Events.ERROR, (_event: string, data: ErrorData) => {
           if (data.fatal) {
             setErrorMessage('Failed to load the live stream.')
           }

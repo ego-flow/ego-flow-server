@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Link, createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 
 import { getApiErrorMessage } from '#/api/client'
 import {
@@ -14,10 +14,11 @@ import {
   type RepositoryRole,
   type RepositoryVisibility,
 } from '#/api/repositories'
-import { formatDateTime } from '#/api/videos'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
+import { formatDateTime } from '#/lib/format'
+import { defaultRepositoriesSearch } from '#/lib/route-search'
 
 export const Route = createFileRoute('/repositories/$repoId/settings')({
   component: RepositorySettingsPage,
@@ -27,6 +28,7 @@ function RepositorySettingsPage() {
   const { repoId } = Route.useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const repositorySearch = useSearch({ from: '/repositories/$repoId' })
   const [name, setName] = useState('')
   const [visibility, setVisibility] = useState<RepositoryVisibility>('private')
   const [description, setDescription] = useState('')
@@ -71,7 +73,7 @@ function RepositorySettingsPage() {
     mutationFn: () => requestDeleteRepository(repoId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['repositories'] })
-      await navigate({ to: '/repositories' })
+      await navigate({ to: '/repositories', search: defaultRepositoriesSearch })
     },
   })
 
@@ -96,6 +98,7 @@ function RepositorySettingsPage() {
         <Link
           to="/repositories/$repoId"
           params={{ repoId }}
+          search={repositorySearch}
           className="text-sm font-semibold text-[var(--lagoon-deep)] no-underline hover:underline"
         >
           Back to repository

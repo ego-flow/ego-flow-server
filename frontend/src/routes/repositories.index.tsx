@@ -5,14 +5,10 @@ import { Filter, FolderOpen, Plus, RefreshCcw } from 'lucide-react'
 
 import { getApiErrorMessage } from '#/api/client'
 import { requestRepositories } from '#/api/repositories'
-import { formatDateTime } from '#/api/videos'
 import { Button } from '#/components/ui/button'
 import { Label } from '#/components/ui/label'
-
-function parsePositiveInteger(value: unknown, fallback: number) {
-  const parsed = Number(value)
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
-}
+import { formatDateTime } from '#/lib/format'
+import { defaultRepositoryVideosSearch } from '#/lib/route-search'
 
 export const Route = createFileRoute('/repositories/')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -92,6 +88,7 @@ function RepositoriesPage() {
               key={repository.id}
               to="/repositories/$repoId"
               params={{ repoId: repository.id }}
+              search={defaultRepositoryVideosSearch}
               className="island-shell rounded-2xl p-5 no-underline shadow-sm transition-transform hover:-translate-y-0.5"
             >
               <div className="flex items-start justify-between gap-3">

@@ -8,11 +8,11 @@ import {
   requestRevokeToken,
 } from '#/api/tokens'
 import { getApiErrorMessage } from '#/api/client'
-import { formatDateTime } from '#/api/videos'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { useAuth } from '#/hooks/useAuth'
+import { formatDateTime } from '#/lib/format'
 import { requestChangeMyPassword } from '#/lib/auth'
 
 export const Route = createFileRoute('/profile')({

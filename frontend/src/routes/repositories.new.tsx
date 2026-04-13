@@ -7,6 +7,7 @@ import { requestCreateRepository, type RepositoryVisibility } from '#/api/reposi
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
+import { defaultRepositoriesSearch, defaultRepositoryVideosSearch } from '#/lib/route-search'
 
 export const Route = createFileRoute('/repositories/new')({
   component: NewRepositoryPage,
@@ -28,7 +29,11 @@ function NewRepositoryPage() {
       }),
     onSuccess: async (repository) => {
       await queryClient.invalidateQueries({ queryKey: ['repositories'] })
-      await navigate({ to: '/repositories/$repoId', params: { repoId: repository.id } })
+      await navigate({
+        to: '/repositories/$repoId',
+        params: { repoId: repository.id },
+        search: defaultRepositoryVideosSearch,
+      })
     },
   })
 
@@ -37,6 +42,7 @@ function NewRepositoryPage() {
       <div className="mb-5">
         <Link
           to="/repositories"
+          search={defaultRepositoriesSearch}
           className="text-sm font-semibold text-[var(--lagoon-deep)] no-underline hover:underline"
         >
           Back to repositories

@@ -422,6 +422,7 @@ export const openApiDocument = {
           codec: { type: ["string", "null"] },
           recorded_at: { type: ["string", "null"], format: "date-time" },
           thumbnail_url: { type: ["string", "null"] },
+          dashboard_video_url: { type: ["string", "null"] },
           scene_summary: { type: ["string", "null"] },
           clip_segments: {},
           created_at: { type: "string", format: "date-time" },
@@ -437,60 +438,6 @@ export const openApiDocument = {
           data: {
             type: "array",
             items: { $ref: "#/components/schemas/RepositoryVideo" },
-          },
-        },
-      },
-      Video: {
-        type: "object",
-        required: [
-          "id",
-          "repository_id",
-          "repository_name",
-          "owner_id",
-          "status",
-          "duration_sec",
-          "resolution_width",
-          "resolution_height",
-          "fps",
-          "codec",
-          "recorded_at",
-          "thumbnail_url",
-          "dashboard_video_url",
-          "vlm_video_path",
-          "scene_summary",
-          "clip_segments",
-          "created_at",
-        ],
-        properties: {
-          id: { type: "string", format: "uuid" },
-          repository_id: { type: "string", format: "uuid" },
-          repository_name: { type: "string" },
-          owner_id: { type: "string" },
-          status: { type: "string", enum: ["PENDING", "PROCESSING", "COMPLETED", "FAILED"] },
-          duration_sec: { type: ["number", "null"] },
-          resolution_width: { type: ["integer", "null"] },
-          resolution_height: { type: ["integer", "null"] },
-          fps: { type: ["number", "null"] },
-          codec: { type: ["string", "null"] },
-          recorded_at: { type: ["string", "null"], format: "date-time" },
-          thumbnail_url: { type: ["string", "null"] },
-          dashboard_video_url: { type: ["string", "null"] },
-          vlm_video_path: { type: ["string", "null"] },
-          scene_summary: { type: ["string", "null"] },
-          clip_segments: {},
-          created_at: { type: "string", format: "date-time" },
-        },
-      },
-      VideoListResponse: {
-        type: "object",
-        required: ["total", "page", "limit", "data"],
-        properties: {
-          total: { type: "integer", minimum: 0 },
-          page: { type: "integer", minimum: 1 },
-          limit: { type: "integer", minimum: 1 },
-          data: {
-            type: "array",
-            items: { $ref: "#/components/schemas/Video" },
           },
         },
       },
@@ -1475,56 +1422,6 @@ export const openApiDocument = {
         },
       },
     },
-    "/videos": {
-      get: {
-        tags: ["Videos"],
-        summary: "List videos",
-        parameters: [
-          {
-            name: "repository_id",
-            in: "query",
-            schema: { type: "string", format: "uuid" },
-          },
-          {
-            name: "status",
-            in: "query",
-            schema: { type: "string", enum: ["PENDING", "PROCESSING", "COMPLETED", "FAILED"] },
-          },
-          {
-            name: "page",
-            in: "query",
-            schema: { type: "integer", minimum: 1, default: 1 },
-          },
-          {
-            name: "limit",
-            in: "query",
-            schema: { type: "integer", minimum: 1, maximum: 100, default: 20 },
-          },
-          {
-            name: "sort_by",
-            in: "query",
-            schema: { type: "string", enum: ["created_at", "recorded_at", "duration_sec"], default: "created_at" },
-          },
-          {
-            name: "sort_order",
-            in: "query",
-            schema: { type: "string", enum: ["asc", "desc"], default: "desc" },
-          },
-        ],
-        responses: {
-          "200": {
-            description: "Video list",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/VideoListResponse" },
-              },
-            },
-          },
-          "400": { $ref: "#/components/responses/BadRequest" },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-        },
-      },
-    },
     "/repositories/{repoId}/videos": {
       get: {
         tags: ["Videos"],
@@ -1729,64 +1626,6 @@ export const openApiDocument = {
             content: {
               "image/jpeg": {
                 schema: { type: "string", format: "binary" },
-              },
-            },
-          },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
-          "404": { $ref: "#/components/responses/NotFound" },
-        },
-      },
-    },
-    "/videos/{videoId}": {
-      get: {
-        tags: ["Videos"],
-        summary: "Get video detail",
-        parameters: [{ $ref: "#/components/parameters/VideoId" }],
-        responses: {
-          "200": {
-            description: "Video detail",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/Video" },
-              },
-            },
-          },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
-          "404": { $ref: "#/components/responses/NotFound" },
-        },
-      },
-      delete: {
-        tags: ["Videos"],
-        summary: "Delete a video",
-        parameters: [{ $ref: "#/components/parameters/VideoId" }],
-        responses: {
-          "200": {
-            description: "Video deleted",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/DeleteResult" },
-              },
-            },
-          },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
-          "404": { $ref: "#/components/responses/NotFound" },
-        },
-      },
-    },
-    "/videos/{videoId}/status": {
-      get: {
-        tags: ["Videos"],
-        summary: "Get video processing status",
-        parameters: [{ $ref: "#/components/parameters/VideoId" }],
-        responses: {
-          "200": {
-            description: "Video status",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/VideoStatusResponse" },
               },
             },
           },

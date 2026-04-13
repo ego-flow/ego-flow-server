@@ -4,6 +4,7 @@ import egoFlowIcon from '#/assets/EgoFlowIcon.png'
 import ThemeToggle from '#/components/ThemeToggle'
 import { Button } from '#/components/ui/button'
 import { useAuth } from '#/hooks/useAuth'
+import { defaultRepositoriesSearch } from '#/lib/route-search'
 
 export default function Header() {
   const { isReady, isAuthenticated, logout, session } = useAuth()
@@ -32,6 +33,7 @@ export default function Header() {
           <div className="ml-auto flex flex-wrap items-center justify-end gap-4 text-sm font-semibold sm:gap-6 sm:text-base">
             <Link
               to="/repositories"
+              search={defaultRepositoriesSearch}
               className="inline-flex items-center gap-2 text-[var(--sea-ink-soft)] no-underline transition-colors hover:text-[var(--sea-ink)]"
             >
               <Database size={15} aria-hidden="true" />

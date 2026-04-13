@@ -7,6 +7,7 @@ import { useAuth } from '#/hooks/useAuth'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { useAppForm } from '#/hooks/demo.form'
+import { defaultRepositoriesSearch } from '#/lib/route-search'
 
 export const Route = createFileRoute('/login')({
   component: LoginPage,
@@ -17,8 +18,6 @@ const loginSchema = z.object({
   password: z.string().trim().min(1, 'Password is required'),
   rememberMe: z.boolean(),
 })
-
-type LoginFormValues = z.infer<typeof loginSchema>
 
 function LoginPage() {
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -41,7 +40,7 @@ function LoginPage() {
 
       try {
         await login(value)
-        await navigate({ to: '/repositories' })
+        await navigate({ to: '/repositories', search: defaultRepositoriesSearch })
       } catch (error) {
         setSubmitError(
           error instanceof Error
@@ -57,7 +56,7 @@ function LoginPage() {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/repositories" />
+    return <Navigate to="/repositories" search={defaultRepositoriesSearch} />
   }
 
   return (

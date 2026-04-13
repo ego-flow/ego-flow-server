@@ -1,6 +1,7 @@
 import { Navigate, Outlet, createFileRoute } from '@tanstack/react-router'
 
 import { useAuth } from '#/hooks/useAuth'
+import { defaultRepositoriesSearch } from '#/lib/route-search'
 
 export const Route = createFileRoute('/admin')({
   component: AdminLayout,
@@ -18,7 +19,7 @@ function AdminLayout() {
   }
 
   if (session?.user.role !== 'admin') {
-    return <Navigate to="/repositories" />
+    return <Navigate to="/repositories" search={defaultRepositoriesSearch} />
   }
 
   return <Outlet />

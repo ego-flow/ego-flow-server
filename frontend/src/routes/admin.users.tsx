@@ -10,10 +10,10 @@ import {
 } from '#/api/admin'
 import { getApiErrorMessage } from '#/api/client'
 import { requestAdminTokens, requestRevokeToken } from '#/api/tokens'
-import { formatDateTime } from '#/api/videos'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
+import { formatDateTime } from '#/lib/format'
 
 export const Route = createFileRoute('/admin/users')({
   component: AdminUsersPage,
