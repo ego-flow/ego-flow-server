@@ -390,6 +390,56 @@ export const openApiDocument = {
           segment_duration: { type: "number", example: 15.2 },
         },
       },
+      RepositoryVideo: {
+        type: "object",
+        required: [
+          "id",
+          "repository_id",
+          "repository_name",
+          "owner_id",
+          "status",
+          "duration_sec",
+          "resolution_width",
+          "resolution_height",
+          "fps",
+          "codec",
+          "recorded_at",
+          "thumbnail_url",
+          "scene_summary",
+          "clip_segments",
+          "created_at",
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          repository_id: { type: "string", format: "uuid" },
+          repository_name: { type: "string" },
+          owner_id: { type: "string" },
+          status: { type: "string", enum: ["PENDING", "PROCESSING", "COMPLETED", "FAILED"] },
+          duration_sec: { type: ["number", "null"] },
+          resolution_width: { type: ["integer", "null"] },
+          resolution_height: { type: ["integer", "null"] },
+          fps: { type: ["number", "null"] },
+          codec: { type: ["string", "null"] },
+          recorded_at: { type: ["string", "null"], format: "date-time" },
+          thumbnail_url: { type: ["string", "null"] },
+          scene_summary: { type: ["string", "null"] },
+          clip_segments: {},
+          created_at: { type: "string", format: "date-time" },
+        },
+      },
+      RepositoryVideoListResponse: {
+        type: "object",
+        required: ["total", "page", "limit", "data"],
+        properties: {
+          total: { type: "integer", minimum: 0 },
+          page: { type: "integer", minimum: 1 },
+          limit: { type: "integer", minimum: 1 },
+          data: {
+            type: "array",
+            items: { $ref: "#/components/schemas/RepositoryVideo" },
+          },
+        },
+      },
       Video: {
         type: "object",
         required: [
@@ -1472,6 +1522,219 @@ export const openApiDocument = {
           },
           "400": { $ref: "#/components/responses/BadRequest" },
           "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/repositories/{repoId}/videos": {
+      get: {
+        tags: ["Videos"],
+        summary: "List videos in a repository",
+        parameters: [
+          { $ref: "#/components/parameters/RepoId" },
+          {
+            name: "status",
+            in: "query",
+            schema: { type: "string", enum: ["PENDING", "PROCESSING", "COMPLETED", "FAILED"] },
+          },
+          {
+            name: "page",
+            in: "query",
+            schema: { type: "integer", minimum: 1, default: 1 },
+          },
+          {
+            name: "limit",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 100, default: 20 },
+          },
+          {
+            name: "sort_by",
+            in: "query",
+            schema: { type: "string", enum: ["created_at", "recorded_at", "duration_sec"], default: "created_at" },
+          },
+          {
+            name: "sort_order",
+            in: "query",
+            schema: { type: "string", enum: ["asc", "desc"], default: "desc" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Repository video list",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/RepositoryVideoListResponse" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+        },
+      },
+    },
+    "/repositories/{repoId}/videos/{videoId}": {
+      get: {
+        tags: ["Videos"],
+        summary: "Get repository video detail",
+        parameters: [
+          { $ref: "#/components/parameters/RepoId" },
+          { $ref: "#/components/parameters/VideoId" },
+        ],
+        responses: {
+          "200": {
+            description: "Repository video detail",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/RepositoryVideo" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+        },
+      },
+      delete: {
+        tags: ["Videos"],
+        summary: "Delete a repository video",
+        parameters: [
+          { $ref: "#/components/parameters/RepoId" },
+          { $ref: "#/components/parameters/VideoId" },
+        ],
+        responses: {
+          "200": {
+            description: "Repository video deleted",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/DeleteResult" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+        },
+      },
+    },
+    "/repositories/{repoId}/videos/{videoId}/status": {
+      get: {
+        tags: ["Videos"],
+        summary: "Get repository video processing status",
+        parameters: [
+          { $ref: "#/components/parameters/RepoId" },
+          { $ref: "#/components/parameters/VideoId" },
+        ],
+        responses: {
+          "200": {
+            description: "Repository video status",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/VideoStatusResponse" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+        },
+      },
+    },
+    "/repositories/{repoId}/videos/{videoId}/download": {
+      get: {
+        tags: ["Videos"],
+        summary: "Download a repository video file",
+        parameters: [
+          { $ref: "#/components/parameters/RepoId" },
+          { $ref: "#/components/parameters/VideoId" },
+        ],
+        responses: {
+          "200": {
+            description: "Video file stream",
+            headers: {
+              "Content-Length": { schema: { type: "integer", minimum: 0 } },
+              "Content-Disposition": { schema: { type: "string" } },
+              "Accept-Ranges": { schema: { type: "string", example: "bytes" } },
+              ETag: { schema: { type: "string" } },
+              "X-Content-Sha256": { schema: { type: "string" } },
+            },
+            content: {
+              "video/mp4": {
+                schema: { type: "string", format: "binary" },
+              },
+            },
+          },
+          "206": {
+            description: "Partial video file stream",
+            headers: {
+              "Content-Length": { schema: { type: "integer", minimum: 0 } },
+              "Content-Range": { schema: { type: "string" } },
+              "Content-Disposition": { schema: { type: "string" } },
+              "Accept-Ranges": { schema: { type: "string", example: "bytes" } },
+              ETag: { schema: { type: "string" } },
+              "X-Content-Sha256": { schema: { type: "string" } },
+            },
+            content: {
+              "video/mp4": {
+                schema: { type: "string", format: "binary" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+          "416": {
+            description: "Requested byte range is not satisfiable",
+          },
+        },
+      },
+      head: {
+        tags: ["Videos"],
+        summary: "Read repository video download metadata",
+        parameters: [
+          { $ref: "#/components/parameters/RepoId" },
+          { $ref: "#/components/parameters/VideoId" },
+        ],
+        responses: {
+          "200": {
+            description: "Video download metadata",
+            headers: {
+              "Content-Length": { schema: { type: "integer", minimum: 0 } },
+              "Content-Disposition": { schema: { type: "string" } },
+              "Accept-Ranges": { schema: { type: "string", example: "bytes" } },
+              ETag: { schema: { type: "string" } },
+              "X-Content-Sha256": { schema: { type: "string" } },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+        },
+      },
+    },
+    "/repositories/{repoId}/videos/{videoId}/thumbnail": {
+      get: {
+        tags: ["Videos"],
+        summary: "Download a repository video thumbnail",
+        parameters: [
+          { $ref: "#/components/parameters/RepoId" },
+          { $ref: "#/components/parameters/VideoId" },
+        ],
+        responses: {
+          "200": {
+            description: "Thumbnail image stream",
+            headers: {
+              "Cache-Control": { schema: { type: "string", example: "public, max-age=86400" } },
+            },
+            content: {
+              "image/jpeg": {
+                schema: { type: "string", format: "binary" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
         },
       },
     },
