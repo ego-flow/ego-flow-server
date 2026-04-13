@@ -178,6 +178,8 @@ model Video {
   vlmVideoPath          String?     @map("vlm_video_path") @db.VarChar(1024)
   dashboardVideoPath    String?     @map("dashboard_video_path") @db.VarChar(1024)
   thumbnailPath         String?     @map("thumbnail_path") @db.VarChar(1024)
+  vlmSizeBytes          BigInt?     @map("vlm_size_bytes")
+  vlmSha256             String?     @map("vlm_sha256") @db.VarChar(64)
   clipSegments          Json?       @map("clip_segments")
   actionLabels          Json?       @map("action_labels")
   videoTextAlignment    Json?       @map("video_text_alignment")

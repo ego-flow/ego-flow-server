@@ -8,7 +8,7 @@ import { buildBullConnection } from "../lib/bullmq";
 import { probeVideoMetadata } from "../lib/ffprobe";
 import { prisma } from "../lib/prisma";
 import { runtimeConfig as env } from "../config/runtime";
-import { waitForStableFile, formatErrorMessage } from "../lib/file-utils";
+import { computeFileDigestAndSize, waitForStableFile, formatErrorMessage } from "../lib/file-utils";
 import type { RecordingFinalizeJobData } from "../types/stream";
 import {
   buildOutputPaths,
@@ -130,6 +130,8 @@ const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
     encodeDashboardVideo(rawInputPath, outputs.dashboardVideoPath),
     encodeThumbnail(rawInputPath, outputs.thumbnailPath, thumbnailSeekSec),
   ]);
+
+  const { sizeBytes, sha256 } = await computeFileDigestAndSize(outputs.vlmVideoPath);
   await job.updateProgress(90);
 
   await prisma.$transaction([
@@ -139,6 +141,8 @@ const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
         vlmVideoPath: outputs.vlmVideoPath,
         dashboardVideoPath: outputs.dashboardVideoPath,
         thumbnailPath: outputs.thumbnailPath,
+        vlmSizeBytes: sizeBytes,
+        vlmSha256: sha256,
         status: VideoStatus.COMPLETED,
         errorMessage: null,
         processingCompletedAt: new Date(),

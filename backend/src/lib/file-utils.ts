@@ -1,3 +1,5 @@
+import crypto from "crypto";
+import { createReadStream } from "fs";
 import fs from "fs/promises";
 
 const sleep = async (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -24,6 +26,28 @@ export const waitForStableFile = async (filePath: string) => {
 
   throw new Error(`Raw recording file is not stable yet: ${filePath}`);
 };
+
+export const computeFileDigestAndSize = (
+  filePath: string,
+  algorithm: "sha256" = "sha256",
+): Promise<{ sha256: string; sizeBytes: bigint }> =>
+  new Promise((resolve, reject) => {
+    const hash = crypto.createHash(algorithm);
+    const stream = createReadStream(filePath);
+    let sizeBytes = 0n;
+
+    stream.on("data", (chunk: Buffer) => {
+      sizeBytes += BigInt(chunk.length);
+      hash.update(chunk);
+    });
+    stream.on("end", () => {
+      resolve({
+        sha256: hash.digest("hex"),
+        sizeBytes,
+      });
+    });
+    stream.on("error", reject);
+  });
 
 export const formatErrorMessage = (error: unknown): string => {
   if (error instanceof Error) {
