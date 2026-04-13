@@ -423,6 +423,54 @@ export const openApiDocument = {
           newPassword: { type: "string", minLength: 8, maxLength: 255 },
         },
       },
+      CreateApiTokenRequest: {
+        type: "object",
+        required: ["name"],
+        properties: {
+          name: { type: "string", minLength: 1, maxLength: 100, example: "python-package" },
+        },
+      },
+      ApiTokenMetadata: {
+        type: "object",
+        required: ["id", "name", "last_used_at", "created_at"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          name: { type: "string" },
+          last_used_at: { type: ["string", "null"], format: "date-time" },
+          created_at: { type: "string", format: "date-time" },
+        },
+      },
+      CreateApiTokenResponse: {
+        type: "object",
+        required: ["id", "name", "token", "created_at", "rotated_previous"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          name: { type: "string" },
+          token: { type: "string", example: "ef_0123456789abcdef0123456789abcdef01234567" },
+          created_at: { type: "string", format: "date-time" },
+          rotated_previous: { type: "boolean" },
+        },
+      },
+      CurrentApiTokenResponse: {
+        type: "object",
+        required: ["token"],
+        properties: {
+          token: {
+            oneOf: [
+              { $ref: "#/components/schemas/ApiTokenMetadata" },
+              { type: "null" },
+            ],
+          },
+        },
+      },
+      RevokeApiTokenResponse: {
+        type: "object",
+        required: ["id", "revoked"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          revoked: { type: "boolean", example: true },
+        },
+      },
       MessageResponse: {
         type: "object",
         required: ["message"],
@@ -488,6 +536,29 @@ export const openApiDocument = {
           },
         },
       },
+      AdminApiToken: {
+        type: "object",
+        required: ["id", "user_id", "user_role", "display_name", "name", "last_used_at", "created_at"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          user_id: { type: "string", example: "alice" },
+          user_role: { type: "string", enum: ["admin", "user"] },
+          display_name: { type: ["string", "null"] },
+          name: { type: "string" },
+          last_used_at: { type: ["string", "null"], format: "date-time" },
+          created_at: { type: "string", format: "date-time" },
+        },
+      },
+      AdminApiTokensResponse: {
+        type: "object",
+        required: ["tokens"],
+        properties: {
+          tokens: {
+            type: "array",
+            items: { $ref: "#/components/schemas/AdminApiToken" },
+          },
+        },
+      },
     },
     parameters: {
       RepoId: {
@@ -513,6 +584,12 @@ export const openApiDocument = {
         in: "path",
         required: true,
         schema: { type: "string", pattern: "^[a-z0-9_]+$", maxLength: 64 },
+      },
+      TokenId: {
+        name: "tokenId",
+        in: "path",
+        required: true,
+        schema: { type: "string", format: "uuid" },
       },
     },
     responses: {
@@ -617,6 +694,67 @@ export const openApiDocument = {
             },
           },
           "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/auth/tokens": {
+      get: {
+        tags: ["Auth"],
+        summary: "Get the current user's active API token metadata",
+        responses: {
+          "200": {
+            description: "Current API token status",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CurrentApiTokenResponse" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+      post: {
+        tags: ["Auth"],
+        summary: "Issue or rotate the current user's static API token",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateApiTokenRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "API token issued",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CreateApiTokenResponse" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/auth/tokens/{tokenId}": {
+      delete: {
+        tags: ["Auth"],
+        summary: "Revoke an API token",
+        parameters: [{ $ref: "#/components/parameters/TokenId" }],
+        responses: {
+          "200": {
+            description: "API token revoked",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/RevokeApiTokenResponse" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
         },
       },
     },
@@ -1353,6 +1491,32 @@ export const openApiDocument = {
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/Forbidden" },
           "409": { $ref: "#/components/responses/Conflict" },
+        },
+      },
+    },
+    "/admin/api-tokens": {
+      get: {
+        tags: ["Admin"],
+        summary: "List active API tokens for all users",
+        parameters: [
+          {
+            name: "user_id",
+            in: "query",
+            required: false,
+            schema: { type: "string", pattern: "^[a-z0-9_]+$", maxLength: 64 },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Active API token list",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminApiTokensResponse" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
         },
       },
     },

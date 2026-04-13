@@ -9,6 +9,7 @@ import {
   requestResetUserPassword,
 } from '#/api/admin'
 import { getApiErrorMessage } from '#/api/client'
+import { requestAdminTokens, requestRevokeToken } from '#/api/tokens'
 import { formatDateTime } from '#/api/videos'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
@@ -27,6 +28,11 @@ function AdminUsersPage() {
   const usersQuery = useQuery({
     queryKey: ['admin', 'users'],
     queryFn: requestAdminUsers,
+  })
+
+  const adminTokensQuery = useQuery({
+    queryKey: ['admin', 'api-tokens'],
+    queryFn: requestAdminTokens,
   })
 
   const createUserMutation = useMutation({
@@ -58,6 +64,17 @@ function AdminUsersPage() {
       await queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
     },
   })
+
+  const revokeTokenMutation = useMutation({
+    mutationFn: (tokenId: string) => requestRevokeToken(tokenId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'api-tokens'] })
+    },
+  })
+
+  const tokenByUserId = new Map(
+    (adminTokensQuery.data ?? []).map((token) => [token.userId, token]),
+  )
 
   return (
     <main className="page-wrap px-4 py-8 sm:py-10">
@@ -131,7 +148,7 @@ function AdminUsersPage() {
       </section>
 
       <section className="mt-6 space-y-4">
-        {usersQuery.isPending ? (
+        {usersQuery.isPending || adminTokensQuery.isPending ? (
           <div className="rounded-2xl border border-dashed border-[var(--line)] px-6 py-12 text-center text-[var(--sea-ink-soft)]">
             Loading users...
           </div>
@@ -140,79 +157,120 @@ function AdminUsersPage() {
             {getApiErrorMessage(usersQuery.error, 'Failed to load users.')}
           </div>
         ) : (
-          usersQuery.data?.map((user) => (
-            <article
-              key={user.id}
-              className="island-shell rounded-2xl p-5 shadow-sm"
-            >
-              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-xl font-semibold text-[var(--sea-ink)]">
-                      {user.displayName || user.id}
-                    </h2>
-                    <span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--sea-ink-soft)]">
-                      {user.role}
-                    </span>
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        user.isActive
-                          ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
-                          : 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      {user.isActive ? 'active' : 'inactive'}
-                    </span>
+          usersQuery.data?.map((user) => {
+            const token = tokenByUserId.get(user.id)
+
+            return (
+              <article
+                key={user.id}
+                className="island-shell rounded-2xl p-5 shadow-sm"
+              >
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-xl font-semibold text-[var(--sea-ink)]">
+                        {user.displayName || user.id}
+                      </h2>
+                      <span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--sea-ink-soft)]">
+                        {user.role}
+                      </span>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          user.isActive
+                            ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
+                            : 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        {user.isActive ? 'active' : 'inactive'}
+                      </span>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          token
+                            ? 'bg-amber-500/12 text-amber-700 dark:text-amber-300'
+                            : 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        API token: {token ? 'issued' : 'none'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-[var(--sea-ink-soft)]">{user.id}</p>
+                    <p className="mt-3 text-sm text-[var(--sea-ink-soft)]">
+                      Created {formatDateTime(user.createdAt)}
+                    </p>
+                    {token ? (
+                      <p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
+                        Token <span className="font-semibold text-[var(--sea-ink)]">{token.name}</span>
+                        {' '}· Last used {formatDateTime(token.lastUsedAt)}
+                      </p>
+                    ) : null}
                   </div>
-                  <p className="mt-1 text-sm text-[var(--sea-ink-soft)]">{user.id}</p>
-                  <p className="mt-3 text-sm text-[var(--sea-ink-soft)]">
-                    Created {formatDateTime(user.createdAt)}
-                  </p>
-                </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      const nextPassword = window.prompt(
-                        `Enter a new password for ${user.id}`,
-                      )
+                  <div className="flex flex-wrap gap-2">
+                    {token ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={revokeTokenMutation.isPending}
+                        onClick={() => {
+                          if (!window.confirm(`Revoke the API token for ${user.id}?`)) {
+                            return
+                          }
 
-                      if (!nextPassword) {
-                        return
+                          revokeTokenMutation.mutate(token.id)
+                        }}
+                      >
+                        Revoke token
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        const nextPassword = window.prompt(
+                          `Enter a new password for ${user.id}`,
+                        )
+
+                        if (!nextPassword) {
+                          return
+                        }
+
+                        resetPasswordMutation.mutate({
+                          userId: user.id,
+                          password: nextPassword,
+                        })
+                      }}
+                      disabled={resetPasswordMutation.isPending}
+                    >
+                      Reset password
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      disabled={
+                        deleteUserMutation.isPending || user.role === 'admin' || !user.isActive
                       }
+                      onClick={() => {
+                        if (!window.confirm(`Deactivate ${user.id}?`)) {
+                          return
+                        }
 
-                      resetPasswordMutation.mutate({
-                        userId: user.id,
-                        password: nextPassword,
-                      })
-                    }}
-                    disabled={resetPasswordMutation.isPending}
-                  >
-                    Reset password
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    disabled={
-                      deleteUserMutation.isPending || user.role === 'admin' || !user.isActive
-                    }
-                    onClick={() => {
-                      if (!window.confirm(`Deactivate ${user.id}?`)) {
-                        return
-                      }
-
-                      deleteUserMutation.mutate(user.id)
-                    }}
-                  >
-                    Deactivate
-                  </Button>
+                        deleteUserMutation.mutate(user.id)
+                      }}
+                    >
+                      Deactivate
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))
+              </article>
+            )
+          })
         )}
+
+        {adminTokensQuery.isError ? (
+          <p className="text-sm text-red-700 dark:text-red-300">
+            {getApiErrorMessage(adminTokensQuery.error, 'Failed to load API token status.')}
+          </p>
+        ) : null}
 
         {resetPasswordMutation.isError ? (
           <p className="text-sm text-red-700 dark:text-red-300">
@@ -226,6 +284,12 @@ function AdminUsersPage() {
         {deleteUserMutation.isError ? (
           <p className="text-sm text-red-700 dark:text-red-300">
             {getApiErrorMessage(deleteUserMutation.error, 'Failed to deactivate user.')}
+          </p>
+        ) : null}
+
+        {revokeTokenMutation.isError ? (
+          <p className="text-sm text-red-700 dark:text-red-300">
+            {getApiErrorMessage(revokeTokenMutation.error, 'Failed to revoke token.')}
           </p>
         ) : null}
       </section>

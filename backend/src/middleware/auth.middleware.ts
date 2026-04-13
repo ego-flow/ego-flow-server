@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 
 import { AppError } from "../lib/errors";
 import { shouldRefreshToken, signAccessToken, verifyAccessToken } from "../lib/jwt";
+import { apiTokenService } from "../services/api-token.service";
 import { adminService } from "../services/admin.service";
 
 const extractBearerToken = (authorizationHeader?: string): string | null => {
@@ -32,6 +33,25 @@ const requireAuthWithOptions =
         ? "Authorization header or token query parameter is missing or invalid."
         : "Authorization header is missing or invalid.";
       return next(new AppError(401, "UNAUTHORIZED", message));
+    }
+
+    if (token.startsWith("ef_")) {
+      try {
+        const payload = await apiTokenService.verifyStaticToken(token);
+        if (!payload) {
+          return next(new AppError(401, "UNAUTHORIZED", "Invalid token."));
+        }
+
+        const authenticatedUser = await adminService.getAuthenticatedUser(payload.userId);
+        if (!authenticatedUser) {
+          return next(new AppError(401, "UNAUTHORIZED", "Invalid token."));
+        }
+
+        req.user = authenticatedUser;
+        return next();
+      } catch (error) {
+        return next(error);
+      }
     }
 
     try {

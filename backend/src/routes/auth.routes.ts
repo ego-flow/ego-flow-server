@@ -1,8 +1,13 @@
 import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
+import { AppError } from "../lib/errors";
+import { requireAuth } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
+import type { ApiTokenIdParamInput } from "../schemas/api-token.schema";
+import { apiTokenIdParamSchema, createApiTokenSchema } from "../schemas/api-token.schema";
 import { loginSchema, rtmpAuthSchema } from "../schemas/auth.schema";
+import { apiTokenService } from "../services/api-token.service";
 import { authService } from "../services/auth.service";
 
 const router = Router();
@@ -13,6 +18,51 @@ router.post(
   asyncHandler(async (req, res) => {
     const response = await authService.login(req.body);
     res.status(200).json(response);
+  }),
+);
+
+router.post(
+  "/tokens",
+  requireAuth,
+  validate(createApiTokenSchema),
+  asyncHandler(async (req, res) => {
+    if (!req.user) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
+    }
+
+    const response = await apiTokenService.issueToken(req.user.userId, req.body);
+    res.status(201).json(response);
+  }),
+);
+
+router.get(
+  "/tokens",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (!req.user) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
+    }
+
+    const token = await apiTokenService.getCurrentToken(req.user.userId);
+    res.status(200).json({ token });
+  }),
+);
+
+router.delete(
+  "/tokens/:tokenId",
+  requireAuth,
+  validate(apiTokenIdParamSchema, "params"),
+  asyncHandler(async (req, res) => {
+    if (!req.user) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
+    }
+
+    const tokenId = (req.params as ApiTokenIdParamInput).tokenId;
+    await apiTokenService.revokeToken(req.user.userId, req.user.role, tokenId);
+    res.status(200).json({
+      id: tokenId,
+      revoked: true,
+    });
   }),
 );
 

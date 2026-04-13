@@ -4,6 +4,11 @@ import { beforeEach, test } from "node:test";
 import type { StreamConnectionMetadata, StreamOwnerLease } from "../src/types/stream";
 import { FakeRedis } from "./helpers/fake-redis";
 
+process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egoflow";
+process.env.REDIS_URL ??= "redis://127.0.0.1:6379";
+process.env.JWT_SECRET ??= "replace-this-in-tests-only";
+process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
+
 const fakeRedis = new FakeRedis();
 
 (globalThis as any).__egoflowRedis = fakeRedis;
