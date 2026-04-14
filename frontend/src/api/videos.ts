@@ -76,6 +76,73 @@ export interface VideoStatusResponse {
   processingCompletedAt: string | null
 }
 
+export interface VideoDownloadResponse {
+  blob: Blob
+  fileName: string
+}
+
+const CONTENT_TYPE_EXTENSION_MAP: Record<string, string> = {
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'video/quicktime': 'mov',
+  'video/x-matroska': 'mkv',
+}
+
+function sanitizeFilenamePart(value: string | null | undefined) {
+  const sanitized = (value ?? '')
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return sanitized || 'video'
+}
+
+function inferExtension(contentType: string | null | undefined) {
+  const normalized = contentType?.split(';', 1)[0]?.trim().toLowerCase() ?? ''
+  return CONTENT_TYPE_EXTENSION_MAP[normalized] ?? 'mp4'
+}
+
+function ensureFilenameExtension(fileName: string, extension: string) {
+  return /\.[a-zA-Z0-9]+$/.test(fileName) ? fileName : `${fileName}.${extension}`
+}
+
+function getFilenameFromContentDisposition(header: string | null | undefined) {
+  if (!header) {
+    return null
+  }
+
+  const encodedMatch = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)
+  if (encodedMatch?.[1]) {
+    try {
+      return decodeURIComponent(encodedMatch[1].trim().replace(/^"|"$/g, ''))
+    } catch {
+      return encodedMatch[1].trim().replace(/^"|"$/g, '')
+    }
+  }
+
+  const plainMatch = header.match(/filename\s*=\s*("?)([^";]+)\1/i)
+  return plainMatch?.[2]?.trim() || null
+}
+
+function getFilenameFromResponseUrl(request: unknown) {
+  const responseUrl =
+    typeof request === 'object' && request && 'responseURL' in request
+      ? request.responseURL
+      : null
+
+  if (typeof responseUrl !== 'string' || !responseUrl) {
+    return null
+  }
+
+  try {
+    const pathname = new URL(responseUrl).pathname
+    const lastSegment = pathname.split('/').filter(Boolean).pop()
+    return lastSegment ? decodeURIComponent(lastSegment) : null
+  } catch {
+    return null
+  }
+}
+
 function normalizeVideo(video: RepositoryVideoApiRecord): VideoRecord {
   return {
     id: video.id,
@@ -155,6 +222,30 @@ export async function requestDeleteVideo(repositoryId: string, videoId: string) 
   )
 
   return response.data
+}
+
+export async function requestVideoDownload(
+  repositoryId: string,
+  videoId: string,
+  repositoryName?: string | null,
+) {
+  const response = await apiClient.get<Blob>(`/repositories/${repositoryId}/videos/${videoId}/download`, {
+    responseType: 'blob',
+  })
+
+  const extension = inferExtension(response.headers['content-type'])
+  const fallbackFileName = `${sanitizeFilenamePart(repositoryName)}-${videoId}.${extension}`
+  const fileName = ensureFilenameExtension(
+    getFilenameFromContentDisposition(response.headers['content-disposition']) ??
+      getFilenameFromResponseUrl(response.request) ??
+      fallbackFileName,
+    extension,
+  )
+
+  return {
+    blob: response.data,
+    fileName,
+  } satisfies VideoDownloadResponse
 }
 
 export function primeVideoDetailCache(queryClient: QueryClient, video: VideoRecord) {

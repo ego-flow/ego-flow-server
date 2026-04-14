@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
-import { AlertTriangle, Trash2 } from 'lucide-react'
+import { AlertTriangle, Download, Trash2 } from 'lucide-react'
 
 import {
   requestDeleteVideo,
+  requestVideoDownload,
   requestVideoDetail,
   requestVideoStatus,
 } from '#/api/videos'
@@ -74,6 +75,26 @@ function RepositoryVideoDetailPage() {
     },
   })
 
+  const downloadMutation = useMutation({
+    mutationFn: async () => {
+      return requestVideoDownload(repoId, videoId, detailQuery.data?.repositoryName)
+    },
+    onSuccess: ({ blob, fileName }) => {
+      const objectUrl = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+
+      anchor.href = objectUrl
+      anchor.download = fileName
+      document.body.append(anchor)
+      anchor.click()
+      anchor.remove()
+
+      window.setTimeout(() => {
+        URL.revokeObjectURL(objectUrl)
+      }, 0)
+    },
+  })
+
   const video = detailQuery.data ?? null
   const currentStatus = statusQuery.data?.status ?? detailQuery.data?.status ?? 'PENDING'
   const playbackUrl = video?.dashboardVideoUrl ?? null
@@ -89,21 +110,34 @@ function RepositoryVideoDetailPage() {
         >
           Back to repository
         </Link>
-        <Button
-          type="button"
-          variant="destructive"
-          disabled={deleteMutation.isPending}
-          onClick={() => {
-            if (!window.confirm('Delete this video and remove all generated files?')) {
-              return
-            }
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!video || currentStatus !== 'COMPLETED' || downloadMutation.isPending}
+            onClick={() => {
+              downloadMutation.mutate()
+            }}
+          >
+            <Download size={16} aria-hidden="true" />
+            {downloadMutation.isPending ? 'Downloading...' : 'Download'}
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={deleteMutation.isPending}
+            onClick={() => {
+              if (!window.confirm('Delete this video and remove all generated files?')) {
+                return
+              }
 
-            deleteMutation.mutate()
-          }}
-        >
-          <Trash2 size={16} aria-hidden="true" />
-          Delete
-        </Button>
+              deleteMutation.mutate()
+            }}
+          >
+            <Trash2 size={16} aria-hidden="true" />
+            Delete
+          </Button>
+        </div>
       </div>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(18rem,1fr)]">
@@ -148,6 +182,12 @@ function RepositoryVideoDetailPage() {
           {deleteMutation.isError ? (
             <div className="mt-4 rounded-xl border border-red-500/25 bg-red-500/6 px-4 py-3 text-sm text-red-700 dark:text-red-300">
               {getApiErrorMessage(deleteMutation.error, 'Failed to delete video.')}
+            </div>
+          ) : null}
+
+          {downloadMutation.isError ? (
+            <div className="mt-4 rounded-xl border border-red-500/25 bg-red-500/6 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+              {getApiErrorMessage(downloadMutation.error, 'Failed to download video.')}
             </div>
           ) : null}
 
