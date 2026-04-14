@@ -49,15 +49,20 @@ const { adminService } =
   require("../src/services/admin.service") as typeof import("../src/services/admin.service");
 const { repositoryService } =
   require("../src/services/repository.service") as typeof import("../src/services/repository.service");
+const { videoService } =
+  require("../src/services/video.service") as typeof import("../src/services/video.service");
 const { repositoriesRoutes } =
   require("../src/routes/repositories.routes") as typeof import("../src/routes/repositories.routes");
 
 const originalVerifyAccessToken = jwtLib.verifyAccessToken;
 const originalShouldRefreshToken = jwtLib.shouldRefreshToken;
 const originalGetAuthenticatedUser = adminService.getAuthenticatedUser;
+const originalAssertRepositoryAccess = repositoryService.assertRepositoryAccess;
 const originalResolveRepository = repositoryService.resolveRepository;
+const originalGetRepositoryManifest = videoService.getRepositoryManifest;
 
 let server: import("node:http").Server | null = null;
+const repoId = "11111111-1111-4111-8111-111111111111";
 
 const startServer = async () => {
   const app = express();
@@ -77,7 +82,9 @@ beforeEach(() => {
   (jwtLib as any).verifyAccessToken = originalVerifyAccessToken;
   (jwtLib as any).shouldRefreshToken = originalShouldRefreshToken;
   adminService.getAuthenticatedUser = originalGetAuthenticatedUser;
+  repositoryService.assertRepositoryAccess = originalAssertRepositoryAccess;
   repositoryService.resolveRepository = originalResolveRepository;
+  videoService.getRepositoryManifest = originalGetRepositoryManifest;
 });
 
 afterEach(async () => {
@@ -184,4 +191,188 @@ test("GET /repositories/resolve returns 400 for invalid slug and 404 for hidden 
     },
   );
   assert.equal(hiddenRepoResponse.status, 404);
+});
+
+test("GET /repositories/:repoId/manifest uses repoAccess context and validated query params", async () => {
+  const baseUrl = await startServer();
+  let capturedRepoId = "";
+  let capturedRole = "";
+  let capturedPage = 0;
+  let capturedLimit = 0;
+
+  (jwtLib as any).verifyAccessToken = (() => ({
+    userId: "alice",
+    role: "user",
+  })) as typeof jwtLib.verifyAccessToken;
+  (jwtLib as any).shouldRefreshToken = (() => false) as typeof jwtLib.shouldRefreshToken;
+  adminService.getAuthenticatedUser = async () => ({
+    userId: "alice",
+    role: "user",
+    displayName: "Alice Kim",
+  });
+  repositoryService.assertRepositoryAccess = (async () => ({
+    repository: {
+      id: repoId,
+      name: "daily-kitchen",
+      ownerId: "alice",
+      visibility: "private",
+      description: "Daily kitchen recordings",
+      createdAt: new Date("2026-04-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-12T00:00:00.000Z"),
+    },
+    effectiveRole: "read",
+    isSystemAdmin: false,
+  })) as typeof repositoryService.assertRepositoryAccess;
+  videoService.getRepositoryManifest = (async (requestedRepoId, repository, effectiveRole, query) => {
+    capturedRepoId = requestedRepoId;
+    capturedRole = effectiveRole;
+    capturedPage = query.page;
+    capturedLimit = query.limit;
+
+    return {
+      manifest_version: "1",
+      repository: {
+        id: repository.id,
+        owner_id: repository.ownerId,
+        name: repository.name,
+        visibility: repository.visibility,
+        my_role: effectiveRole,
+      },
+      default_artifact: "vlm_video",
+      pagination: {
+        total: 0,
+        page: query.page,
+        limit: query.limit,
+        has_next: false,
+      },
+      videos: [],
+    };
+  }) as typeof videoService.getRepositoryManifest;
+
+  const response = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/manifest?page=2&limit=5`, {
+    headers: { Authorization: "Bearer jwt-token" },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(capturedRepoId, repoId);
+  assert.equal(capturedRole, "read");
+  assert.equal(capturedPage, 2);
+  assert.equal(capturedLimit, 5);
+  assert.deepEqual(await response.json(), {
+    manifest_version: "1",
+    repository: {
+      id: repoId,
+      owner_id: "alice",
+      name: "daily-kitchen",
+      visibility: "private",
+      my_role: "read",
+    },
+    default_artifact: "vlm_video",
+    pagination: {
+      total: 0,
+      page: 2,
+      limit: 5,
+      has_next: false,
+    },
+    videos: [],
+  });
+});
+
+test("GET /repositories/:repoId/manifest rejects invalid queries and missing auth", async () => {
+  const baseUrl = await startServer();
+
+  const unauthorizedResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/manifest`);
+  assert.equal(unauthorizedResponse.status, 401);
+  assert.equal((await unauthorizedResponse.json()).error.code, "UNAUTHORIZED");
+
+  (jwtLib as any).verifyAccessToken = (() => ({
+    userId: "alice",
+    role: "user",
+  })) as typeof jwtLib.verifyAccessToken;
+  (jwtLib as any).shouldRefreshToken = (() => false) as typeof jwtLib.shouldRefreshToken;
+  adminService.getAuthenticatedUser = async () => ({
+    userId: "alice",
+    role: "user",
+    displayName: "Alice Kim",
+  });
+  repositoryService.assertRepositoryAccess = (async () => ({
+    repository: {
+      id: repoId,
+      name: "daily-kitchen",
+      ownerId: "alice",
+      visibility: "public",
+      description: "Daily kitchen recordings",
+      createdAt: new Date("2026-04-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-12T00:00:00.000Z"),
+    },
+    effectiveRole: "read",
+    isSystemAdmin: false,
+  })) as typeof repositoryService.assertRepositoryAccess;
+
+  const invalidLimitResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/manifest?limit=201`, {
+    headers: { Authorization: "Bearer jwt-token" },
+  });
+  assert.equal(invalidLimitResponse.status, 400);
+  assert.equal((await invalidLimitResponse.json()).error.code, "VALIDATION_ERROR");
+});
+
+test("GET /repositories/:repoId/manifest applies default page and limit", async () => {
+  const baseUrl = await startServer();
+  let capturedPage = 0;
+  let capturedLimit = 0;
+
+  (jwtLib as any).verifyAccessToken = (() => ({
+    userId: "alice",
+    role: "user",
+  })) as typeof jwtLib.verifyAccessToken;
+  (jwtLib as any).shouldRefreshToken = (() => false) as typeof jwtLib.shouldRefreshToken;
+  adminService.getAuthenticatedUser = async () => ({
+    userId: "alice",
+    role: "user",
+    displayName: "Alice Kim",
+  });
+  repositoryService.assertRepositoryAccess = (async () => ({
+    repository: {
+      id: repoId,
+      name: "daily-kitchen",
+      ownerId: "alice",
+      visibility: "private",
+      description: "Daily kitchen recordings",
+      createdAt: new Date("2026-04-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-12T00:00:00.000Z"),
+    },
+    effectiveRole: "read",
+    isSystemAdmin: false,
+  })) as typeof repositoryService.assertRepositoryAccess;
+  videoService.getRepositoryManifest = (async (_repoId, repository, effectiveRole, query) => {
+    capturedPage = query.page;
+    capturedLimit = query.limit;
+
+    return {
+      manifest_version: "1",
+      repository: {
+        id: repository.id,
+        owner_id: repository.ownerId,
+        name: repository.name,
+        visibility: repository.visibility,
+        my_role: effectiveRole,
+      },
+      default_artifact: "vlm_video",
+      pagination: {
+        total: 0,
+        page: query.page,
+        limit: query.limit,
+        has_next: false,
+      },
+      videos: [],
+    };
+  }) as typeof videoService.getRepositoryManifest;
+
+  const response = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/manifest`, {
+    headers: { Authorization: "Bearer jwt-token" },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(capturedPage, 1);
+  assert.equal(capturedLimit, 50);
 });

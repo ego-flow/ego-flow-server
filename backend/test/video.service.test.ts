@@ -205,6 +205,30 @@ beforeEach(() => {
     processingStartedAt: null,
     processingCompletedAt: null,
   });
+
+  videos.set("video-3", {
+    id: "video-3",
+    repositoryId: "repo-1",
+    status: VideoStatus.COMPLETED,
+    durationSec: 9.5,
+    resolutionWidth: 1920,
+    resolutionHeight: 1080,
+    fps: 60,
+    codec: "h265",
+    recordedAt: new Date("2026-04-11T09:30:00.000Z"),
+    thumbnailPath: null,
+    dashboardVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", ".dashboard", "video-3.mp4"),
+    vlmVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", "video-3.mp4"),
+    vlmSizeBytes: 84n,
+    vlmSha256: "b".repeat(64),
+    sceneSummary: "Kitchen prep",
+    clipSegments: [{ start_sec: 0, end_sec: 9.5 }],
+    createdAt: new Date("2026-04-11T09:35:00.000Z"),
+    recordingSessionId: "session-3",
+    errorMessage: null,
+    processingStartedAt: new Date("2026-04-11T09:31:00.000Z"),
+    processingCompletedAt: new Date("2026-04-11T09:34:00.000Z"),
+  });
 });
 
 test("listRepositoryVideos returns repo-scoped responses without internal file paths", async () => {
@@ -215,8 +239,8 @@ test("listRepositoryVideos returns repo-scoped responses without internal file p
     sort_order: "desc",
   });
 
-  assert.equal(response.total, 1);
-  assert.equal(response.data.length, 1);
+  assert.equal(response.total, 2);
+  assert.equal(response.data.length, 2);
   assert.deepEqual(response.data[0], {
     id: "video-1",
     repository_id: "repo-1",
@@ -260,6 +284,190 @@ test("repo-scoped detail returns 404 when the video belongs to another repositor
       error instanceof AppError &&
       error.statusCode === 404 &&
       error.code === "NOT_FOUND",
+  );
+});
+
+test("getRepositoryManifest returns completed videos with download metadata and no internal paths", async () => {
+  const response = await service.getRepositoryManifest(
+    "repo-1",
+    {
+      id: repository.id,
+      name: repository.name,
+      ownerId: repository.ownerId,
+      visibility: repository.visibility,
+    },
+    "read",
+    {
+      page: 1,
+      limit: 1,
+    },
+  );
+
+  assert.deepEqual(response, {
+    manifest_version: "1",
+    repository: {
+      id: "repo-1",
+      owner_id: "alice",
+      name: "daily-kitchen",
+      visibility: "private",
+      my_role: "read",
+    },
+    default_artifact: "vlm_video",
+    pagination: {
+      total: 2,
+      page: 1,
+      limit: 1,
+      has_next: true,
+    },
+    videos: [
+      {
+        video_id: "video-1",
+        recorded_at: "2026-04-12T01:02:03.000Z",
+        duration_sec: 14.2,
+        resolution_width: 1280,
+        resolution_height: 720,
+        fps: 30,
+        codec: "h264",
+        scene_summary: null,
+        clip_segments: null,
+        artifacts: {
+          vlm_video: {
+            download_url: "/api/v1/repositories/repo-1/videos/video-1/download",
+            size_bytes: 42,
+            sha256: "a".repeat(64),
+            content_type: "video/mp4",
+          },
+          thumbnail: {
+            download_url: "/api/v1/repositories/repo-1/videos/video-1/thumbnail",
+            content_type: "image/jpeg",
+          },
+        },
+      },
+    ],
+  });
+  const firstVideo = response.videos[0]!;
+  assert.equal("vlmVideoPath" in firstVideo, false);
+  assert.equal("thumbnailPath" in firstVideo, false);
+
+  const secondPage = await service.getRepositoryManifest(
+    "repo-1",
+    {
+      id: repository.id,
+      name: repository.name,
+      ownerId: repository.ownerId,
+      visibility: repository.visibility,
+    },
+    "read",
+    {
+      page: 2,
+      limit: 1,
+    },
+  );
+
+  assert.equal(secondPage.pagination.has_next, false);
+  assert.deepEqual(secondPage.videos[0], {
+    video_id: "video-3",
+    recorded_at: "2026-04-11T09:30:00.000Z",
+    duration_sec: 9.5,
+    resolution_width: 1920,
+    resolution_height: 1080,
+    fps: 60,
+    codec: "h265",
+    scene_summary: "Kitchen prep",
+    clip_segments: [{ start_sec: 0, end_sec: 9.5 }],
+    artifacts: {
+      vlm_video: {
+        download_url: "/api/v1/repositories/repo-1/videos/video-3/download",
+        size_bytes: 84,
+        sha256: "b".repeat(64),
+        content_type: "video/mp4",
+      },
+      thumbnail: null,
+    },
+  });
+});
+
+test("getRepositoryManifest returns an empty manifest page for repositories without completed videos", async () => {
+  const response = await service.getRepositoryManifest(
+    "repo-2",
+    {
+      id: "repo-2",
+      name: "public-repo",
+      ownerId: "bob",
+      visibility: "public",
+    },
+    "read",
+    {
+      page: 1,
+      limit: 50,
+    },
+  );
+
+  assert.deepEqual(response, {
+    manifest_version: "1",
+    repository: {
+      id: "repo-2",
+      owner_id: "bob",
+      name: "public-repo",
+      visibility: "public",
+      my_role: "read",
+    },
+    default_artifact: "vlm_video",
+    pagination: {
+      total: 0,
+      page: 1,
+      limit: 50,
+      has_next: false,
+    },
+    videos: [],
+  });
+});
+
+test("getRepositoryManifest throws when a completed video lacks artifact metadata", async () => {
+  videos.set("video-bad", {
+    id: "video-bad",
+    repositoryId: "repo-1",
+    status: VideoStatus.COMPLETED,
+    durationSec: 4,
+    resolutionWidth: 640,
+    resolutionHeight: 360,
+    fps: 24,
+    codec: "h264",
+    recordedAt: new Date("2026-04-10T00:00:00.000Z"),
+    thumbnailPath: null,
+    dashboardVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", ".dashboard", "video-bad.mp4"),
+    vlmVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", "video-bad.mp4"),
+    vlmSizeBytes: null,
+    vlmSha256: null,
+    sceneSummary: null,
+    clipSegments: null,
+    createdAt: new Date("2026-04-10T00:01:00.000Z"),
+    recordingSessionId: "session-bad",
+    errorMessage: null,
+    processingStartedAt: new Date("2026-04-10T00:00:30.000Z"),
+    processingCompletedAt: new Date("2026-04-10T00:00:50.000Z"),
+  });
+
+  await assert.rejects(
+    () =>
+      service.getRepositoryManifest(
+        "repo-1",
+        {
+          id: repository.id,
+          name: repository.name,
+          ownerId: repository.ownerId,
+          visibility: repository.visibility,
+        },
+        "read",
+        {
+          page: 1,
+          limit: 50,
+        },
+      ),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.statusCode === 500 &&
+      error.code === "INTERNAL_ERROR",
   );
 });
 

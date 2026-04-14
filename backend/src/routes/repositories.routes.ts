@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
 import { AppError } from "../lib/errors";
@@ -6,6 +6,7 @@ import { repoAccess } from "../middleware/repo-access.middleware";
 import { requireAuth } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import type {
+  ManifestQueryInput,
   RepositoryIdParamInput,
   RepositoryMemberParamInput,
   RepositoryResolveQueryInput,
@@ -13,6 +14,7 @@ import type {
 import {
   createRepositoryMemberSchema,
   createRepositorySchema,
+  manifestQuerySchema,
   repositoryIdParamSchema,
   repositoryMemberParamSchema,
   repositoryResolveQuerySchema,
@@ -20,8 +22,19 @@ import {
   updateRepositorySchema,
 } from "../schemas/repository.schema";
 import { repositoryService } from "../services/repository.service";
+import { videoService } from "../services/video.service";
 
 const router = Router();
+
+const getAuthenticatedUser = (req: Request) => req.user!;
+
+const getRepositoryAccess = (req: Request) => {
+  if (!req.repositoryAccess) {
+    throw new AppError(500, "INTERNAL_ERROR", "Repository access context is missing.");
+  }
+
+  return req.repositoryAccess;
+};
 
 router.use(requireAuth);
 
@@ -29,11 +42,8 @@ router.post(
   "/",
   validate(createRepositorySchema),
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
-    const response = await repositoryService.createRepository(req.user.userId, req.body);
+    const user = getAuthenticatedUser(req);
+    const response = await repositoryService.createRepository(user.userId, req.body);
     res.status(201).json(response);
   }),
 );
@@ -41,11 +51,8 @@ router.post(
 router.get(
   "/mine",
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
-    const response = await repositoryService.listMaintainedRepositories(req.user.userId, req.user.role);
+    const user = getAuthenticatedUser(req);
+    const response = await repositoryService.listMaintainedRepositories(user.userId, user.role);
     res.status(200).json(response);
   }),
 );
@@ -53,11 +60,8 @@ router.get(
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
-    const response = await repositoryService.listAccessibleRepositories(req.user.userId, req.user.role);
+    const user = getAuthenticatedUser(req);
+    const response = await repositoryService.listAccessibleRepositories(user.userId, user.role);
     res.status(200).json(response);
   }),
 );
@@ -66,10 +70,7 @@ router.get(
   "/resolve",
   validate(repositoryResolveQuerySchema, "query"),
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
+    const user = getAuthenticatedUser(req);
     const query = req.query as unknown as RepositoryResolveQueryInput;
     let ownerId: string;
     let repoName: string;
@@ -87,11 +88,26 @@ router.get(
     }
 
     const response = await repositoryService.resolveRepository(
-      req.user.userId,
-      req.user.role,
+      user.userId,
+      user.role,
       ownerId,
       repoName,
     );
+    res.status(200).json(response);
+  }),
+);
+
+router.get(
+  "/:repoId/manifest",
+  validate(repositoryIdParamSchema, "params"),
+  validate(manifestQuerySchema, "query"),
+  repoAccess({ minRole: "read" }),
+  asyncHandler(async (req, res) => {
+    const { repoId } = req.params as RepositoryIdParamInput;
+    const query = req.query as unknown as ManifestQueryInput;
+    const { repository, effectiveRole } = getRepositoryAccess(req);
+
+    const response = await videoService.getRepositoryManifest(repoId, repository, effectiveRole, query);
     res.status(200).json(response);
   }),
 );
@@ -101,13 +117,10 @@ router.get(
   validate(repositoryIdParamSchema, "params"),
   repoAccess({ minRole: "read" }),
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
+    const user = getAuthenticatedUser(req);
     const response = await repositoryService.getRepositoryDetail(
-      req.user.userId,
-      req.user.role,
+      user.userId,
+      user.role,
       (req.params as RepositoryIdParamInput).repoId,
     );
     res.status(200).json(response);
@@ -120,13 +133,10 @@ router.patch(
   validate(updateRepositorySchema),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
+    const user = getAuthenticatedUser(req);
     const response = await repositoryService.updateRepository(
-      req.user.userId,
-      req.user.role,
+      user.userId,
+      user.role,
       (req.params as RepositoryIdParamInput).repoId,
       req.body,
     );
@@ -139,13 +149,10 @@ router.delete(
   validate(repositoryIdParamSchema, "params"),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
+    const user = getAuthenticatedUser(req);
     const response = await repositoryService.deleteRepository(
-      req.user.userId,
-      req.user.role,
+      user.userId,
+      user.role,
       (req.params as RepositoryIdParamInput).repoId,
     );
     res.status(200).json(response);
@@ -157,13 +164,10 @@ router.get(
   validate(repositoryIdParamSchema, "params"),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
+    const user = getAuthenticatedUser(req);
     const response = await repositoryService.listRepositoryMembers(
-      req.user.userId,
-      req.user.role,
+      user.userId,
+      user.role,
       (req.params as RepositoryIdParamInput).repoId,
     );
     res.status(200).json(response);
@@ -176,13 +180,10 @@ router.post(
   validate(createRepositoryMemberSchema),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
+    const user = getAuthenticatedUser(req);
     const response = await repositoryService.addRepositoryMember(
-      req.user.userId,
-      req.user.role,
+      user.userId,
+      user.role,
       (req.params as RepositoryIdParamInput).repoId,
       req.body,
     );
@@ -196,14 +197,11 @@ router.patch(
   validate(updateRepositoryMemberSchema),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
+    const user = getAuthenticatedUser(req);
     const params = req.params as RepositoryMemberParamInput;
     const response = await repositoryService.updateRepositoryMember(
-      req.user.userId,
-      req.user.role,
+      user.userId,
+      user.role,
       params.repoId,
       params.userId,
       req.body,
@@ -217,14 +215,11 @@ router.delete(
   validate(repositoryMemberParamSchema, "params"),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
+    const user = getAuthenticatedUser(req);
     const params = req.params as RepositoryMemberParamInput;
     const response = await repositoryService.deleteRepositoryMember(
-      req.user.userId,
-      req.user.role,
+      user.userId,
+      user.role,
       params.repoId,
       params.userId,
     );

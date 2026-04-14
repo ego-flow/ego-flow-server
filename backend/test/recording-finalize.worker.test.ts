@@ -53,6 +53,8 @@ const session = {
   streamPath: "live/repo-name",
   status: RecordingSessionStatus.FINALIZING,
   targetDirectory: "/data/root",
+  readyAt: null as Date | null,
+  createdAt: new Date("2026-04-14T09:59:00.000Z"),
 };
 
 const fakePrisma: any = {
@@ -112,6 +114,7 @@ beforeEach(() => {
   capturedProcessor = null;
   videoUpdateCalls.length = 0;
   recordingSessionUpdateCalls.length = 0;
+  session.readyAt = null;
 
   (encoding as any).buildOutputPaths = originalBuildOutputPaths;
   (encoding as any).ensureOutputDirectories = originalEnsureOutputDirectories;
@@ -193,4 +196,53 @@ test("recording finalize stores VLM SHA-256 and size metadata after encoding", a
   assert.equal(completedUpdate?.data.status, VideoStatus.COMPLETED);
   assert.equal(recordingSessionUpdateCalls.at(-1)?.data.status, RecordingSessionStatus.COMPLETED);
   assert.deepEqual(progressUpdates, [5, 15, 35, 90, 100]);
+});
+
+test("recording finalize falls back to session timing when ffprobe recordedAt is missing", async () => {
+  const outputRoot = "/data/root/datasets";
+  const outputs = {
+    vlmVideoPath: path.join(outputRoot, "alice", "repo-name", "video-1.mp4"),
+    dashboardVideoPath: path.join(outputRoot, "alice", "repo-name", ".dashboard", "video-1.mp4"),
+    thumbnailPath: path.join(outputRoot, "alice", "repo-name", ".thumbnails", "video-1.jpg"),
+  };
+
+  session.readyAt = new Date("2026-04-14T10:00:00.000Z");
+
+  (encoding as any).buildOutputPaths = (() => outputs) as typeof encoding.buildOutputPaths;
+  (encoding as any).ensureOutputDirectories = (async () => {}) as typeof encoding.ensureOutputDirectories;
+  (encoding as any).encodeVlmVideo = (async () => {}) as typeof encoding.encodeVlmVideo;
+  (encoding as any).encodeDashboardVideo = (async () => {}) as typeof encoding.encodeDashboardVideo;
+  (encoding as any).encodeThumbnail = (async () => {}) as typeof encoding.encodeThumbnail;
+  (ffprobeLib as any).probeVideoMetadata = (async () => ({
+    durationSec: 8,
+    resolutionWidth: 1280,
+    resolutionHeight: 720,
+    fps: 30,
+    codec: "h264",
+    recordedAt: null,
+  })) as typeof ffprobeLib.probeVideoMetadata;
+  (fileUtils as any).waitForStableFile = (async () => {}) as typeof fileUtils.waitForStableFile;
+  (fileUtils as any).computeFileDigestAndSize = (async () => ({
+    sha256: "a".repeat(64),
+    sizeBytes: 1234n,
+  })) as typeof fileUtils.computeFileDigestAndSize;
+
+  createRecordingFinalizeWorker();
+  assert.ok(capturedProcessor);
+
+  await capturedProcessor?.({
+    data: {
+      recordingSessionId: "session-1",
+      videoId: "video-1",
+      repositoryId: "repo-1",
+      ownerId: "alice",
+      repoName: "repo-name",
+      targetDirectory: outputRoot,
+    },
+    updateProgress: async () => {},
+  });
+
+  const metadataUpdate = videoUpdateCalls[1];
+  assert.ok(metadataUpdate);
+  assert.equal(metadataUpdate?.data.recordedAt, session.readyAt);
 });

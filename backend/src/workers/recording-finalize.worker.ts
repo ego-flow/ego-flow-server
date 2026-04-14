@@ -104,6 +104,7 @@ const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
   });
 
   const metadata = await probeVideoMetadata(rawInputPath);
+  const recordedAt = metadata.recordedAt ?? session.readyAt ?? session.createdAt;
   await prisma.video.update({
     where: { id: videoId },
     data: {
@@ -112,7 +113,7 @@ const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
       resolutionHeight: metadata.resolutionHeight,
       fps: metadata.fps,
       codec: metadata.codec,
-      recordedAt: metadata.recordedAt,
+      recordedAt,
       streamPath: session.streamPath,
       deviceType: session.deviceType,
     },

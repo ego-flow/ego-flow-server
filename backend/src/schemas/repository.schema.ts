@@ -39,6 +39,11 @@ export const updateRepositorySchema = z
     message: "At least one field must be provided.",
   });
 
+export const manifestQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
 export const createRepositoryMemberSchema = z.object({
   user_id: userIdSchema,
   role: z.nativeEnum(RepoRole),
@@ -53,5 +58,6 @@ export type RepositoryMemberParamInput = z.infer<typeof repositoryMemberParamSch
 export type RepositoryResolveQueryInput = z.infer<typeof repositoryResolveQuerySchema>;
 export type CreateRepositoryInput = z.infer<typeof createRepositorySchema>;
 export type UpdateRepositoryInput = z.infer<typeof updateRepositorySchema>;
+export type ManifestQueryInput = z.infer<typeof manifestQuerySchema>;
 export type CreateRepositoryMemberInput = z.infer<typeof createRepositoryMemberSchema>;
 export type UpdateRepositoryMemberInput = z.infer<typeof updateRepositoryMemberSchema>;
