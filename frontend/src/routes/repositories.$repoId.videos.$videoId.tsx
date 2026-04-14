@@ -7,9 +7,8 @@ import {
   requestVideoDetail,
   requestVideoStatus,
 } from '#/api/videos'
-import { getApiErrorMessage, withAccessToken } from '#/api/client'
+import { getApiErrorMessage } from '#/api/client'
 import { Button } from '#/components/ui/button'
-import { useAuth } from '#/hooks/useAuth'
 import { formatDateTime, formatDuration, formatResolution } from '#/lib/format'
 import { removeVideoSnapshot } from '#/lib/video-snapshots'
 
@@ -46,7 +45,6 @@ function RepositoryVideoDetailPage() {
   const { repoId, videoId } = Route.useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { session } = useAuth()
   const repositorySearch = useSearch({ from: '/repositories/$repoId' })
 
   const detailQuery = useQuery({
@@ -78,7 +76,7 @@ function RepositoryVideoDetailPage() {
 
   const video = detailQuery.data ?? null
   const currentStatus = statusQuery.data?.status ?? detailQuery.data?.status ?? 'PENDING'
-  const playbackUrl = withAccessToken(video?.dashboardVideoUrl ?? null, session?.token)
+  const playbackUrl = video?.dashboardVideoUrl ?? null
 
   return (
     <main className="page-wrap px-4 py-8 sm:py-10">

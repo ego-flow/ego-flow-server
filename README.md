@@ -125,7 +125,8 @@ Only `TARGET_DIRECTORY` is required and does not have a default. Everything else
   "JWT_REFRESH_THRESHOLD_SECONDS": 21600,
   "CORS_ORIGIN": "*",
   "WORKER_CONCURRENCY": 2,
-  "DELETE_RAW_AFTER_PROCESSING": true
+  "DELETE_RAW_AFTER_PROCESSING": true,
+  "SIGNED_FILE_URL_EXPIRES_IN": "6h"
 }
 ```
 
@@ -139,6 +140,7 @@ Only `TARGET_DIRECTORY` is required and does not have a default. Everything else
 | `MEDIAMTX_API_PORT` | No | `9997` | Internal MediaMTX control API port. |
 | `JWT_EXPIRES_IN` | No | `24h` | Access-token lifetime. |
 | `JWT_REFRESH_THRESHOLD_SECONDS` | No | `21600` | Remaining-token threshold for issuing a refreshed token in responses. |
+| `SIGNED_FILE_URL_EXPIRES_IN` | No | `6h` | Lifetime for signed `/files/*` playback URLs. |
 | `CORS_ORIGIN` | No | `*` | Allowed browser origin for dashboard/API requests. |
 | `WORKER_CONCURRENCY` | No | `2` | Number of recording finalize jobs the worker can process in parallel. |
 | `DELETE_RAW_AFTER_PROCESSING` | No | `true` | Whether raw recorded segments are deleted after successful post-processing. |

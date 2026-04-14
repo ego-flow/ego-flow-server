@@ -4,7 +4,8 @@ import type { Prisma, VideoStatus } from "@prisma/client";
 
 import { AppError } from "../lib/errors";
 import { prisma } from "../lib/prisma";
-import { getTargetDirectory, toFileUrl, toStorageRelativePath } from "../lib/storage";
+import { toSignedFileUrl } from "../lib/signed-file-url";
+import { getTargetDirectory, toStorageRelativePath } from "../lib/storage";
 import type { RepoVideoListQueryInput } from "../schemas/repository-video.schema";
 import type { RepositoryRecord } from "../types/repository";
 import { processingService } from "./processing.service";
@@ -84,7 +85,7 @@ const toRepoVideoResponse = (
   recorded_at: video.recordedAt ? video.recordedAt.toISOString() : null,
   thumbnail_url: video.thumbnailPath ? toRepositoryThumbnailUrl(repository.id, video.id) : null,
   ...(options?.includeDashboardVideoUrl
-    ? { dashboard_video_url: toFileUrl(targetDirectory, video.dashboardVideoPath) }
+    ? { dashboard_video_url: toSignedFileUrl(targetDirectory, video.dashboardVideoPath) }
     : {}),
   scene_summary: video.sceneSummary,
   clip_segments: video.clipSegments,

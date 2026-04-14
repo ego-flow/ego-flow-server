@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import { beforeEach, test } from "node:test";
 import { VideoStatus } from "@prisma/client";
 
@@ -137,8 +138,12 @@ const fakePrisma: any = {
 (globalThis as any).__egoflowPrisma = fakePrisma;
 
 const { VideoService } = require("../src/services/video.service") as typeof import("../src/services/video.service");
+const { verifySignedFileUrlToken } =
+  require("../src/lib/signed-file-url") as typeof import("../src/lib/signed-file-url");
+const { getTargetDirectory } = require("../src/lib/storage") as typeof import("../src/lib/storage");
 
 const service = new VideoService();
+const targetDirectory = getTargetDirectory();
 
 const repository: RepositoryRecord = {
   id: "repo-1",
@@ -163,9 +168,9 @@ beforeEach(() => {
     fps: 30,
     codec: "h264",
     recordedAt: new Date("2026-04-12T01:02:03.000Z"),
-    thumbnailPath: "/data/root/alice/daily-kitchen/.thumbnails/video-1.jpg",
-    dashboardVideoPath: "/data/root/alice/daily-kitchen/.dashboard/video-1.mp4",
-    vlmVideoPath: "/data/root/alice/daily-kitchen/video-1.mp4",
+    thumbnailPath: path.join(targetDirectory, "alice", "daily-kitchen", ".thumbnails", "video-1.jpg"),
+    dashboardVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", ".dashboard", "video-1.mp4"),
+    vlmVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", "video-1.mp4"),
     vlmSizeBytes: 42n,
     vlmSha256: "a".repeat(64),
     sceneSummary: null,
@@ -231,6 +236,21 @@ test("listRepositoryVideos returns repo-scoped responses without internal file p
   });
   assert.equal("dashboard_video_url" in response.data[0], false);
   assert.equal("vlm_video_path" in response.data[0], false);
+});
+
+test("repo-scoped detail returns a signed dashboard playback URL", async () => {
+  const response = await service.getRepositoryVideoDetail("repo-1", repository, "video-1");
+
+  assert.equal(response.id, "video-1");
+  assert.equal(typeof response.dashboard_video_url, "string");
+
+  const playbackUrl = new URL(response.dashboard_video_url as string, "http://backend.local");
+  assert.equal(playbackUrl.pathname, "/files/alice/daily-kitchen/.dashboard/video-1.mp4");
+  assert.equal(playbackUrl.searchParams.has("token"), false);
+
+  const signature = playbackUrl.searchParams.get("signature");
+  assert.ok(signature);
+  assert.equal(verifySignedFileUrlToken(signature).path, "alice/daily-kitchen/.dashboard/video-1.mp4");
 });
 
 test("repo-scoped detail returns 404 when the video belongs to another repository", async () => {

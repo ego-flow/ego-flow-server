@@ -46,26 +46,6 @@ export function resolveBackendUrl(path: string | null) {
   return new URL(path, `${getBackendOrigin()}/`).toString()
 }
 
-export function withAccessToken(url: string | null, token: string | null | undefined) {
-  if (!url || !token) {
-    return url
-  }
-
-  try {
-    const resolved = /^https?:\/\//.test(url)
-      ? new URL(url)
-      : new URL(url, `${getBackendOrigin()}/`)
-
-    if (!resolved.searchParams.has('token') && !resolved.searchParams.has('access_token')) {
-      resolved.searchParams.set('token', token)
-    }
-
-    return resolved.toString()
-  } catch {
-    return url
-  }
-}
-
 export const apiClient = axios.create({
   baseURL: getConfiguredApiBaseUrl(),
   headers: {

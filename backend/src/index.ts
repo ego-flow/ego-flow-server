@@ -11,9 +11,8 @@ import { AppError } from "./lib/errors";
 import { redis } from "./lib/redis";
 import { getServerInfo } from "./lib/server-info";
 import { getTargetDirectory, initializeTargetDirectory } from "./lib/storage";
-import { requireAuthWithQueryToken } from "./middleware/auth.middleware";
 import { errorMiddleware } from "./middleware/error.middleware";
-import { requireFileAccess } from "./middleware/file-access.middleware";
+import { requireSignedFileAccess } from "./middleware/signed-file-access.middleware";
 import { authRoutes } from "./routes/auth.routes";
 import { adminRoutes } from "./routes/admin.routes";
 import { hooksRoutes } from "./routes/hooks.routes";
@@ -79,8 +78,7 @@ app.use(
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     next();
   },
-  requireAuthWithQueryToken,
-  requireFileAccess,
+  requireSignedFileAccess,
   (req, res, next) =>
     express.static(getTargetDirectory(), {
       dotfiles: "allow",

@@ -50,6 +50,12 @@ moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
 const jwtLib = require("../src/lib/jwt") as typeof import("../src/lib/jwt");
 const { adminService } =
   require("../src/services/admin.service") as typeof import("../src/services/admin.service");
+const { apiTokenService } =
+  require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
+const { verifySignedFileUrlToken } =
+  require("../src/lib/signed-file-url") as typeof import("../src/lib/signed-file-url");
+const { getTargetDirectory } =
+  require("../src/lib/storage") as typeof import("../src/lib/storage");
 const { repositoryService } =
   require("../src/services/repository.service") as typeof import("../src/services/repository.service");
 const { videoService } =
@@ -60,6 +66,7 @@ const { repositoryVideosRoutes } =
 const originalVerifyAccessToken = jwtLib.verifyAccessToken;
 const originalShouldRefreshToken = jwtLib.shouldRefreshToken;
 const originalGetAuthenticatedUser = adminService.getAuthenticatedUser;
+const originalVerifyStaticToken = apiTokenService.verifyStaticToken;
 const originalAssertRepositoryAccess = repositoryService.assertRepositoryAccess;
 const originalListRepositoryVideos = videoService.listRepositoryVideos;
 const originalGetRepositoryVideoDownload = videoService.getRepositoryVideoDownload;
@@ -69,6 +76,7 @@ const originalDeleteRepositoryVideo = videoService.deleteRepositoryVideo;
 let server: import("node:http").Server | null = null;
 const repoId = "11111111-1111-4111-8111-111111111111";
 const videoId = "22222222-2222-4222-8222-222222222222";
+const targetDirectory = getTargetDirectory();
 
 const startServer = async () => {
   const app = express();
@@ -95,6 +103,13 @@ beforeEach(() => {
     role: "user",
     displayName: "Alice Kim",
   });
+  apiTokenService.verifyStaticToken = async (token: string) =>
+    token === "ef_static-token"
+      ? {
+          userId: "alice",
+          role: "user",
+        }
+      : null;
   repositoryService.assertRepositoryAccess = (async (
     _userId: string,
     _userRole: "admin" | "user",
@@ -129,6 +144,7 @@ afterEach(async () => {
   (jwtLib as any).verifyAccessToken = originalVerifyAccessToken;
   (jwtLib as any).shouldRefreshToken = originalShouldRefreshToken;
   adminService.getAuthenticatedUser = originalGetAuthenticatedUser;
+  apiTokenService.verifyStaticToken = originalVerifyStaticToken;
   repositoryService.assertRepositoryAccess = originalAssertRepositoryAccess;
   videoService.listRepositoryVideos = originalListRepositoryVideos;
   videoService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
@@ -183,11 +199,11 @@ test("repo-scoped list uses repository context resolved by repoAccess", async ()
   });
 });
 
-test("repo-scoped download supports HEAD and Range responses with file metadata headers", async () => {
+test("repo-scoped download accepts JWT and static bearer tokens, then redirects to a signed file URL", async () => {
   const baseUrl = await startServer();
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "egoflow-video-route-"));
-  const videoPath = path.join(tempRoot, `${videoId}.mp4`);
+  const videoPath = path.join(targetDirectory, "alice", "daily-kitchen", ".codex-test", `${videoId}.mp4`);
 
+  await fs.mkdir(path.dirname(videoPath), { recursive: true });
   await fs.writeFile(videoPath, Buffer.from("0123456789", "utf8"));
 
   videoService.getRepositoryVideoDownload = (async () => ({
@@ -201,30 +217,61 @@ test("repo-scoped download supports HEAD and Range responses with file metadata 
     const headResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {
       method: "HEAD",
       headers: { Authorization: "Bearer jwt-token" },
+      redirect: "manual",
     });
-    assert.equal(headResponse.status, 200);
-    assert.equal(headResponse.headers.get("content-length"), "10");
-    assert.equal(headResponse.headers.get("etag"), `"${"a".repeat(64)}"`);
-    assert.equal(headResponse.headers.get("x-content-sha256"), "a".repeat(64));
+    assert.equal(headResponse.status, 307);
+    const headLocation = headResponse.headers.get("location");
+    assert.ok(headLocation);
     assert.equal(await headResponse.text(), "");
 
-    const rangeResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {
+    const downloadResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {
       headers: {
         Authorization: "Bearer jwt-token",
-        Range: "bytes=2-5",
       },
+      redirect: "manual",
     });
-    assert.equal(rangeResponse.status, 206);
-    assert.equal(rangeResponse.headers.get("content-range"), "bytes 2-5/10");
-    assert.equal(rangeResponse.headers.get("content-length"), "4");
-    assert.equal(rangeResponse.headers.get("content-disposition"), `attachment; filename="${videoId}.mp4"`);
-    assert.equal(await rangeResponse.text(), "2345");
+    assert.equal(downloadResponse.status, 307);
+    const downloadLocation = downloadResponse.headers.get("location");
+    assert.ok(downloadLocation);
+
+    const redirectedUrl = new URL(downloadLocation, baseUrl);
+    assert.equal(redirectedUrl.pathname, `/files/alice/daily-kitchen/.codex-test/${videoId}.mp4`);
+    const signature = redirectedUrl.searchParams.get("signature");
+    assert.ok(signature);
+    assert.equal(verifySignedFileUrlToken(signature).path, `alice/daily-kitchen/.codex-test/${videoId}.mp4`);
+
+    const queryTokenResponse = await fetch(
+      `${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download?token=jwt-token`,
+      {
+        redirect: "manual",
+      },
+    );
+    assert.equal(queryTokenResponse.status, 401);
+    assert.equal((await queryTokenResponse.json()).error.code, "UNAUTHORIZED");
+
+    const staticTokenResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {
+      headers: {
+        Authorization: "Bearer ef_static-token",
+      },
+      redirect: "manual",
+    });
+    assert.equal(staticTokenResponse.status, 307);
+    const staticTokenLocation = staticTokenResponse.headers.get("location");
+    assert.ok(staticTokenLocation);
+    const staticTokenRedirect = new URL(staticTokenLocation, baseUrl);
+    const staticTokenSignature = staticTokenRedirect.searchParams.get("signature");
+    assert.ok(staticTokenSignature);
+    assert.equal(
+      verifySignedFileUrlToken(staticTokenSignature).path,
+      `alice/daily-kitchen/.codex-test/${videoId}.mp4`,
+    );
   } finally {
-    await fs.rm(tempRoot, { recursive: true, force: true });
+    await fs.rm(videoPath, { force: true });
+    await fs.rm(path.dirname(videoPath), { recursive: true, force: true });
   }
 });
 
-test("repo-scoped thumbnail accepts query token and DELETE still requires maintain role", async () => {
+test("repo-scoped thumbnail requires bearer auth and DELETE still requires maintain role", async () => {
   const baseUrl = await startServer();
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "egoflow-thumbnail-route-"));
   const thumbnailPath = path.join(tempRoot, `${videoId}.jpg`);
@@ -240,9 +287,9 @@ test("repo-scoped thumbnail accepts query token and DELETE still requires mainta
   }) as typeof videoService.deleteRepositoryVideo;
 
   try {
-    const thumbnailResponse = await fetch(
-      `${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/thumbnail?token=jwt-token`,
-    );
+    const thumbnailResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/thumbnail`, {
+      headers: { Authorization: "Bearer jwt-token" },
+    });
     assert.equal(thumbnailResponse.status, 200);
     assert.equal(thumbnailResponse.headers.get("content-type"), "image/jpeg");
     assert.equal(thumbnailResponse.headers.get("cache-control"), "public, max-age=86400");

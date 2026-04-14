@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, Outlet, createFileRoute, useNavigate, useRouterState } from '@tanstack/react-router'
 import { PlayCircle, Settings } from 'lucide-react'
 
-import { getApiErrorMessage, withAccessToken } from '#/api/client'
+import { getApiErrorMessage } from '#/api/client'
 import { requestRepositoryDetail } from '#/api/repositories'
 import {
   requestVideos,
@@ -11,6 +11,7 @@ import {
   type VideoStatus,
 } from '#/api/videos'
 import { Button } from '#/components/ui/button'
+import ProtectedImage from '#/components/ProtectedImage'
 import { useAuth } from '#/hooks/useAuth'
 import { formatDateTime, formatDuration, formatResolution } from '#/lib/format'
 import { defaultRepositoriesSearch, defaultRepositoryVideosSearch } from '#/lib/route-search'
@@ -273,10 +274,18 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                       <div className="flex flex-col gap-4 sm:flex-row">
                         <div className="flex h-36 w-full shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--line)] bg-[color-mix(in_oklab,var(--card)_72%,var(--background))] sm:w-56">
                           {video.thumbnailUrl ? (
-                            <img
-                              src={withAccessToken(video.thumbnailUrl, session?.token) ?? undefined}
+                            <ProtectedImage
+                              src={video.thumbnailUrl}
+                              authToken={session?.token}
                               alt={video.id}
                               className="h-full w-full object-cover"
+                              fallback={
+                                <PlayCircle
+                                  size={36}
+                                  aria-hidden="true"
+                                  className="text-[var(--sea-ink-soft)]"
+                                />
+                              }
                             />
                           ) : (
                             <PlayCircle size={36} aria-hidden="true" className="text-[var(--sea-ink-soft)]" />

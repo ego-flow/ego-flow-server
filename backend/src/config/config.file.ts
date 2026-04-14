@@ -25,6 +25,7 @@ const configFileSchema = z.object({
   DELETE_RAW_AFTER_PROCESSING: z.boolean().default(true),
   JWT_EXPIRES_IN: z.string().default("24h"),
   JWT_REFRESH_THRESHOLD_SECONDS: z.coerce.number().int().positive().default(6 * 60 * 60),
+  SIGNED_FILE_URL_EXPIRES_IN: z.string().default("6h"),
 });
 
 export const getConfigFilePath = () => resolveConfiguredPath(process.env.CONFIG_PATH, "config.json");

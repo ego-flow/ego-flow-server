@@ -1540,67 +1540,41 @@ export const openApiDocument = {
     "/repositories/{repoId}/videos/{videoId}/download": {
       get: {
         tags: ["Videos"],
-        summary: "Download a repository video file",
+        summary: "Resolve a repository video download URL",
         parameters: [
           { $ref: "#/components/parameters/RepoId" },
           { $ref: "#/components/parameters/VideoId" },
         ],
         responses: {
-          "200": {
-            description: "Video file stream",
+          "307": {
+            description: "Temporary redirect to a signed video file URL",
             headers: {
-              "Content-Length": { schema: { type: "integer", minimum: 0 } },
-              "Content-Disposition": { schema: { type: "string" } },
-              "Accept-Ranges": { schema: { type: "string", example: "bytes" } },
-              ETag: { schema: { type: "string" } },
-              "X-Content-Sha256": { schema: { type: "string" } },
-            },
-            content: {
-              "video/mp4": {
-                schema: { type: "string", format: "binary" },
-              },
-            },
-          },
-          "206": {
-            description: "Partial video file stream",
-            headers: {
-              "Content-Length": { schema: { type: "integer", minimum: 0 } },
-              "Content-Range": { schema: { type: "string" } },
-              "Content-Disposition": { schema: { type: "string" } },
-              "Accept-Ranges": { schema: { type: "string", example: "bytes" } },
-              ETag: { schema: { type: "string" } },
-              "X-Content-Sha256": { schema: { type: "string" } },
-            },
-            content: {
-              "video/mp4": {
-                schema: { type: "string", format: "binary" },
+              Location: {
+                schema: { type: "string" },
+                description: "Signed `/files/*` URL for the requested video.",
               },
             },
           },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/Forbidden" },
           "404": { $ref: "#/components/responses/NotFound" },
-          "416": {
-            description: "Requested byte range is not satisfiable",
-          },
         },
       },
       head: {
         tags: ["Videos"],
-        summary: "Read repository video download metadata",
+        summary: "Resolve repository video download redirect metadata",
         parameters: [
           { $ref: "#/components/parameters/RepoId" },
           { $ref: "#/components/parameters/VideoId" },
         ],
         responses: {
-          "200": {
-            description: "Video download metadata",
+          "307": {
+            description: "Temporary redirect to a signed video file URL",
             headers: {
-              "Content-Length": { schema: { type: "integer", minimum: 0 } },
-              "Content-Disposition": { schema: { type: "string" } },
-              "Accept-Ranges": { schema: { type: "string", example: "bytes" } },
-              ETag: { schema: { type: "string" } },
-              "X-Content-Sha256": { schema: { type: "string" } },
+              Location: {
+                schema: { type: "string" },
+                description: "Signed `/files/*` URL for the requested video.",
+              },
             },
           },
           "401": { $ref: "#/components/responses/Unauthorized" },
