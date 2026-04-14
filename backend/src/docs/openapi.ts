@@ -598,6 +598,96 @@ export const openApiDocument = {
           },
         },
       },
+      ManifestArtifact: {
+        type: "object",
+        required: ["download_url", "size_bytes", "sha256", "content_type"],
+        properties: {
+          download_url: { type: "string", example: "/api/v1/repositories/{repoId}/videos/{videoId}/download" },
+          size_bytes: { type: "integer", example: 104857600 },
+          sha256: { type: "string", example: "e3b0c44298fc1c149afbf4c8996fb924..." },
+          content_type: { type: "string", example: "video/mp4" },
+        },
+      },
+      ManifestThumbnailArtifact: {
+        type: "object",
+        required: ["download_url", "content_type"],
+        properties: {
+          download_url: { type: "string", example: "/api/v1/repositories/{repoId}/videos/{videoId}/thumbnail" },
+          content_type: { type: "string", example: "image/jpeg" },
+        },
+      },
+      ManifestVideo: {
+        type: "object",
+        required: [
+          "video_id",
+          "recorded_at",
+          "duration_sec",
+          "resolution_width",
+          "resolution_height",
+          "fps",
+          "codec",
+          "scene_summary",
+          "clip_segments",
+          "artifacts",
+        ],
+        properties: {
+          video_id: { type: "string", format: "uuid" },
+          recorded_at: { type: ["string", "null"], format: "date-time" },
+          duration_sec: { type: ["number", "null"] },
+          resolution_width: { type: ["integer", "null"] },
+          resolution_height: { type: ["integer", "null"] },
+          fps: { type: ["number", "null"] },
+          codec: { type: ["string", "null"] },
+          scene_summary: { type: ["string", "null"] },
+          clip_segments: {},
+          artifacts: {
+            type: "object",
+            required: ["vlm_video", "thumbnail"],
+            properties: {
+              vlm_video: { $ref: "#/components/schemas/ManifestArtifact" },
+              thumbnail: {
+                oneOf: [
+                  { $ref: "#/components/schemas/ManifestThumbnailArtifact" },
+                  { type: "null" },
+                ],
+              },
+            },
+          },
+        },
+      },
+      ManifestResponse: {
+        type: "object",
+        required: ["manifest_version", "repository", "default_artifact", "pagination", "videos"],
+        properties: {
+          manifest_version: { type: "string", example: "1" },
+          repository: {
+            type: "object",
+            required: ["id", "owner_id", "name", "visibility", "my_role"],
+            properties: {
+              id: { type: "string", format: "uuid" },
+              owner_id: { type: "string", example: "alice" },
+              name: { type: "string", example: "daily_kitchen" },
+              visibility: { type: "string", enum: ["public", "private"] },
+              my_role: { type: "string", enum: ["read", "maintain", "admin"] },
+            },
+          },
+          default_artifact: { type: "string", example: "vlm_video" },
+          pagination: {
+            type: "object",
+            required: ["total", "page", "limit", "has_next"],
+            properties: {
+              total: { type: "integer", minimum: 0 },
+              page: { type: "integer", minimum: 1 },
+              limit: { type: "integer", minimum: 1 },
+              has_next: { type: "boolean" },
+            },
+          },
+          videos: {
+            type: "array",
+            items: { $ref: "#/components/schemas/ManifestVideo" },
+          },
+        },
+      },
     },
     parameters: {
       RepoId: {
@@ -958,6 +1048,40 @@ export const openApiDocument = {
             },
           },
           "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/repositories/{repoId}/manifest": {
+      get: {
+        tags: ["Repositories"],
+        summary: "Get dataset manifest for a repository",
+        description: "Returns a paginated manifest of completed videos with download artifacts. Used by the Python package for dataset synchronization.",
+        parameters: [
+          { $ref: "#/components/parameters/RepoId" },
+          {
+            name: "page",
+            in: "query",
+            schema: { type: "integer", minimum: 1, default: 1 },
+          },
+          {
+            name: "limit",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 200, default: 50 },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Repository dataset manifest",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ManifestResponse" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
         },
       },
     },
