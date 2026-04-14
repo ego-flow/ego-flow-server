@@ -7,7 +7,7 @@ import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
 import { AppError } from "../lib/errors";
-import { requireAuth } from "../middleware/auth.middleware";
+import { requireAuth, requireAuthWithQueryToken } from "../middleware/auth.middleware";
 import { repoAccess } from "../middleware/repo-access.middleware";
 import { validate } from "../middleware/validate.middleware";
 import type {
@@ -106,12 +106,12 @@ const setDownloadHeaders = (
   }
 };
 
-router.use(requireAuth);
 router.use(validate(repoVideoRepositoryParamSchema, "params"));
-router.use(repoAccess({ minRole: "read" }));
 
 router.get(
   "/",
+  requireAuth,
+  repoAccess({ minRole: "read" }),
   validate(repoVideoListQuerySchema, "query"),
   asyncHandler(async (req, res) => {
     const response = await videoService.listRepositoryVideos(
@@ -124,6 +124,8 @@ router.get(
 
 router.get(
   "/:videoId",
+  requireAuth,
+  repoAccess({ minRole: "read" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const params = req.params as RepoVideoParamsInput;
@@ -138,6 +140,8 @@ router.get(
 
 router.get(
   "/:videoId/status",
+  requireAuth,
+  repoAccess({ minRole: "read" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const params = req.params as RepoVideoParamsInput;
@@ -148,8 +152,9 @@ router.get(
 
 router.delete(
   "/:videoId",
-  validate(repoVideoParamsSchema, "params"),
+  requireAuth,
   repoAccess({ minRole: "maintain" }),
+  validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const params = req.params as RepoVideoParamsInput;
     const response = await videoService.deleteRepositoryVideo(params.repoId, params.videoId);
@@ -159,6 +164,8 @@ router.delete(
 
 router.head(
   "/:videoId/download",
+  requireAuthWithQueryToken,
+  repoAccess({ minRole: "read" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const params = req.params as RepoVideoParamsInput;
@@ -172,6 +179,8 @@ router.head(
 
 router.get(
   "/:videoId/download",
+  requireAuthWithQueryToken,
+  repoAccess({ minRole: "read" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const params = req.params as RepoVideoParamsInput;
@@ -203,6 +212,8 @@ router.get(
 
 router.get(
   "/:videoId/thumbnail",
+  requireAuthWithQueryToken,
+  repoAccess({ minRole: "read" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const params = req.params as RepoVideoParamsInput;

@@ -224,7 +224,7 @@ test("repo-scoped download supports HEAD and Range responses with file metadata 
   }
 });
 
-test("repo-scoped thumbnail streams jpeg bytes and DELETE still requires maintain role", async () => {
+test("repo-scoped thumbnail accepts query token and DELETE still requires maintain role", async () => {
   const baseUrl = await startServer();
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "egoflow-thumbnail-route-"));
   const thumbnailPath = path.join(tempRoot, `${videoId}.jpg`);
@@ -240,9 +240,9 @@ test("repo-scoped thumbnail streams jpeg bytes and DELETE still requires maintai
   }) as typeof videoService.deleteRepositoryVideo;
 
   try {
-    const thumbnailResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/thumbnail`, {
-      headers: { Authorization: "Bearer jwt-token" },
-    });
+    const thumbnailResponse = await fetch(
+      `${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/thumbnail?token=jwt-token`,
+    );
     assert.equal(thumbnailResponse.status, 200);
     assert.equal(thumbnailResponse.headers.get("content-type"), "image/jpeg");
     assert.equal(thumbnailResponse.headers.get("cache-control"), "public, max-age=86400");
