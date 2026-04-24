@@ -4,7 +4,7 @@ import { Navigate, createFileRoute } from '@tanstack/react-router'
 import { Activity, RadioTower, RefreshCcw } from 'lucide-react'
 
 import { getApiErrorMessage } from '#/api/client'
-import { requestActiveStreams } from '#/api/streams'
+import { requestLiveStreamPlayback, requestLiveStreams } from '#/api/streams'
 import { Button } from '#/components/ui/button'
 import { useAuth } from '#/hooks/useAuth'
 import { formatDateTime } from '#/lib/format'
@@ -17,11 +17,11 @@ export const Route = createFileRoute('/live')({
 
 function LivePage() {
   const { isReady, isAuthenticated, session } = useAuth()
-  const [selectedRepositoryId, setSelectedRepositoryId] = useState<string | null>(null)
+  const [selectedStreamId, setSelectedStreamId] = useState<string | null>(null)
 
   const streamsQuery = useQuery({
-    queryKey: ['streams', 'active'],
-    queryFn: requestActiveStreams,
+    queryKey: ['live-streams'],
+    queryFn: requestLiveStreams,
     enabled: isReady && isAuthenticated,
     refetchInterval: 5000,
   })
@@ -29,15 +29,23 @@ function LivePage() {
   useEffect(() => {
     const streams = streamsQuery.data ?? []
     if (streams.length === 0) {
-      setSelectedRepositoryId(null)
+      setSelectedStreamId(null)
       return
     }
 
-    const selectedExists = streams.some((stream) => stream.repositoryId === selectedRepositoryId)
+    const selectedExists = streams.some((stream) => stream.streamId === selectedStreamId)
     if (!selectedExists) {
-      setSelectedRepositoryId(streams[0].repositoryId)
+      setSelectedStreamId(streams[0].streamId)
     }
-  }, [selectedRepositoryId, streamsQuery.data])
+  }, [selectedStreamId, streamsQuery.data])
+
+  const playbackQuery = useQuery({
+    queryKey: ['live-stream-playback', selectedStreamId],
+    queryFn: () => requestLiveStreamPlayback(selectedStreamId as string),
+    enabled: Boolean(selectedStreamId),
+    // playback token TTL은 5분. 만료 전에 rotate하도록 4분마다 재발급.
+    refetchInterval: 4 * 60 * 1000,
+  })
 
   if (!isReady) {
     return null
@@ -49,7 +57,8 @@ function LivePage() {
 
   const streams = streamsQuery.data ?? []
   const selectedStream =
-    streams.find((stream) => stream.repositoryId === selectedRepositoryId) ?? null
+    streams.find((stream) => stream.streamId === selectedStreamId) ?? null
+  const playback = playbackQuery.data ?? null
   const isAdmin = session?.user.role === 'admin'
 
   return (
@@ -103,11 +112,11 @@ function LivePage() {
             <div className="space-y-3">
               {streams.map((stream) => (
                 <button
-                  key={stream.repositoryId}
+                  key={stream.streamId}
                   type="button"
-                  onClick={() => setSelectedRepositoryId(stream.repositoryId)}
+                  onClick={() => setSelectedStreamId(stream.streamId)}
                   className={`w-full rounded-2xl border p-4 text-left transition-colors ${
-                    selectedRepositoryId === stream.repositoryId
+                    selectedStreamId === stream.streamId
                       ? 'border-[color-mix(in_oklab,var(--lagoon-deep)_55%,var(--line))] bg-[var(--link-bg-hover)]'
                       : 'border-[var(--line)] bg-[color-mix(in_oklab,var(--card)_86%,transparent)] hover:bg-[var(--link-bg-hover)]'
                   }`}
@@ -174,27 +183,37 @@ function LivePage() {
           </div>
 
           {selectedStream ? (
-            <>
-              <Suspense
-                fallback={
-                  <div className="grid aspect-video place-items-center rounded-2xl border border-[var(--line)] bg-black text-sm text-white/70">
-                    Loading live player...
+            playbackQuery.isError ? (
+              <section className="rounded-2xl border border-red-500/25 bg-red-500/6 px-6 py-5 text-sm text-red-700 dark:text-red-300">
+                {getApiErrorMessage(playbackQuery.error, 'Failed to load playback info.')}
+              </section>
+            ) : playback ? (
+              <>
+                <Suspense
+                  fallback={
+                    <div className="grid aspect-video place-items-center rounded-2xl border border-[var(--line)] bg-black text-sm text-white/70">
+                      Loading live player...
+                    </div>
+                  }
+                >
+                  <HlsPlayer src={playback.hlsUrl} playbackToken={playback.auth.token} />
+                </Suspense>
+                <dl className="mt-5 grid gap-3 text-sm text-[var(--sea-ink-soft)] sm:grid-cols-2">
+                  <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
+                    <dt className="font-semibold text-[var(--sea-ink)]">HLS URL</dt>
+                    <dd className="mt-1 break-all">{playback.hlsUrl}</dd>
                   </div>
-                }
-              >
-                <HlsPlayer src={selectedStream.hlsUrl} playbackToken={selectedStream.hlsPlaybackToken} />
-              </Suspense>
-              <dl className="mt-5 grid gap-3 text-sm text-[var(--sea-ink-soft)] sm:grid-cols-2">
-                <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
-                  <dt className="font-semibold text-[var(--sea-ink)]">HLS URL</dt>
-                  <dd className="mt-1 break-all">{selectedStream.hlsUrl}</dd>
-                </div>
-                <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
-                  <dt className="font-semibold text-[var(--sea-ink)]">Registered at</dt>
-                  <dd className="mt-1">{formatDateTime(selectedStream.registeredAt)}</dd>
-                </div>
-              </dl>
-            </>
+                  <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
+                    <dt className="font-semibold text-[var(--sea-ink)]">Registered at</dt>
+                    <dd className="mt-1">{formatDateTime(selectedStream.registeredAt)}</dd>
+                  </div>
+                </dl>
+              </>
+            ) : (
+              <div className="grid aspect-video place-items-center rounded-2xl border border-[var(--line)] bg-black text-sm text-white/70">
+                Loading playback info...
+              </div>
+            )
           ) : (
             <div className="grid min-h-80 place-items-center rounded-2xl border border-dashed border-[var(--line)] px-6 text-center">
               <div>

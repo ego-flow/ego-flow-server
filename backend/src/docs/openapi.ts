@@ -313,42 +313,89 @@ export const openApiDocument = {
           owner_status: { type: "string", enum: ["claimed", "publishing"], example: "publishing" },
         },
       },
-      ActiveStream: {
+      LiveStreamSummary: {
         type: "object",
         required: [
-          "recording_session_id",
+          "stream_id",
+          "repository_id",
+          "repository_name",
+          "owner_id",
+          "user_id",
+          "device_type",
+          "registered_at",
+          "status",
+        ],
+        properties: {
+          stream_id: { type: "string", format: "uuid" },
+          repository_id: { type: "string", format: "uuid" },
+          repository_name: { type: "string" },
+          owner_id: { type: "string" },
+          user_id: { type: "string" },
+          device_type: { type: ["string", "null"] },
+          registered_at: { type: "string", format: "date-time" },
+          status: { type: "string", enum: ["live"] },
+        },
+      },
+      LiveStreamListResponse: {
+        type: "object",
+        required: ["streams"],
+        properties: {
+          streams: {
+            type: "array",
+            items: { $ref: "#/components/schemas/LiveStreamSummary" },
+          },
+        },
+      },
+      LiveStreamDetail: {
+        type: "object",
+        required: [
+          "stream_id",
           "repository_id",
           "repository_name",
           "owner_id",
           "user_id",
           "device_type",
           "stream_path",
-          "hls_url",
-          "hls_playback_token",
-          "hls_playback_token_expires_in_seconds",
+          "source_type",
+          "source_id",
           "registered_at",
+          "status",
+          "playback_ready",
         ],
         properties: {
-          recording_session_id: { type: "string", format: "uuid" },
+          stream_id: { type: "string", format: "uuid" },
           repository_id: { type: "string", format: "uuid" },
           repository_name: { type: "string" },
           owner_id: { type: "string" },
           user_id: { type: "string" },
           device_type: { type: ["string", "null"] },
           stream_path: { type: "string", example: "live/daily_kitchen" },
-          hls_url: { type: "string", example: "http://127.0.0.1:8888/live/daily_kitchen/index.m3u8" },
-          hls_playback_token: { type: "string", example: "efp_0123456789abcdef" },
-          hls_playback_token_expires_in_seconds: { type: "integer", example: 300 },
+          source_type: { type: ["string", "null"], example: "rtmpConn" },
+          source_id: { type: ["string", "null"] },
           registered_at: { type: "string", format: "date-time" },
+          status: { type: "string", enum: ["live"] },
+          playback_ready: { type: "boolean" },
         },
       },
-      ActiveStreamsResponse: {
+      LiveStreamPlayback: {
         type: "object",
-        required: ["streams"],
+        required: ["stream_id", "repository_id", "repository_name", "protocol", "hls_url", "auth"],
         properties: {
-          streams: {
-            type: "array",
-            items: { $ref: "#/components/schemas/ActiveStream" },
+          stream_id: { type: "string", format: "uuid" },
+          repository_id: { type: "string", format: "uuid" },
+          repository_name: { type: "string" },
+          protocol: { type: "string", enum: ["hls"] },
+          hls_url: { type: "string", example: "http://127.0.0.1/hls/live/daily_kitchen/index.m3u8" },
+          auth: {
+            type: "object",
+            required: ["type", "header_name", "scheme", "token", "expires_in_seconds"],
+            properties: {
+              type: { type: "string", enum: ["bearer"] },
+              header_name: { type: "string", example: "Authorization" },
+              scheme: { type: "string", example: "Bearer" },
+              token: { type: "string", example: "efp_0123456789abcdef" },
+              expires_in_seconds: { type: "integer", example: 300 },
+            },
           },
         },
       },
@@ -1498,20 +1545,72 @@ export const openApiDocument = {
         },
       },
     },
-    "/streams/active": {
+    "/live-streams": {
       get: {
-        tags: ["Streams"],
-        summary: "List active streams visible to the current user",
+        tags: ["Live Streams"],
+        summary: "List active live streams visible to the current user",
         responses: {
           "200": {
-            description: "Active stream list",
+            description: "Live stream list",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/ActiveStreamsResponse" },
+                schema: { $ref: "#/components/schemas/LiveStreamListResponse" },
               },
             },
           },
           "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/live-streams/{streamId}": {
+      get: {
+        tags: ["Live Streams"],
+        summary: "Get live stream detail",
+        parameters: [
+          {
+            name: "streamId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Live stream detail",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LiveStreamDetail" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "404": { $ref: "#/components/responses/NotFound" },
+        },
+      },
+    },
+    "/live-streams/{streamId}/playback": {
+      get: {
+        tags: ["Live Streams"],
+        summary: "Get HLS playback URL and ephemeral bearer token",
+        parameters: [
+          {
+            name: "streamId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Playback info with ephemeral bearer token",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LiveStreamPlayback" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "404": { $ref: "#/components/responses/NotFound" },
         },
       },
     },

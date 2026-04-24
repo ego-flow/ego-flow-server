@@ -16,6 +16,7 @@ import { requireSignedFileAccess } from "./middleware/signed-file-access.middlew
 import { authRoutes } from "./routes/auth.routes";
 import { adminRoutes } from "./routes/admin.routes";
 import { hooksRoutes } from "./routes/hooks.routes";
+import { liveStreamsRoutes } from "./routes/live-streams.routes";
 import { recordingsRoutes } from "./routes/recordings.routes";
 import { repositoryVideosRoutes } from "./routes/repository-videos.routes";
 import { repositoriesRoutes } from "./routes/repositories.routes";
@@ -68,6 +69,7 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/repositories/:repoId/videos", repositoryVideosRoutes);
 app.use("/api/v1/repositories", repositoriesRoutes);
+app.use("/api/v1/live-streams", liveStreamsRoutes);
 app.use("/api/v1/streams", streamsRoutes);
 app.use("/api/v1/hooks", hooksRoutes);
 app.use("/api/v1/recordings", recordingsRoutes);

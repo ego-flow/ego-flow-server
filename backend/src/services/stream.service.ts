@@ -11,6 +11,7 @@ import type { RecordingSessionLiveCache } from "../types/stream";
 import { repositoryService } from "./repository.service";
 import { recordingSessionService } from "./recording-session.service";
 import { streamOwnershipService } from "./stream-ownership.service";
+import { playbackTokenService } from "./playback-token.service";
 
 const RECONCILE_INTERVAL_MS = 5 * 1000;
 const FIRST_PUBLISH_DEADLINE_MS = 5 * 60 * 1000;
@@ -299,20 +300,18 @@ export class StreamService {
   }
 
   /**
-   * [활성 스트림 목록 조회]
-   * DB에서 STREAMING 상태의 세션을 조회한 뒤:
-   * 1. 요청자의 repository read 권한으로 필터링
-   * 2. MediaMTX API에서 실제 active path와 교집합
-   * 3. HLS URL을 포함한 응답 반환
-   * 대시보드 Live 페이지에서 polling하여 사용한다.
+   * [Live stream 공통 접근 가능 session 수집]
+   * DB에서 STREAMING 상태 session을 가져와 요청자의 repository read 권한으로 필터링하고,
+   * MediaMTX가 실제로 송출 중인 path와 교집합한 결과를 반환한다.
+   * list/detail/playback 경로에서 공통으로 사용한다.
    */
-  async listActiveSessions(requestUserId: string, requestUserRole: AppUserRole) {
+  private async collectAccessibleLiveSessions(requestUserId: string, requestUserRole: AppUserRole) {
     const sessions = await prisma.recordingSession.findMany({
       where: { status: RecordingSessionStatus.STREAMING },
     });
 
     if (sessions.length === 0) {
-      return [];
+      return [] as Array<(typeof sessions)[number]>;
     }
 
     const visibleResults = await Promise.all(
@@ -336,40 +335,125 @@ export class StreamService {
         })
       : visible;
 
-    const hlsBase = env.HLS_BASE_URL.replace(/\/+$/, "");
-    const streams = activeVisible
-      .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1))
-      .map((session) => {
-        const repoName = recordingSessionService.extractRepositoryName(session.streamPath);
-        return {
-          recording_session_id: session.id,
-          repository_id: session.repositoryId,
-          repository_name: repoName,
-          owner_id: session.ownerId,
-          user_id: session.userId,
-          device_type: session.deviceType ?? null,
-          stream_path: session.streamPath,
-          hls_url: `${hlsBase}/live/${repoName}/index.m3u8`,
-          registered_at: session.createdAt.toISOString(),
-        };
-      });
+    return activeVisible.sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
+  }
+
+  /**
+   * [Live stream 목록]
+   * 요청자가 read 권한을 가진 repository 중 STREAMING 상태이고
+   * MediaMTX가 실제 송출 중인 session의 metadata만 반환한다.
+   * playback 정보(HLS URL, token)는 포함하지 않는다. 선택 후 /playback 호출로 개별 발급.
+   */
+  async listLiveStreams(requestUserId: string, requestUserRole: AppUserRole) {
+    const sessions = await this.collectAccessibleLiveSessions(requestUserId, requestUserRole);
+    const streams = sessions.map((session) => ({
+      stream_id: session.id,
+      repository_id: session.repositoryId,
+      repository_name: recordingSessionService.extractRepositoryName(session.streamPath),
+      owner_id: session.ownerId,
+      user_id: session.userId,
+      device_type: session.deviceType ?? null,
+      registered_at: session.createdAt.toISOString(),
+      status: "live" as const,
+    }));
 
     if (streams.length > 0) {
-      console.info("[streams.active] generated playback URLs", {
+      console.info("[live-streams.list] generated", {
         requestUserId,
         requestUserRole,
-        hlsBase,
         streamCount: streams.length,
-        streams: streams.map((stream) => ({
-          repository_id: stream.repository_id,
-          repository_name: stream.repository_name,
-          hls_url: stream.hls_url,
-          registered_at: stream.registered_at,
-        })),
       });
     }
 
     return streams;
+  }
+
+  /**
+   * [Live stream 상세]
+   * streamId(recording_session_id)로 단일 stream의 상세 metadata를 반환한다.
+   * DB STREAMING 여부와 MediaMTX path 활성 여부를 교차 확인하여 playback_ready를 계산한다.
+   * 접근 권한이 없거나 존재하지 않는 session은 404를 던진다.
+   */
+  async getLiveStreamDetail(streamId: string, requestUserId: string, requestUserRole: AppUserRole) {
+    const session = await prisma.recordingSession.findUnique({ where: { id: streamId } });
+
+    if (!session || session.status !== RecordingSessionStatus.STREAMING) {
+      throw new AppError(404, "NOT_FOUND", "Live stream not found.");
+    }
+
+    const access = await repositoryService.getRepositoryAccess(requestUserId, requestUserRole, session.repositoryId);
+    if (!access) {
+      throw new AppError(404, "NOT_FOUND", "Live stream not found.");
+    }
+
+    const repoName = recordingSessionService.extractRepositoryName(session.streamPath);
+    const activeRepoNames = await this.getActiveRepositoryNames();
+    const playbackReady = activeRepoNames ? activeRepoNames.has(repoName) : true;
+
+    return {
+      stream_id: session.id,
+      repository_id: session.repositoryId,
+      repository_name: repoName,
+      owner_id: session.ownerId,
+      user_id: session.userId,
+      device_type: session.deviceType ?? null,
+      stream_path: session.streamPath,
+      source_type: session.sourceType ?? null,
+      source_id: session.sourceId ?? null,
+      registered_at: session.createdAt.toISOString(),
+      status: "live" as const,
+      playback_ready: playbackReady,
+    };
+  }
+
+  /**
+   * [Live stream playback 정보 발급]
+   * HLS playback에 필요한 URL과 ephemeral bearer token을 반환한다.
+   * 호출 시마다 5분 TTL의 efp_ playback token을 새로 발급한다.
+   */
+  async getLiveStreamPlayback(streamId: string, requestUserId: string, requestUserRole: AppUserRole) {
+    const session = await prisma.recordingSession.findUnique({ where: { id: streamId } });
+
+    if (!session || session.status !== RecordingSessionStatus.STREAMING) {
+      throw new AppError(404, "NOT_FOUND", "Live stream not found.");
+    }
+
+    const access = await repositoryService.getRepositoryAccess(requestUserId, requestUserRole, session.repositoryId);
+    if (!access) {
+      throw new AppError(404, "NOT_FOUND", "Live stream not found.");
+    }
+
+    const repoName = recordingSessionService.extractRepositoryName(session.streamPath);
+    const hlsBase = env.HLS_BASE_URL.replace(/\/+$/, "");
+    const hlsUrl = `${hlsBase}/live/${repoName}/index.m3u8`;
+    const playback = await playbackTokenService.issueToken({
+      userId: requestUserId,
+      repositoryId: session.repositoryId,
+      recordingSessionId: session.id,
+      streamPath: session.streamPath,
+    });
+
+    console.info("[live-streams.playback] issued", {
+      requestUserId,
+      streamId: session.id,
+      repositoryName: repoName,
+      hlsUrl,
+    });
+
+    return {
+      stream_id: session.id,
+      repository_id: session.repositoryId,
+      repository_name: repoName,
+      protocol: "hls" as const,
+      hls_url: hlsUrl,
+      auth: {
+        type: "bearer" as const,
+        header_name: "Authorization",
+        scheme: "Bearer",
+        token: playback.token,
+        expires_in_seconds: playback.expires_in_seconds,
+      },
+    };
   }
 
   /**

@@ -7,7 +7,7 @@ export const getServerInfo = () => ({
     dataset_manifest: true,
     video_download: true,
     thumbnail_download: true,
-    live_streams: false,
+    live_streams: true,
     python_tokens: true,
   },
   urls: {
