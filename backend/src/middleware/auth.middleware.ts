@@ -164,6 +164,7 @@ export const requireAppJwt = requireCredential("app");
 export const requirePythonToken = requireCredential("python");
 export const requireDashboardOrApp = requireCredential("dashboard", "app");
 export const requireDashboardOrPython = requireCredential("dashboard", "python");
+export const requireDashboardOrAppOrPython = requireCredential("dashboard", "app", "python");
 
 // Backward-compatible guard for tests and legacy internal routes. New routes should use a specific guard.
 export const requireAuth = requireCredential("dashboard", "app", "python");

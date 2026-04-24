@@ -201,6 +201,43 @@ test("GET /repositories/resolve returns 400 for invalid slug and 404 for hidden 
   assert.equal(hiddenRepoResponse.status, 404);
 });
 
+test("GET /repositories/resolve accepts Python static tokens", async () => {
+  const baseUrl = await startServer();
+  let called = false;
+
+  apiTokenService.verifyPythonToken = async () => ({
+    userId: "alice",
+    role: "user",
+  });
+  adminService.getAuthenticatedUser = async () => ({
+    userId: "alice",
+    role: "user",
+    displayName: "Alice Kim",
+  });
+  repositoryService.resolveRepository = (async () => {
+    called = true;
+    return {
+      repository: {
+        id: "repo-1",
+        owner_id: "alice",
+        name: "daily-kitchen",
+        visibility: "private",
+        description: "Daily kitchen recordings",
+        my_role: "read",
+        created_at: "2026-04-01T00:00:00.000Z",
+        updated_at: "2026-04-12T00:00:00.000Z",
+      },
+    };
+  }) as typeof repositoryService.resolveRepository;
+
+  const response = await fetch(`${baseUrl}/api/v1/repositories/resolve?slug=alice/daily-kitchen`, {
+    headers: { Authorization: "Bearer ef_0123456789abcdef0123456789abcdef01234567" },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(called, true);
+});
+
 test("GET /repositories/:repoId/manifest uses repoAccess context and validated query params", async () => {
   const baseUrl = await startServer();
   let capturedRepoId = "";

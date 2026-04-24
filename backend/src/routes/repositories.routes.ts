@@ -5,6 +5,7 @@ import { AppError } from "../lib/errors";
 import { repoAccess } from "../middleware/repo-access.middleware";
 import {
   requireDashboardOrApp,
+  requireDashboardOrAppOrPython,
   requireDashboardSession,
   requirePythonToken,
 } from "../middleware/auth.middleware";
@@ -73,7 +74,7 @@ router.get(
 
 router.get(
   "/resolve",
-  requireDashboardOrApp,
+  requireDashboardOrAppOrPython,
   validate(repositoryResolveQuerySchema, "query"),
   asyncHandler(async (req, res) => {
     const user = getAuthenticatedUser(req);
