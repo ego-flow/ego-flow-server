@@ -51,7 +51,7 @@ const { apiTokenService } =
 const { authRoutes } =
   require("../src/routes/auth.routes") as typeof import("../src/routes/auth.routes");
 
-const originalVerifyStaticToken = apiTokenService.verifyStaticToken;
+const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
 const originalGetAuthenticatedUser = adminService.getAuthenticatedUser;
 const originalVerifyAccessToken = jwtLib.verifyAccessToken;
 const originalShouldRefreshToken = jwtLib.shouldRefreshToken;
@@ -73,7 +73,7 @@ const startServer = async () => {
 };
 
 beforeEach(() => {
-  apiTokenService.verifyStaticToken = originalVerifyStaticToken;
+  apiTokenService.verifyPythonToken = originalVerifyPythonToken;
   adminService.getAuthenticatedUser = originalGetAuthenticatedUser;
   (jwtLib as any).verifyAccessToken = originalVerifyAccessToken;
   (jwtLib as any).shouldRefreshToken = originalShouldRefreshToken;
@@ -94,7 +94,7 @@ afterEach(async () => {
   }
 });
 
-test("GET /auth/validate returns the authenticated user for JWT and static tokens", async () => {
+test("GET /auth/validate returns the authenticated user for JWT and Python tokens", async () => {
   const baseUrl = await startServer();
 
   (jwtLib as any).verifyAccessToken = (() => ({
@@ -107,7 +107,7 @@ test("GET /auth/validate returns the authenticated user for JWT and static token
     role: "user",
     displayName: "Alice Kim",
   });
-  apiTokenService.verifyStaticToken = async () => ({
+  apiTokenService.verifyPythonToken = async () => ({
     userId: "alice",
     role: "user",
   });
@@ -124,19 +124,25 @@ test("GET /auth/validate returns the authenticated user for JWT and static token
       role: "user",
       display_name: "Alice Kim",
     },
+    auth: {
+      kind: "app",
+    },
   });
 
-  const staticResponse = await fetch(`${baseUrl}/api/v1/auth/validate`, {
+  const pythonResponse = await fetch(`${baseUrl}/api/v1/auth/validate`, {
     headers: {
       Authorization: "Bearer ef_0123456789abcdef0123456789abcdef01234567",
     },
   });
-  assert.equal(staticResponse.status, 200);
-  assert.deepEqual(await staticResponse.json(), {
+  assert.equal(pythonResponse.status, 200);
+  assert.deepEqual(await pythonResponse.json(), {
     user: {
       id: "alice",
       role: "user",
       display_name: "Alice Kim",
+    },
+    auth: {
+      kind: "python",
     },
   });
 });
@@ -144,7 +150,7 @@ test("GET /auth/validate returns the authenticated user for JWT and static token
 test("GET /auth/validate returns 401 for an invalid token", async () => {
   const baseUrl = await startServer();
 
-  apiTokenService.verifyStaticToken = async () => null;
+  apiTokenService.verifyPythonToken = async () => null;
 
   const response = await fetch(`${baseUrl}/api/v1/auth/validate`, {
     headers: {

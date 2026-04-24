@@ -2,7 +2,7 @@ import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
 import { AppError } from "../lib/errors";
-import { requireAuth } from "../middleware/auth.middleware";
+import { requireDashboardSession } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import { changeMyPasswordSchema } from "../schemas/user.schema";
 import { authService } from "../services/auth.service";
@@ -11,7 +11,7 @@ const router = Router();
 
 router.put(
   "/me/password",
-  requireAuth,
+  requireDashboardSession,
   validate(changeMyPasswordSchema),
   asyncHandler(async (req, res) => {
     if (!req.user) {

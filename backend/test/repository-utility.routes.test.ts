@@ -47,6 +47,8 @@ moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
 const jwtLib = require("../src/lib/jwt") as typeof import("../src/lib/jwt");
 const { adminService } =
   require("../src/services/admin.service") as typeof import("../src/services/admin.service");
+const { apiTokenService } =
+  require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
 const { repositoryService } =
   require("../src/services/repository.service") as typeof import("../src/services/repository.service");
 const { videoService } =
@@ -57,6 +59,7 @@ const { repositoriesRoutes } =
 const originalVerifyAccessToken = jwtLib.verifyAccessToken;
 const originalShouldRefreshToken = jwtLib.shouldRefreshToken;
 const originalGetAuthenticatedUser = adminService.getAuthenticatedUser;
+const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
 const originalAssertRepositoryAccess = repositoryService.assertRepositoryAccess;
 const originalResolveRepository = repositoryService.resolveRepository;
 const originalGetRepositoryManifest = videoService.getRepositoryManifest;
@@ -82,6 +85,7 @@ beforeEach(() => {
   (jwtLib as any).verifyAccessToken = originalVerifyAccessToken;
   (jwtLib as any).shouldRefreshToken = originalShouldRefreshToken;
   adminService.getAuthenticatedUser = originalGetAuthenticatedUser;
+  apiTokenService.verifyPythonToken = originalVerifyPythonToken;
   repositoryService.assertRepositoryAccess = originalAssertRepositoryAccess;
   repositoryService.resolveRepository = originalResolveRepository;
   videoService.getRepositoryManifest = originalGetRepositoryManifest;
@@ -115,6 +119,10 @@ test("GET /repositories/resolve supports slug and owner_id/name forms", async ()
     userId: "alice",
     role: "user",
     displayName: "Alice Kim",
+  });
+  apiTokenService.verifyPythonToken = async () => ({
+    userId: "alice",
+    role: "user",
   });
   repositoryService.resolveRepository = (async (
     _requestUserId: string,
@@ -210,6 +218,10 @@ test("GET /repositories/:repoId/manifest uses repoAccess context and validated q
     role: "user",
     displayName: "Alice Kim",
   });
+  apiTokenService.verifyPythonToken = async () => ({
+    userId: "alice",
+    role: "user",
+  });
   repositoryService.assertRepositoryAccess = (async () => ({
     repository: {
       id: repoId,
@@ -250,7 +262,7 @@ test("GET /repositories/:repoId/manifest uses repoAccess context and validated q
   }) as typeof videoService.getRepositoryManifest;
 
   const response = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/manifest?page=2&limit=5`, {
-    headers: { Authorization: "Bearer jwt-token" },
+    headers: { Authorization: "Bearer ef_0123456789abcdef0123456789abcdef01234567" },
   });
 
   assert.equal(response.status, 200);
@@ -295,6 +307,10 @@ test("GET /repositories/:repoId/manifest rejects invalid queries and missing aut
     role: "user",
     displayName: "Alice Kim",
   });
+  apiTokenService.verifyPythonToken = async () => ({
+    userId: "alice",
+    role: "user",
+  });
   repositoryService.assertRepositoryAccess = (async () => ({
     repository: {
       id: repoId,
@@ -310,7 +326,7 @@ test("GET /repositories/:repoId/manifest rejects invalid queries and missing aut
   })) as typeof repositoryService.assertRepositoryAccess;
 
   const invalidLimitResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/manifest?limit=201`, {
-    headers: { Authorization: "Bearer jwt-token" },
+    headers: { Authorization: "Bearer ef_0123456789abcdef0123456789abcdef01234567" },
   });
   assert.equal(invalidLimitResponse.status, 400);
   assert.equal((await invalidLimitResponse.json()).error.code, "VALIDATION_ERROR");
@@ -330,6 +346,10 @@ test("GET /repositories/:repoId/manifest applies default page and limit", async 
     userId: "alice",
     role: "user",
     displayName: "Alice Kim",
+  });
+  apiTokenService.verifyPythonToken = async () => ({
+    userId: "alice",
+    role: "user",
   });
   repositoryService.assertRepositoryAccess = (async () => ({
     repository: {
@@ -369,7 +389,7 @@ test("GET /repositories/:repoId/manifest applies default page and limit", async 
   }) as typeof videoService.getRepositoryManifest;
 
   const response = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/manifest`, {
-    headers: { Authorization: "Bearer jwt-token" },
+    headers: { Authorization: "Bearer ef_0123456789abcdef0123456789abcdef01234567" },
   });
 
   assert.equal(response.status, 200);

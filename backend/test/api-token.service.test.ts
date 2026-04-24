@@ -199,8 +199,8 @@ test("issuing a new token rotates the previous token and keeps only one active r
   assert.ok(stored);
   assert.equal(stored.name, "trainer");
 
-  assert.equal(await service.verifyStaticToken(first.token), null);
-  assert.deepEqual(await service.verifyStaticToken(second.token), {
+  assert.equal(await service.verifyPythonToken(first.token), null);
+  assert.deepEqual(await service.verifyPythonToken(second.token), {
     userId: "alice",
     role: "user",
   });
@@ -236,7 +236,7 @@ test("revokeToken enforces ownership while admin listing returns metadata only",
   assert.equal(tokens.size, 0);
 });
 
-test("verifyStaticToken rejects inactive users and throttles last_used_at updates", async () => {
+test("verifyPythonToken rejects inactive users and throttles last_used_at updates", async () => {
   const issued = await service.issueToken("alice", {
     name: "worker",
   });
@@ -246,7 +246,7 @@ test("verifyStaticToken rejects inactive users and throttles last_used_at update
   stored.lastUsedAt = new Date();
   const firstLastUsedAt = stored.lastUsedAt.toISOString();
 
-  assert.deepEqual(await service.verifyStaticToken(issued.token), {
+  assert.deepEqual(await service.verifyPythonToken(issued.token), {
     userId: "alice",
     role: "user",
   });
@@ -257,5 +257,5 @@ test("verifyStaticToken rejects inactive users and throttles last_used_at update
     isActive: false,
   });
 
-  assert.equal(await service.verifyStaticToken(issued.token), null);
+  assert.equal(await service.verifyPythonToken(issued.token), null);
 });

@@ -8,7 +8,7 @@ export const getServerInfo = () => ({
     video_download: true,
     thumbnail_download: true,
     live_streams: false,
-    static_tokens: true,
+    python_tokens: true,
   },
   urls: {
     api_base: "/api/v1",

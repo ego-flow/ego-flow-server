@@ -157,7 +157,7 @@ export class ApiTokenService {
     });
 
     if (!token) {
-      throw new AppError(404, "NOT_FOUND", "API token not found.");
+      throw new AppError(404, "NOT_FOUND", "Python token not found.");
     }
 
     if (requestUserRole !== "admin" && token.userId !== requestUserId) {
@@ -169,7 +169,7 @@ export class ApiTokenService {
     });
   }
 
-  async verifyStaticToken(rawToken: string): Promise<{ userId: string; role: AppUserRole } | null> {
+  async verifyPythonToken(rawToken: string): Promise<{ userId: string; role: AppUserRole } | null> {
     if (!rawToken.startsWith(TOKEN_PREFIX) || rawToken.length !== TOKEN_PREFIX.length + TOKEN_RANDOM_BYTES * 2) {
       return null;
     }

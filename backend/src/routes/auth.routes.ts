@@ -1,14 +1,16 @@
 import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
+import { clearDashboardSessionCookie, setDashboardSessionCookie } from "../lib/dashboard-session-cookie";
 import { AppError } from "../lib/errors";
-import { requireAuth } from "../middleware/auth.middleware";
+import { requireCredential, requireDashboardSession } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import type { ApiTokenIdParamInput } from "../schemas/api-token.schema";
 import { apiTokenIdParamSchema, createApiTokenSchema } from "../schemas/api-token.schema";
-import { loginSchema, rtmpAuthSchema } from "../schemas/auth.schema";
+import { dashboardLoginSchema, loginSchema, rtmpAuthSchema } from "../schemas/auth.schema";
 import { apiTokenService } from "../services/api-token.service";
 import { authService } from "../services/auth.service";
+import { dashboardSessionService } from "../services/dashboard-session.service";
 
 const router = Router();
 
@@ -22,35 +24,42 @@ router.post(
 );
 
 router.post(
-  "/tokens",
-  requireAuth,
-  validate(createApiTokenSchema),
+  "/app/login",
+  validate(loginSchema),
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
+    const response = await authService.login(req.body);
+    res.status(200).json(response);
+  }),
+);
 
-    const response = await apiTokenService.issueToken(req.user.userId, req.body);
-    res.status(201).json(response);
+router.post(
+  "/dashboard/login",
+  validate(dashboardLoginSchema),
+  asyncHandler(async (req, res) => {
+    const response = await authService.loginDashboard(req.body);
+    setDashboardSessionCookie(req, res, response.session.token, {
+      persistent: response.session.persistent,
+      expiresAt: response.session.expiresAt,
+    });
+    res.status(200).json({ user: response.user });
+  }),
+);
+
+router.post(
+  "/dashboard/logout",
+  requireDashboardSession,
+  asyncHandler(async (req, res) => {
+    if (req.auth?.kind === "dashboard" && req.auth.rawCredential) {
+      await dashboardSessionService.revokeSession(req.auth.rawCredential);
+    }
+    clearDashboardSessionCookie(req, res);
+    res.status(200).json({ logged_out: true });
   }),
 );
 
 router.get(
-  "/tokens",
-  requireAuth,
-  asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
-    const token = await apiTokenService.getCurrentToken(req.user.userId);
-    res.status(200).json({ token });
-  }),
-);
-
-router.get(
-  "/validate",
-  requireAuth,
+  "/dashboard/session",
+  requireDashboardSession,
   asyncHandler(async (req, res) => {
     if (!req.user) {
       throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
@@ -66,9 +75,57 @@ router.get(
   }),
 );
 
+router.post(
+  "/tokens",
+  requireDashboardSession,
+  validate(createApiTokenSchema),
+  asyncHandler(async (req, res) => {
+    if (!req.user) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
+    }
+
+    const response = await apiTokenService.issueToken(req.user.userId, req.body);
+    res.status(201).json(response);
+  }),
+);
+
+router.get(
+  "/tokens",
+  requireDashboardSession,
+  asyncHandler(async (req, res) => {
+    if (!req.user) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
+    }
+
+    const token = await apiTokenService.getCurrentToken(req.user.userId);
+    res.status(200).json({ token });
+  }),
+);
+
+router.get(
+  "/validate",
+  requireCredential("dashboard", "app", "python"),
+  asyncHandler(async (req, res) => {
+    if (!req.user) {
+      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
+    }
+
+    res.status(200).json({
+      user: {
+        id: req.user.userId,
+        role: req.user.role,
+        display_name: req.user.displayName,
+      },
+      auth: {
+        kind: req.auth?.kind ?? null,
+      },
+    });
+  }),
+);
+
 router.delete(
   "/tokens/:tokenId",
-  requireAuth,
+  requireDashboardSession,
   validate(apiTokenIdParamSchema, "params"),
   asyncHandler(async (req, res) => {
     if (!req.user) {

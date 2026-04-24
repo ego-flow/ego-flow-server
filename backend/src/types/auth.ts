@@ -12,3 +12,11 @@ export interface AuthenticatedUser {
   role: AppUserRole;
   displayName: string | null;
 }
+
+export type AuthCredentialKind = "dashboard" | "app" | "python";
+
+export interface AuthContext extends AuthenticatedUser {
+  kind: AuthCredentialKind;
+  credentialId?: string;
+  rawCredential?: string;
+}

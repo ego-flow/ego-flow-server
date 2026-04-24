@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
 import { AppError } from "../src/lib/errors";
+import { FakeRedis } from "./helpers/fake-redis";
 
 process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egoflow";
 process.env.REDIS_URL ??= "redis://127.0.0.1:6379";
@@ -9,6 +10,7 @@ process.env.JWT_SECRET ??= "replace-this-in-tests-only";
 process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 
 (globalThis as any).__egoflowPrisma = {} as any;
+(globalThis as any).__egoflowRedis = new FakeRedis();
 
 const jwtLib = require("../src/lib/jwt") as typeof import("../src/lib/jwt");
 const { adminService } =
@@ -20,7 +22,7 @@ const { requireAuth } =
 
 type HeaderMap = Record<string, string>;
 
-const originalVerifyStaticToken = apiTokenService.verifyStaticToken;
+const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
 const originalGetAuthenticatedUser = adminService.getAuthenticatedUser;
 const originalVerifyAccessToken = jwtLib.verifyAccessToken;
 const originalShouldRefreshToken = jwtLib.shouldRefreshToken;
@@ -38,17 +40,17 @@ const createResponse = () => {
 };
 
 beforeEach(() => {
-  apiTokenService.verifyStaticToken = originalVerifyStaticToken;
+  apiTokenService.verifyPythonToken = originalVerifyPythonToken;
   adminService.getAuthenticatedUser = originalGetAuthenticatedUser;
   (jwtLib as any).verifyAccessToken = originalVerifyAccessToken;
   (jwtLib as any).shouldRefreshToken = originalShouldRefreshToken;
   (jwtLib as any).signAccessToken = originalSignAccessToken;
 });
 
-test("requireAuth accepts ef_ static tokens without emitting a refreshed header", async () => {
+test("requireAuth accepts ef_ Python tokens without emitting a refreshed header", async () => {
   let jwtVerified = false;
 
-  apiTokenService.verifyStaticToken = async (token: string) => {
+  apiTokenService.verifyPythonToken = async (token: string) => {
     assert.equal(token, "ef_0123456789abcdef0123456789abcdef01234567");
     return {
       userId: "alice",
@@ -88,7 +90,7 @@ test("requireAuth accepts ef_ static tokens without emitting a refreshed header"
   assert.equal(res.headers["X-Refreshed-Token"], undefined);
 });
 
-test("requireAuth keeps the JWT refresh behavior for non-static bearer tokens", async () => {
+test("requireAuth keeps the JWT refresh behavior for non-Python bearer tokens", async () => {
   (jwtLib as any).verifyAccessToken = (() => ({
     userId: "alice",
     role: "user",
@@ -123,8 +125,8 @@ test("requireAuth keeps the JWT refresh behavior for non-static bearer tokens", 
   assert.equal(res.headers["X-Refreshed-Token"], "refreshed.jwt");
 });
 
-test("requireAuth rejects invalid static tokens with 401", async () => {
-  apiTokenService.verifyStaticToken = async () => null;
+test("requireAuth rejects invalid Python tokens with 401", async () => {
+  apiTokenService.verifyPythonToken = async () => null;
 
   const req: any = {
     headers: {

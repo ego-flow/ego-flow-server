@@ -29,7 +29,12 @@ export const openApiDocument = {
       bearerAuth: {
         type: "http",
         scheme: "bearer",
-        bearerFormat: "JWT",
+        bearerFormat: "App JWT or Python token",
+      },
+      dashboardCookie: {
+        type: "apiKey",
+        in: "cookie",
+        name: "egoflow_session",
       },
     },
     schemas: {
@@ -69,6 +74,29 @@ export const openApiDocument = {
           user: { $ref: "#/components/schemas/AuthUser" },
         },
       },
+      DashboardLoginRequest: {
+        type: "object",
+        required: ["id", "password"],
+        properties: {
+          id: { type: "string", maxLength: 64, example: "admin" },
+          password: { type: "string", maxLength: 255, example: "changeme123" },
+          remember_me: { type: "boolean", default: false },
+        },
+      },
+      DashboardSessionResponse: {
+        type: "object",
+        required: ["user"],
+        properties: {
+          user: { $ref: "#/components/schemas/AuthUser" },
+        },
+      },
+      DashboardLogoutResponse: {
+        type: "object",
+        required: ["logged_out"],
+        properties: {
+          logged_out: { type: "boolean", example: true },
+        },
+      },
       ValidateAuthResponse: {
         type: "object",
         required: ["user"],
@@ -99,13 +127,13 @@ export const openApiDocument = {
           server_version: { type: "string", example: "0.1.0" },
           capabilities: {
             type: "object",
-            required: ["dataset_manifest", "video_download", "thumbnail_download", "live_streams", "static_tokens"],
+            required: ["dataset_manifest", "video_download", "thumbnail_download", "live_streams", "python_tokens"],
             properties: {
               dataset_manifest: { type: "boolean" },
               video_download: { type: "boolean" },
               thumbnail_download: { type: "boolean" },
               live_streams: { type: "boolean" },
-              static_tokens: { type: "boolean" },
+              python_tokens: { type: "boolean" },
             },
           },
           urls: {
@@ -287,14 +315,30 @@ export const openApiDocument = {
       },
       ActiveStream: {
         type: "object",
-        required: ["repository_id", "repository_name", "owner_id", "user_id", "device_type", "hls_url", "registered_at"],
+        required: [
+          "recording_session_id",
+          "repository_id",
+          "repository_name",
+          "owner_id",
+          "user_id",
+          "device_type",
+          "stream_path",
+          "hls_url",
+          "hls_playback_token",
+          "hls_playback_token_expires_in_seconds",
+          "registered_at",
+        ],
         properties: {
+          recording_session_id: { type: "string", format: "uuid" },
           repository_id: { type: "string", format: "uuid" },
           repository_name: { type: "string" },
           owner_id: { type: "string" },
           user_id: { type: "string" },
           device_type: { type: ["string", "null"] },
+          stream_path: { type: "string", example: "live/daily_kitchen" },
           hls_url: { type: "string", example: "http://127.0.0.1:8888/live/daily_kitchen/index.m3u8" },
+          hls_playback_token: { type: "string", example: "efp_0123456789abcdef" },
+          hls_playback_token_expires_in_seconds: { type: "integer", example: 300 },
           registered_at: { type: "string", format: "date-time" },
         },
       },
@@ -820,7 +864,7 @@ export const openApiDocument = {
     "/auth/login": {
       post: {
         tags: ["Auth"],
-        summary: "Login and receive an access token",
+        summary: "Legacy app login and receive an app access token",
         security: [],
         requestBody: {
           required: true,
@@ -843,13 +887,107 @@ export const openApiDocument = {
         },
       },
     },
+    "/auth/app/login": {
+      post: {
+        tags: ["Auth"],
+        summary: "App login and receive an app access token",
+        security: [],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/LoginRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Login succeeded",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LoginResponse" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/auth/dashboard/login": {
+      post: {
+        tags: ["Auth"],
+        summary: "Dashboard login and set the HttpOnly session cookie",
+        security: [],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/DashboardLoginRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Dashboard session created",
+            headers: {
+              "Set-Cookie": {
+                schema: { type: "string" },
+                description: "HttpOnly egoflow_session cookie.",
+              },
+            },
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/DashboardSessionResponse" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/auth/dashboard/session": {
+      get: {
+        tags: ["Auth"],
+        summary: "Return the current dashboard session user",
+        security: [{ dashboardCookie: [] }],
+        responses: {
+          "200": {
+            description: "Dashboard session user",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/DashboardSessionResponse" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/auth/dashboard/logout": {
+      post: {
+        tags: ["Auth"],
+        summary: "Revoke the current dashboard session and clear the cookie",
+        security: [{ dashboardCookie: [] }],
+        responses: {
+          "200": {
+            description: "Dashboard session revoked",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/DashboardLogoutResponse" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
     "/auth/tokens": {
       get: {
         tags: ["Auth"],
-        summary: "Get the current user's active API token metadata",
+        summary: "Get the current user's active Python token metadata",
         responses: {
           "200": {
-            description: "Current API token status",
+            description: "Current Python token status",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/CurrentApiTokenResponse" },
@@ -861,7 +999,7 @@ export const openApiDocument = {
       },
       post: {
         tags: ["Auth"],
-        summary: "Issue or rotate the current user's static API token",
+        summary: "Issue or rotate the current user's Python token",
         requestBody: {
           required: true,
           content: {
@@ -872,7 +1010,7 @@ export const openApiDocument = {
         },
         responses: {
           "201": {
-            description: "API token issued",
+            description: "Python token issued",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/CreateApiTokenResponse" },
@@ -904,11 +1042,11 @@ export const openApiDocument = {
     "/auth/tokens/{tokenId}": {
       delete: {
         tags: ["Auth"],
-        summary: "Revoke an API token",
+        summary: "Revoke a Python token",
         parameters: [{ $ref: "#/components/parameters/TokenId" }],
         responses: {
           "200": {
-            description: "API token revoked",
+            description: "Python token revoked",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/RevokeApiTokenResponse" },
@@ -1812,7 +1950,7 @@ export const openApiDocument = {
     "/admin/api-tokens": {
       get: {
         tags: ["Admin"],
-        summary: "List active API tokens for all users",
+        summary: "List active Python tokens for all users",
         parameters: [
           {
             name: "user_id",
@@ -1823,7 +1961,7 @@ export const openApiDocument = {
         ],
         responses: {
           "200": {
-            description: "Active API token list",
+            description: "Active Python token list",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/AdminApiTokensResponse" },

@@ -1,7 +1,7 @@
 import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
-import { requireAuth } from "../middleware/auth.middleware";
+import { requireDashboardSession } from "../middleware/auth.middleware";
 import { requireRole } from "../middleware/role.middleware";
 import { validate } from "../middleware/validate.middleware";
 import type { AdminApiTokenListQueryInput } from "../schemas/api-token.schema";
@@ -13,7 +13,7 @@ import { adminService } from "../services/admin.service";
 
 const router = Router();
 
-router.use(requireAuth, requireRole("admin"));
+router.use(requireDashboardSession, requireRole("admin"));
 
 router.post(
   "/users",

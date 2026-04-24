@@ -5,6 +5,10 @@ export const loginSchema = z.object({
   password: z.string().min(1).max(255),
 });
 
+export const dashboardLoginSchema = loginSchema.extend({
+  remember_me: z.boolean().optional().default(false),
+});
+
 const optionalString = z.preprocess((value) => {
   if (value === "" || value === null || value === undefined) {
     return undefined;
@@ -40,4 +44,5 @@ export const rtmpAuthSchema = z.object({
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
+export type DashboardLoginInput = z.infer<typeof dashboardLoginSchema>;
 export type RtmpAuthInput = z.infer<typeof rtmpAuthSchema>;

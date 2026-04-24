@@ -2,7 +2,7 @@ import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
 import { AppError } from "../lib/errors";
-import { requireAuth } from "../middleware/auth.middleware";
+import { requireAppJwt, requireDashboardOrApp } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import { recordingSessionIdParamsSchema, recordingStopBodySchema } from "../schemas/stream.schema";
 import { recordingSessionService } from "../services/recording-session.service";
@@ -19,7 +19,7 @@ const router = Router();
  */
 router.post(
   "/:recordingSessionId/stop",
-  requireAuth,
+  requireAppJwt,
   validate(recordingStopBodySchema),
   asyncHandler(async (req, res) => {
     if (!req.user) {
@@ -51,7 +51,7 @@ router.post(
  */
 router.get(
   "/:recordingSessionId",
-  requireAuth,
+  requireDashboardOrApp,
   asyncHandler(async (req, res) => {
     if (!req.user) {
       throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");

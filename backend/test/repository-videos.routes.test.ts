@@ -52,6 +52,8 @@ const { adminService } =
   require("../src/services/admin.service") as typeof import("../src/services/admin.service");
 const { apiTokenService } =
   require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
+const { dashboardSessionService } =
+  require("../src/services/dashboard-session.service") as typeof import("../src/services/dashboard-session.service");
 const { verifySignedFileUrlToken } =
   require("../src/lib/signed-file-url") as typeof import("../src/lib/signed-file-url");
 const { getTargetDirectory } =
@@ -66,7 +68,8 @@ const { repositoryVideosRoutes } =
 const originalVerifyAccessToken = jwtLib.verifyAccessToken;
 const originalShouldRefreshToken = jwtLib.shouldRefreshToken;
 const originalGetAuthenticatedUser = adminService.getAuthenticatedUser;
-const originalVerifyStaticToken = apiTokenService.verifyStaticToken;
+const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
+const originalVerifyDashboardSession = dashboardSessionService.verifySession;
 const originalAssertRepositoryAccess = repositoryService.assertRepositoryAccess;
 const originalListRepositoryVideos = videoService.listRepositoryVideos;
 const originalGetRepositoryVideoDownload = videoService.getRepositoryVideoDownload;
@@ -103,11 +106,20 @@ beforeEach(() => {
     role: "user",
     displayName: "Alice Kim",
   });
-  apiTokenService.verifyStaticToken = async (token: string) =>
-    token === "ef_static-token"
+  apiTokenService.verifyPythonToken = async (token: string) =>
+    token === "ef_python-token"
       ? {
           userId: "alice",
           role: "user",
+        }
+      : null;
+  dashboardSessionService.verifySession = async (token: string) =>
+    token === "dashboard-session"
+      ? {
+          sessionId: "session-1",
+          userId: "alice",
+          role: "user",
+          displayName: "Alice Kim",
         }
       : null;
   repositoryService.assertRepositoryAccess = (async (
@@ -144,7 +156,8 @@ afterEach(async () => {
   (jwtLib as any).verifyAccessToken = originalVerifyAccessToken;
   (jwtLib as any).shouldRefreshToken = originalShouldRefreshToken;
   adminService.getAuthenticatedUser = originalGetAuthenticatedUser;
-  apiTokenService.verifyStaticToken = originalVerifyStaticToken;
+  apiTokenService.verifyPythonToken = originalVerifyPythonToken;
+  dashboardSessionService.verifySession = originalVerifyDashboardSession;
   repositoryService.assertRepositoryAccess = originalAssertRepositoryAccess;
   videoService.listRepositoryVideos = originalListRepositoryVideos;
   videoService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
@@ -184,7 +197,7 @@ test("repo-scoped list uses repository context resolved by repoAccess", async ()
   const response = await fetch(
     `${baseUrl}/api/v1/repositories/${repoId}/videos?status=COMPLETED&page=2&limit=5`,
     {
-      headers: { Authorization: "Bearer jwt-token" },
+      headers: { Cookie: "egoflow_session=dashboard-session" },
     },
   );
 
@@ -199,7 +212,7 @@ test("repo-scoped list uses repository context resolved by repoAccess", async ()
   });
 });
 
-test("repo-scoped download accepts JWT and static bearer tokens, then redirects to a signed file URL", async () => {
+test("repo-scoped download accepts dashboard sessions and Python bearer tokens, then redirects to a signed file URL", async () => {
   const baseUrl = await startServer();
   const videoPath = path.join(targetDirectory, "alice", "daily-kitchen", ".codex-test", `${videoId}.mp4`);
 
@@ -216,7 +229,7 @@ test("repo-scoped download accepts JWT and static bearer tokens, then redirects 
   try {
     const headResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {
       method: "HEAD",
-      headers: { Authorization: "Bearer jwt-token" },
+      headers: { Cookie: "egoflow_session=dashboard-session" },
       redirect: "manual",
     });
     assert.equal(headResponse.status, 307);
@@ -226,7 +239,7 @@ test("repo-scoped download accepts JWT and static bearer tokens, then redirects 
 
     const downloadResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {
       headers: {
-        Authorization: "Bearer jwt-token",
+        Cookie: "egoflow_session=dashboard-session",
       },
       redirect: "manual",
     });
@@ -249,20 +262,20 @@ test("repo-scoped download accepts JWT and static bearer tokens, then redirects 
     assert.equal(queryTokenResponse.status, 401);
     assert.equal((await queryTokenResponse.json()).error.code, "UNAUTHORIZED");
 
-    const staticTokenResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {
+    const pythonTokenResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {
       headers: {
-        Authorization: "Bearer ef_static-token",
+        Authorization: "Bearer ef_python-token",
       },
       redirect: "manual",
     });
-    assert.equal(staticTokenResponse.status, 307);
-    const staticTokenLocation = staticTokenResponse.headers.get("location");
-    assert.ok(staticTokenLocation);
-    const staticTokenRedirect = new URL(staticTokenLocation, baseUrl);
-    const staticTokenSignature = staticTokenRedirect.searchParams.get("signature");
-    assert.ok(staticTokenSignature);
+    assert.equal(pythonTokenResponse.status, 307);
+    const pythonTokenLocation = pythonTokenResponse.headers.get("location");
+    assert.ok(pythonTokenLocation);
+    const pythonTokenRedirect = new URL(pythonTokenLocation, baseUrl);
+    const pythonTokenSignature = pythonTokenRedirect.searchParams.get("signature");
+    assert.ok(pythonTokenSignature);
     assert.equal(
-      verifySignedFileUrlToken(staticTokenSignature).path,
+      verifySignedFileUrlToken(pythonTokenSignature).path,
       `alice/daily-kitchen/.codex-test/${videoId}.mp4`,
     );
   } finally {
@@ -271,7 +284,7 @@ test("repo-scoped download accepts JWT and static bearer tokens, then redirects 
   }
 });
 
-test("repo-scoped thumbnail requires bearer auth and DELETE still requires maintain role", async () => {
+test("repo-scoped thumbnail requires allowed auth and DELETE still requires maintain role", async () => {
   const baseUrl = await startServer();
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "egoflow-thumbnail-route-"));
   const thumbnailPath = path.join(tempRoot, `${videoId}.jpg`);
@@ -288,7 +301,7 @@ test("repo-scoped thumbnail requires bearer auth and DELETE still requires maint
 
   try {
     const thumbnailResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/thumbnail`, {
-      headers: { Authorization: "Bearer jwt-token" },
+      headers: { Cookie: "egoflow_session=dashboard-session" },
     });
     assert.equal(thumbnailResponse.status, 200);
     assert.equal(thumbnailResponse.headers.get("content-type"), "image/jpeg");
@@ -297,7 +310,7 @@ test("repo-scoped thumbnail requires bearer auth and DELETE still requires maint
 
     const deleteResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}`, {
       method: "DELETE",
-      headers: { Authorization: "Bearer jwt-token" },
+      headers: { Cookie: "egoflow_session=dashboard-session" },
     });
     assert.equal(deleteResponse.status, 403);
     assert.equal((await deleteResponse.json()).error.code, "FORBIDDEN");

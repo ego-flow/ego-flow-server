@@ -2,7 +2,7 @@ import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
 import { AppError } from "../lib/errors";
-import { requireAuth } from "../middleware/auth.middleware";
+import { requireAppJwt, requireDashboardSession } from "../middleware/auth.middleware";
 import { repoAccess } from "../middleware/repo-access.middleware";
 import { validate } from "../middleware/validate.middleware";
 import {
@@ -12,6 +12,7 @@ import {
   streamRegisterSchema,
 } from "../schemas/stream.schema";
 import { streamService } from "../services/stream.service";
+import { playbackTokenService } from "../services/playback-token.service";
 
 const router = Router();
 
@@ -23,7 +24,7 @@ const router = Router();
  */
 router.post(
   "/register",
-  requireAuth,
+  requireAppJwt,
   validate(streamRegisterSchema),
   repoAccess({ minRole: "maintain", repoIdFrom: "body.repository_id" }),
   asyncHandler(async (req, res) => {
@@ -38,7 +39,7 @@ router.post(
 
 router.post(
   "/:recordingSessionId/publish-ticket",
-  requireAuth,
+  requireAppJwt,
   validate(publishTicketParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     if (!req.user) {
@@ -57,7 +58,7 @@ router.post(
 
 router.post(
   "/:recordingSessionId/connections/:connectionId/heartbeat",
-  requireAuth,
+  requireAppJwt,
   validate(streamConnectionHeartbeatParamsSchema, "params"),
   validate(streamConnectionHeartbeatBodySchema),
   asyncHandler(async (req, res) => {
@@ -88,13 +89,29 @@ router.post(
  */
 router.get(
   "/active",
-  requireAuth,
+  requireDashboardSession,
   asyncHandler(async (req, res) => {
     if (!req.user) {
       throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
     }
     const streams = await streamService.listActiveSessions(req.user.userId, req.user.role);
-    res.status(200).json({ streams });
+    const streamsWithPlaybackTokens = await Promise.all(
+      streams.map(async (stream) => {
+        const playback = await playbackTokenService.issueToken({
+          userId: req.user!.userId,
+          repositoryId: stream.repository_id,
+          recordingSessionId: stream.recording_session_id,
+          streamPath: stream.stream_path,
+        });
+
+        return {
+          ...stream,
+          hls_playback_token: playback.token,
+          hls_playback_token_expires_in_seconds: playback.expires_in_seconds,
+        };
+      }),
+    );
+    res.status(200).json({ streams: streamsWithPlaybackTokens });
   }),
 );
 

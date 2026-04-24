@@ -6,10 +6,13 @@ import { signAccessToken, verifyAccessToken } from "../lib/jwt";
 import { prisma } from "../lib/prisma";
 import type { LoginInput, RtmpAuthInput } from "../schemas/auth.schema";
 import type { ChangeMyPasswordInput } from "../schemas/user.schema";
+import type { AppUserRole } from "../types/auth";
 import { adminService } from "./admin.service";
 import { repositoryService } from "./repository.service";
+import { playbackTokenService } from "./playback-token.service";
 import { streamOwnershipService } from "./stream-ownership.service";
 import { streamService } from "./stream.service";
+import { dashboardSessionService } from "./dashboard-session.service";
 
 export class AuthService {
   private logRtmpAuthDecision(
@@ -47,7 +50,7 @@ export class AuthService {
     console.warn("[rtmp-auth] denied", payload);
   }
 
-  async login(input: LoginInput) {
+  private async authenticatePassword(input: LoginInput) {
     const user = await prisma.user.findUnique({
       where: { id: input.id },
     });
@@ -65,17 +68,40 @@ export class AuthService {
       throw new AppError(401, "INVALID_CREDENTIALS", "Invalid id or password.");
     }
 
-    const role = user.role === UserRole.admin ? "admin" : "user";
+    const role: AppUserRole = user.role === UserRole.admin ? "admin" : "user";
+    return {
+      id: user.id,
+      role,
+      displayName: user.displayName,
+    };
+  }
+
+  async login(input: LoginInput) {
+    const user = await this.authenticatePassword(input);
     const token = signAccessToken({
       userId: user.id,
-      role,
+      role: user.role,
     });
 
     return {
       token,
       user: {
         id: user.id,
-        role,
+        role: user.role,
+        displayName: user.displayName,
+      },
+    };
+  }
+
+  async loginDashboard(input: LoginInput & { remember_me?: boolean }) {
+    const user = await this.authenticatePassword(input);
+    const session = await dashboardSessionService.createSession(user.id, Boolean(input.remember_me));
+
+    return {
+      session,
+      user: {
+        id: user.id,
+        role: user.role,
         displayName: user.displayName,
       },
     };
@@ -154,6 +180,37 @@ export class AuthService {
             credentialSource,
           });
           return false;
+        }
+
+        if (credential.startsWith("efp_")) {
+          const playbackToken = await playbackTokenService.verifyToken(credential);
+          if (!playbackToken) {
+            this.logRtmpAuthDecision("denied", input, {
+              reason: "invalid-playback-token",
+              credentialSource,
+            });
+            return false;
+          }
+
+          const activeSession = await streamService.findLiveSessionByStreamPath(input.path);
+          if (!activeSession || activeSession.recordingSessionId !== playbackToken.recordingSessionId) {
+            this.logRtmpAuthDecision("denied", input, {
+              reason: "playback-token-session-mismatch",
+              authenticatedUserId: playbackToken.userId,
+              repositoryId: playbackToken.repositoryId,
+              recordingSessionId: playbackToken.recordingSessionId,
+              credentialSource,
+            });
+            return false;
+          }
+
+          this.logRtmpAuthDecision("allowed", input, {
+            authenticatedUserId: playbackToken.userId,
+            repositoryId: playbackToken.repositoryId,
+            recordingSessionId: playbackToken.recordingSessionId,
+            credentialSource,
+          });
+          return true;
         }
 
         const payload = verifyAccessToken(credential);

@@ -9,7 +9,7 @@ import { asyncHandler } from "../lib/async-handler";
 import { AppError } from "../lib/errors";
 import { toSignedFileUrl } from "../lib/signed-file-url";
 import { getTargetDirectory } from "../lib/storage";
-import { requireAuth } from "../middleware/auth.middleware";
+import { requireDashboardOrPython, requireDashboardSession } from "../middleware/auth.middleware";
 import { repoAccess } from "../middleware/repo-access.middleware";
 import { validate } from "../middleware/validate.middleware";
 import type {
@@ -68,7 +68,7 @@ router.use(validate(repoVideoRepositoryParamSchema, "params"));
 
 router.get(
   "/",
-  requireAuth,
+  requireDashboardSession,
   repoAccess({ minRole: "read" }),
   validate(repoVideoListQuerySchema, "query"),
   asyncHandler(async (req, res) => {
@@ -82,7 +82,7 @@ router.get(
 
 router.get(
   "/:videoId",
-  requireAuth,
+  requireDashboardSession,
   repoAccess({ minRole: "read" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
@@ -98,7 +98,7 @@ router.get(
 
 router.get(
   "/:videoId/status",
-  requireAuth,
+  requireDashboardSession,
   repoAccess({ minRole: "read" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
@@ -110,7 +110,7 @@ router.get(
 
 router.delete(
   "/:videoId",
-  requireAuth,
+  requireDashboardSession,
   repoAccess({ minRole: "maintain" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
@@ -122,7 +122,7 @@ router.delete(
 
 router.head(
   "/:videoId/download",
-  requireAuth,
+  requireDashboardOrPython,
   repoAccess({ minRole: "read" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
@@ -134,7 +134,7 @@ router.head(
 
 router.get(
   "/:videoId/download",
-  requireAuth,
+  requireDashboardOrPython,
   repoAccess({ minRole: "read" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
@@ -146,7 +146,7 @@ router.get(
 
 router.get(
   "/:videoId/thumbnail",
-  requireAuth,
+  requireDashboardOrPython,
   repoAccess({ minRole: "read" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {

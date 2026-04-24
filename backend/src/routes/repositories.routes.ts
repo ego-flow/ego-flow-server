@@ -3,7 +3,11 @@ import { Router, type Request } from "express";
 import { asyncHandler } from "../lib/async-handler";
 import { AppError } from "../lib/errors";
 import { repoAccess } from "../middleware/repo-access.middleware";
-import { requireAuth } from "../middleware/auth.middleware";
+import {
+  requireDashboardOrApp,
+  requireDashboardSession,
+  requirePythonToken,
+} from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import type {
   ManifestQueryInput,
@@ -36,10 +40,9 @@ const getRepositoryAccess = (req: Request) => {
   return req.repositoryAccess;
 };
 
-router.use(requireAuth);
-
 router.post(
   "/",
+  requireDashboardSession,
   validate(createRepositorySchema),
   asyncHandler(async (req, res) => {
     const user = getAuthenticatedUser(req);
@@ -50,6 +53,7 @@ router.post(
 
 router.get(
   "/mine",
+  requireDashboardOrApp,
   asyncHandler(async (req, res) => {
     const user = getAuthenticatedUser(req);
     const response = await repositoryService.listMaintainedRepositories(user.userId, user.role);
@@ -59,6 +63,7 @@ router.get(
 
 router.get(
   "/",
+  requireDashboardSession,
   asyncHandler(async (req, res) => {
     const user = getAuthenticatedUser(req);
     const response = await repositoryService.listAccessibleRepositories(user.userId, user.role);
@@ -68,6 +73,7 @@ router.get(
 
 router.get(
   "/resolve",
+  requireDashboardOrApp,
   validate(repositoryResolveQuerySchema, "query"),
   asyncHandler(async (req, res) => {
     const user = getAuthenticatedUser(req);
@@ -99,6 +105,7 @@ router.get(
 
 router.get(
   "/:repoId/manifest",
+  requirePythonToken,
   validate(repositoryIdParamSchema, "params"),
   validate(manifestQuerySchema, "query"),
   repoAccess({ minRole: "read" }),
@@ -114,6 +121,7 @@ router.get(
 
 router.get(
   "/:repoId",
+  requireDashboardSession,
   validate(repositoryIdParamSchema, "params"),
   repoAccess({ minRole: "read" }),
   asyncHandler(async (req, res) => {
@@ -129,6 +137,7 @@ router.get(
 
 router.patch(
   "/:repoId",
+  requireDashboardSession,
   validate(repositoryIdParamSchema, "params"),
   validate(updateRepositorySchema),
   repoAccess({ minRole: "admin" }),
@@ -146,6 +155,7 @@ router.patch(
 
 router.delete(
   "/:repoId",
+  requireDashboardSession,
   validate(repositoryIdParamSchema, "params"),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
@@ -161,6 +171,7 @@ router.delete(
 
 router.get(
   "/:repoId/members",
+  requireDashboardSession,
   validate(repositoryIdParamSchema, "params"),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
@@ -176,6 +187,7 @@ router.get(
 
 router.post(
   "/:repoId/members",
+  requireDashboardSession,
   validate(repositoryIdParamSchema, "params"),
   validate(createRepositoryMemberSchema),
   repoAccess({ minRole: "admin" }),
@@ -193,6 +205,7 @@ router.post(
 
 router.patch(
   "/:repoId/members/:userId",
+  requireDashboardSession,
   validate(repositoryMemberParamSchema, "params"),
   validate(updateRepositoryMemberSchema),
   repoAccess({ minRole: "admin" }),
@@ -212,6 +225,7 @@ router.patch(
 
 router.delete(
   "/:repoId/members/:userId",
+  requireDashboardSession,
   validate(repositoryMemberParamSchema, "params"),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {

@@ -342,11 +342,13 @@ export class StreamService {
       .map((session) => {
         const repoName = recordingSessionService.extractRepositoryName(session.streamPath);
         return {
+          recording_session_id: session.id,
           repository_id: session.repositoryId,
           repository_name: repoName,
           owner_id: session.ownerId,
           user_id: session.userId,
           device_type: session.deviceType ?? null,
+          stream_path: session.streamPath,
           hls_url: `${hlsBase}/live/${repoName}/index.m3u8`,
           registered_at: session.createdAt.toISOString(),
         };
