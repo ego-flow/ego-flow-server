@@ -190,7 +190,7 @@ function AdminUsersPage() {
                             : 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
                         }`}
                       >
-                        API token: {token ? 'issued' : 'none'}
+                        Python token: {token ? 'issued' : 'none'}
                       </span>
                     </div>
                     <p className="mt-1 text-sm text-[var(--sea-ink-soft)]">{user.id}</p>
@@ -212,7 +212,7 @@ function AdminUsersPage() {
                         variant="outline"
                         disabled={revokeTokenMutation.isPending}
                         onClick={() => {
-                          if (!window.confirm(`Revoke the API token for ${user.id}?`)) {
+                          if (!window.confirm(`Revoke the Python token for ${user.id}?`)) {
                             return
                           }
 
@@ -268,7 +268,7 @@ function AdminUsersPage() {
 
         {adminTokensQuery.isError ? (
           <p className="text-sm text-red-700 dark:text-red-300">
-            {getApiErrorMessage(adminTokensQuery.error, 'Failed to load API token status.')}
+            {getApiErrorMessage(adminTokensQuery.error, 'Failed to load Python token status.')}
           </p>
         ) : null}
 

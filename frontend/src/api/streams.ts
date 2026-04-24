@@ -7,6 +7,8 @@ export interface ActiveStream {
   userId: string
   deviceType: string | null
   hlsUrl: string
+  hlsPlaybackToken: string
+  hlsPlaybackTokenExpiresInSeconds: number
   registeredAt: string
 }
 
@@ -19,6 +21,8 @@ export async function requestActiveStreams() {
       user_id: string
       device_type: string | null
       hls_url: string
+      hls_playback_token: string
+      hls_playback_token_expires_in_seconds: number
       registered_at: string
     }>
   }>('/streams/active')
@@ -30,6 +34,8 @@ export async function requestActiveStreams() {
     userId: stream.user_id,
     deviceType: stream.device_type,
     hlsUrl: stream.hls_url,
+    hlsPlaybackToken: stream.hls_playback_token,
+    hlsPlaybackTokenExpiresInSeconds: stream.hls_playback_token_expires_in_seconds,
     registeredAt: stream.registered_at,
   })) satisfies ActiveStream[]
 }

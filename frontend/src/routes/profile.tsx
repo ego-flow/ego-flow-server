@@ -195,7 +195,7 @@ function ProfilePage() {
         </section>
 
         <section className="mt-8 rounded-2xl border border-[var(--line)] bg-[var(--chip-bg)] p-5">
-          <h2 className="text-lg font-semibold text-[var(--sea-ink)]">API token</h2>
+          <h2 className="text-lg font-semibold text-[var(--sea-ink)]">Python token</h2>
           <p className="mt-1 text-sm text-[var(--sea-ink-soft)]">
             Use this token with the EgoFlow Python package via the
             <code className="mx-1 rounded bg-black/5 px-1.5 py-0.5 text-xs">EGOFLOW_TOKEN</code>
@@ -268,7 +268,7 @@ function ProfilePage() {
                   variant="destructive"
                   disabled={revokeTokenMutation.isPending}
                   onClick={() => {
-                    if (!window.confirm('Revoke the current API token?')) {
+                    if (!window.confirm('Revoke the current Python token?')) {
                       return
                     }
 
@@ -281,7 +281,7 @@ function ProfilePage() {
             </div>
           ) : (
             <div className="mt-5 rounded-xl border border-dashed border-[var(--line)] px-4 py-6 text-sm text-[var(--sea-ink-soft)]">
-              No active API token has been issued yet.
+              No active Python token has been issued yet.
             </div>
           )}
 

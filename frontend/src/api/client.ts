@@ -1,7 +1,5 @@
 import axios from 'axios'
 
-import { readStoredAuthSession, replaceStoredAuthToken } from '#/lib/auth-session'
-
 type ApiErrorResponse = {
   message?: string
 }
@@ -48,29 +46,10 @@ export function resolveBackendUrl(path: string | null) {
 
 export const apiClient = axios.create({
   baseURL: getConfiguredApiBaseUrl(),
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
-})
-
-apiClient.interceptors.request.use((config) => {
-  const session = readStoredAuthSession()
-  if (!session?.token) {
-    return config
-  }
-
-  config.headers.Authorization = `Bearer ${session.token}`
-  return config
-})
-
-apiClient.interceptors.response.use((response) => {
-  const refreshedToken = response.headers['x-refreshed-token']
-
-  if (typeof refreshedToken === 'string' && refreshedToken) {
-    replaceStoredAuthToken(refreshedToken)
-  }
-
-  return response
 })
 
 export function getApiErrorMessage(error: unknown, fallbackMessage: string) {

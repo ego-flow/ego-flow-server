@@ -83,7 +83,6 @@ function RepositoryDetailPage() {
 
 function RepositoryOverview({ repoId }: { repoId: string }) {
   const navigate = useNavigate({ from: '/repositories/$repoId' })
-  const { session } = useAuth()
   const search = Route.useSearch()
 
   const repositoryQuery = useQuery({
@@ -276,7 +275,6 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                           {video.thumbnailUrl ? (
                             <ProtectedImage
                               src={video.thumbnailUrl}
-                              authToken={session?.token}
                               alt={video.id}
                               className="h-full w-full object-cover"
                               fallback={

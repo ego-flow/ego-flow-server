@@ -8,7 +8,6 @@ export interface LoginRequestInput {
 }
 
 interface LoginResponse {
-  token: string
   user: AuthUser
 }
 
@@ -19,17 +18,24 @@ interface ChangeMyPasswordResponse {
 export async function requestLogin({
   id,
   password,
+  rememberMe,
 }: LoginRequestInput) {
-  const response = await apiClient.post<LoginResponse>('/auth/login', {
+  const response = await apiClient.post<LoginResponse>('/auth/dashboard/login', {
     id,
     password,
+    remember_me: rememberMe,
   })
 
   return response.data
 }
 
 export async function requestLogout(): Promise<void> {
-  return Promise.resolve()
+  await apiClient.post('/auth/dashboard/logout')
+}
+
+export async function requestCurrentSession() {
+  const response = await apiClient.get<LoginResponse>('/auth/dashboard/session')
+  return response.data
 }
 
 export async function requestChangeMyPassword(input: {

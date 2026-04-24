@@ -1,15 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
+  requestCurrentSession,
   requestLogin,
   requestLogout,
   type LoginRequestInput,
 } from '#/lib/auth'
-import {
-  clearStoredAuthSession,
-  readStoredAuthSession,
-  writeStoredAuthSession,
-  type AuthSession,
-} from '#/lib/auth-session'
+import type { AuthSession } from '#/lib/auth-session'
 
 interface AuthContextValue {
   isReady: boolean
@@ -26,42 +22,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null)
 
   useEffect(() => {
-    setSession(readStoredAuthSession())
-    setIsReady(true)
+    let isCancelled = false
 
-    const syncAuthState = () => {
-      setSession(readStoredAuthSession())
-    }
-
-    window.addEventListener('storage', syncAuthState)
+    requestCurrentSession()
+      .then((response) => {
+        if (!isCancelled) {
+          setSession({ user: response.user })
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setSession(null)
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsReady(true)
+        }
+      })
 
     return () => {
-      window.removeEventListener('storage', syncAuthState)
+      isCancelled = true
     }
   }, [])
 
   const login = async (input: LoginRequestInput) => {
     const response = await requestLogin(input)
-    const persistence = input.rememberMe ? 'local' : 'session'
     const nextSession = {
-      token: response.token,
       user: response.user,
-      persistence,
     } satisfies AuthSession
 
-    writeStoredAuthSession(
-      {
-        token: nextSession.token,
-        user: nextSession.user,
-      },
-      persistence,
-    )
     setSession(nextSession)
   }
 
   const logout = async () => {
     await requestLogout()
-    clearStoredAuthSession()
     setSession(null)
   }
 

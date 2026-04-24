@@ -182,7 +182,7 @@ function LivePage() {
                   </div>
                 }
               >
-                <HlsPlayer src={selectedStream.hlsUrl} authToken={session?.token} />
+                <HlsPlayer src={selectedStream.hlsUrl} playbackToken={selectedStream.hlsPlaybackToken} />
               </Suspense>
               <dl className="mt-5 grid gap-3 text-sm text-[var(--sea-ink-soft)] sm:grid-cols-2">
                 <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">

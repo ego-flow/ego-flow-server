@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from 'react'
 
 type ProtectedImageProps = {
   src: string | null
-  authToken?: string | null
   alt: string
   className?: string
   fallback?: ReactNode
@@ -10,7 +9,6 @@ type ProtectedImageProps = {
 
 export default function ProtectedImage({
   src,
-  authToken,
   alt,
   className,
   fallback = null,
@@ -23,20 +21,13 @@ export default function ProtectedImage({
       return
     }
 
-    if (!authToken) {
-      setObjectUrl(src)
-      return
-    }
-
     const controller = new AbortController()
     let nextObjectUrl: string | null = null
 
     const loadImage = async () => {
       try {
         const response = await fetch(src, {
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
+          credentials: 'include',
           signal: controller.signal,
         })
 
@@ -66,7 +57,7 @@ export default function ProtectedImage({
         URL.revokeObjectURL(nextObjectUrl)
       }
     }
-  }, [authToken, src])
+  }, [src])
 
   if (!objectUrl) {
     return <>{fallback}</>

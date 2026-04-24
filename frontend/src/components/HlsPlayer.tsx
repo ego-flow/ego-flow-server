@@ -3,12 +3,12 @@ import type { ErrorData } from 'hls.js'
 
 interface HlsPlayerProps {
   src: string | null
-  authToken?: string | null
+  playbackToken?: string | null
   poster?: string
   className?: string
 }
 
-export default function HlsPlayer({ src, authToken, poster, className }: HlsPlayerProps) {
+export default function HlsPlayer({ src, playbackToken, poster, className }: HlsPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -29,7 +29,7 @@ export default function HlsPlayer({ src, authToken, poster, className }: HlsPlay
       return
     }
 
-    if (!authToken && video.canPlayType('application/vnd.apple.mpegurl')) {
+    if (!playbackToken && video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src
       return () => {
         video.removeAttribute('src')
@@ -52,8 +52,8 @@ export default function HlsPlayer({ src, authToken, poster, className }: HlsPlay
           enableWorker: true,
           lowLatencyMode: true,
           xhrSetup: (xhr: XMLHttpRequest) => {
-            if (authToken) {
-              xhr.setRequestHeader('Authorization', `Bearer ${authToken}`)
+            if (playbackToken) {
+              xhr.setRequestHeader('Authorization', `Bearer ${playbackToken}`)
             }
           },
         })
@@ -82,7 +82,7 @@ export default function HlsPlayer({ src, authToken, poster, className }: HlsPlay
       isCancelled = true
       cleanup?.()
     }
-  }, [authToken, src])
+  }, [playbackToken, src])
 
   return (
     <div className={className}>
