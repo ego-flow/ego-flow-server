@@ -11,7 +11,6 @@ import type { RecordingSessionLiveCache } from "../types/stream";
 import { repositoryService } from "./repository.service";
 import { recordingSessionService, STREAM_ACTIVE_SET_KEY } from "./recording-session.service";
 import { streamOwnershipService } from "./stream-ownership.service";
-import { playbackTokenService } from "./playback-token.service";
 
 const RECONCILE_INTERVAL_MS = 5 * 1000;
 const FIRST_PUBLISH_DEADLINE_MS = 5 * 60 * 1000;
@@ -410,55 +409,6 @@ export class StreamService {
       registered_at: session.createdAt.toISOString(),
       status: "live" as const,
       playback_ready: playbackReady,
-    };
-  }
-
-  /**
-   * [Live stream playback 정보 발급]
-   * HLS playback에 필요한 URL과 ephemeral bearer token을 반환한다.
-   * 호출 시마다 5분 TTL의 efp_ playback token을 새로 발급한다.
-   */
-  async getLiveStreamPlayback(streamId: string, requestUserId: string, requestUserRole: AppUserRole) {
-    const session = await prisma.recordingSession.findUnique({ where: { id: streamId } });
-
-    if (!session || session.status !== RecordingSessionStatus.STREAMING) {
-      throw new AppError(404, "NOT_FOUND", "Live stream not found.");
-    }
-
-    const access = await repositoryService.getRepositoryAccess(requestUserId, requestUserRole, session.repositoryId);
-    if (!access) {
-      throw new AppError(404, "NOT_FOUND", "Live stream not found.");
-    }
-
-    const repoName = recordingSessionService.extractRepositoryName(session.streamPath);
-    const hlsPath = this.buildHlsPath(repoName);
-    const playback = await playbackTokenService.issueToken({
-      userId: requestUserId,
-      repositoryId: session.repositoryId,
-      recordingSessionId: session.id,
-      streamPath: session.streamPath,
-    });
-
-    console.info("[live-streams.playback] issued", {
-      requestUserId,
-      streamId: session.id,
-      repositoryName: repoName,
-      hlsPath,
-    });
-
-    return {
-      stream_id: session.id,
-      repository_id: session.repositoryId,
-      repository_name: repoName,
-      protocol: "hls" as const,
-      hls_path: hlsPath,
-      auth: {
-        type: "bearer" as const,
-        header_name: "Authorization",
-        scheme: "Bearer",
-        token: playback.token,
-        expires_in_seconds: playback.expires_in_seconds,
-      },
     };
   }
 

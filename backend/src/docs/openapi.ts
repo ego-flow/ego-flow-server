@@ -379,28 +379,6 @@ export const openApiDocument = {
           playback_ready: { type: "boolean" },
         },
       },
-      LiveStreamPlayback: {
-        type: "object",
-        required: ["stream_id", "repository_id", "repository_name", "protocol", "hls_path", "auth"],
-        properties: {
-          stream_id: { type: "string", format: "uuid" },
-          repository_id: { type: "string", format: "uuid" },
-          repository_name: { type: "string" },
-          protocol: { type: "string", enum: ["hls"] },
-          hls_path: { type: "string", example: "/hls/live/daily_kitchen/index.m3u8" },
-          auth: {
-            type: "object",
-            required: ["type", "header_name", "scheme", "token", "expires_in_seconds"],
-            properties: {
-              type: { type: "string", enum: ["bearer"] },
-              header_name: { type: "string", example: "Authorization" },
-              scheme: { type: "string", example: "Bearer" },
-              token: { type: "string", example: "efp_0123456789abcdef" },
-              expires_in_seconds: { type: "integer", example: 300 },
-            },
-          },
-        },
-      },
       RecordingStopRequest: {
         type: "object",
         properties: {
@@ -1590,27 +1568,22 @@ export const openApiDocument = {
         },
       },
     },
-    "/live-streams/{streamId}/playback": {
+    "/hls-auth": {
       get: {
         tags: ["Live Streams"],
-        summary: "Get HLS playback path and ephemeral bearer token",
+        summary: "Internal endpoint used by Caddy forward_auth for HLS playback authorization",
+        description:
+          "Subrequest target for Caddy `forward_auth`. Returns 200 if the authenticated caller has read access to the live stream backing the requested HLS path, 404 otherwise (existence-hiding).",
         parameters: [
           {
-            name: "streamId",
-            in: "path",
+            name: "path",
+            in: "query",
             required: true,
-            schema: { type: "string", format: "uuid" },
+            schema: { type: "string", example: "/hls/live/daily_kitchen/index.m3u8" },
           },
         ],
         responses: {
-          "200": {
-            description: "Playback info with ephemeral bearer token",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/LiveStreamPlayback" },
-              },
-            },
-          },
+          "200": { description: "Authorized" },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "404": { $ref: "#/components/responses/NotFound" },
         },

@@ -3,12 +3,11 @@ import type { ErrorData } from 'hls.js'
 
 interface HlsPlayerProps {
   src: string | null
-  playbackToken?: string | null
   poster?: string
   className?: string
 }
 
-export default function HlsPlayer({ src, playbackToken, poster, className }: HlsPlayerProps) {
+export default function HlsPlayer({ src, poster, className }: HlsPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -29,7 +28,7 @@ export default function HlsPlayer({ src, playbackToken, poster, className }: Hls
       return
     }
 
-    if (!playbackToken && video.canPlayType('application/vnd.apple.mpegurl')) {
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src
       return () => {
         video.removeAttribute('src')
@@ -52,9 +51,9 @@ export default function HlsPlayer({ src, playbackToken, poster, className }: Hls
           enableWorker: true,
           lowLatencyMode: true,
           xhrSetup: (xhr: XMLHttpRequest) => {
-            if (playbackToken) {
-              xhr.setRequestHeader('Authorization', `Bearer ${playbackToken}`)
-            }
+            // Caddy forward_auth는 same-origin cookie / Authorization header를 통과시키므로
+            // hls.js XHR이 dashboard session cookie를 그대로 들고 가게 한다.
+            xhr.withCredentials = true
           },
         })
 
@@ -82,7 +81,7 @@ export default function HlsPlayer({ src, playbackToken, poster, className }: Hls
       isCancelled = true
       cleanup?.()
     }
-  }, [playbackToken, src])
+  }, [src])
 
   return (
     <div className={className}>

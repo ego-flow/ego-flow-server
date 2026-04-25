@@ -2,14 +2,11 @@ import bcrypt from "bcryptjs";
 import { UserRole } from "@prisma/client";
 
 import { AppError } from "../lib/errors";
-import { signAccessToken, verifyAccessToken } from "../lib/jwt";
+import { signAccessToken } from "../lib/jwt";
 import { prisma } from "../lib/prisma";
 import type { LoginInput, RtmpAuthInput } from "../schemas/auth.schema";
 import type { ChangeMyPasswordInput } from "../schemas/user.schema";
 import type { AppUserRole } from "../types/auth";
-import { adminService } from "./admin.service";
-import { repositoryService } from "./repository.service";
-import { playbackTokenService } from "./playback-token.service";
 import { streamOwnershipService } from "./stream-ownership.service";
 import { streamService } from "./stream.service";
 import { dashboardSessionService } from "./dashboard-session.service";
@@ -108,12 +105,12 @@ export class AuthService {
   }
 
   /**
-   * [RTMP publish/read 인증]
-   * MediaMTX가 POST /api/v1/auth/rtmp로 전달한 요청을 검증한다.
-   * 1. action이 "publish"이면 publish ticket와 current owner lease만 검증한다.
-   * 2. publish auth는 owner truth를 mutate하지 않고, 상태 승격은 stream-ready hook이 담당한다.
-   * 3. action이 "read"/"playback"이면 기존 JWT/Bearer를 검증한다.
-   * 4. playback은 활성 사용자 및 repository read 권한을 확인한다.
+   * [RTMP publish 인증]
+   * MediaMTX가 POST /api/v1/auth/rtmp로 전달한 publish 요청을 검증한다.
+   * 1. publish ticket와 current owner lease만 검증한다.
+   * 2. owner truth를 mutate하지 않고, 상태 승격은 stream-ready hook이 담당한다.
+   * 3. read/playback action은 mediamtx.yml `authHTTPExclude`로 우회되므로 호출되지 않는다.
+   *    혹시 우회 설정이 누락되어 들어오면 deny한다 (Caddy `forward_auth`가 진짜 gate).
    */
   async verifyRtmpAuthorization(input: RtmpAuthInput): Promise<boolean> {
     try {
@@ -131,151 +128,43 @@ export class AuthService {
               ? "query.token"
               : null;
 
-      if (input.action === "publish") {
-        if (input.password || input.token || queryParams.get("pass") || queryParams.get("token")) {
-          this.logRtmpAuthDecision("denied", input, {
-            reason: "legacy-publish-credential-not-allowed",
-            credentialSource,
-            ticketId: publishTicketId,
-          });
-          return false;
-        }
-
-        const validation = await streamOwnershipService.validatePublishTicket(input.path, input.query);
-        if (!validation.ok) {
-          this.logRtmpAuthDecision("denied", input, {
-            reason: validation.reason,
-            credentialSource,
-            ticketId: validation.ticketId,
-          });
-          return false;
-        }
-
-        this.logRtmpAuthDecision("allowed", input, {
-          authenticatedUserId: validation.ticket.userId,
-          recordingSessionId: validation.ticket.recordingSessionId,
-          repositoryId: validation.ticket.repositoryId,
-          credentialSource,
-          ticketId: validation.ticket.ticketId,
-          connectionId: validation.ticket.connectionId,
-          generation: validation.ticket.generation,
-        });
-        return true;
-      }
-
-      if (input.action === "read" || input.action === "playback") {
-        if (publishTicketId) {
-          this.logRtmpAuthDecision("denied", input, {
-            reason: "publish-ticket-not-allowed-for-playback",
-            credentialSource,
-            ticketId: publishTicketId,
-          });
-          return false;
-        }
-
-        const credential = input.password || input.token || queryParams.get("pass") || queryParams.get("token");
-        if (!credential) {
-          this.logRtmpAuthDecision("denied", input, {
-            reason: "missing-credential",
-            credentialSource,
-          });
-          return false;
-        }
-
-        if (credential.startsWith("efp_")) {
-          const playbackToken = await playbackTokenService.verifyToken(credential);
-          if (!playbackToken) {
-            this.logRtmpAuthDecision("denied", input, {
-              reason: "invalid-playback-token",
-              credentialSource,
-            });
-            return false;
-          }
-
-          const activeSession = await streamService.findLiveSessionByStreamPath(input.path);
-          if (!activeSession || activeSession.recordingSessionId !== playbackToken.recordingSessionId) {
-            this.logRtmpAuthDecision("denied", input, {
-              reason: "playback-token-session-mismatch",
-              authenticatedUserId: playbackToken.userId,
-              repositoryId: playbackToken.repositoryId,
-              recordingSessionId: playbackToken.recordingSessionId,
-              credentialSource,
-            });
-            return false;
-          }
-
-          this.logRtmpAuthDecision("allowed", input, {
-            authenticatedUserId: playbackToken.userId,
-            repositoryId: playbackToken.repositoryId,
-            recordingSessionId: playbackToken.recordingSessionId,
-            credentialSource,
-          });
-          return true;
-        }
-
-        const payload = verifyAccessToken(credential);
-        const requestedUser = input.user || queryParams.get("user");
-        if (requestedUser && payload.userId !== requestedUser) {
-          this.logRtmpAuthDecision("denied", input, {
-            reason: "requested-user-mismatch",
-            authenticatedUserId: payload.userId,
-            credentialSource,
-          });
-          return false;
-        }
-
-        const authenticatedUser = await adminService.getAuthenticatedUser(payload.userId);
-        if (!authenticatedUser) {
-          this.logRtmpAuthDecision("denied", input, {
-            reason: "inactive-or-missing-user",
-            authenticatedUserId: payload.userId,
-            credentialSource,
-          });
-          return false;
-        }
-
-        const activeSession = await streamService.findLiveSessionByStreamPath(input.path);
-        if (!activeSession) {
-          this.logRtmpAuthDecision("denied", input, {
-            reason: "no-active-session",
-            authenticatedUserId: authenticatedUser.userId,
-            credentialSource,
-          });
-          return false;
-        }
-
-        const access = await repositoryService.getRepositoryAccess(
-          authenticatedUser.userId,
-          authenticatedUser.role,
-          activeSession.repositoryId,
-        );
-        if (!access) {
-          this.logRtmpAuthDecision("denied", input, {
-            reason: "repository-access-denied",
-            authenticatedUserId: authenticatedUser.userId,
-            userRole: authenticatedUser.role,
-            repositoryId: activeSession.repositoryId,
-            recordingSessionId: activeSession.recordingSessionId,
-            credentialSource,
-          });
-          return false;
-        }
-
-        this.logRtmpAuthDecision("allowed", input, {
-          authenticatedUserId: authenticatedUser.userId,
-          userRole: authenticatedUser.role,
-          repositoryId: activeSession.repositoryId,
-          recordingSessionId: activeSession.recordingSessionId,
+      if (input.action !== "publish") {
+        this.logRtmpAuthDecision("denied", input, {
+          reason: "non-publish-action-not-handled-here",
           credentialSource,
         });
-        return true;
+        return false;
       }
 
-      this.logRtmpAuthDecision("denied", input, {
-        reason: "unsupported-action",
+      if (input.password || input.token || queryParams.get("pass") || queryParams.get("token")) {
+        this.logRtmpAuthDecision("denied", input, {
+          reason: "legacy-publish-credential-not-allowed",
+          credentialSource,
+          ticketId: publishTicketId,
+        });
+        return false;
+      }
+
+      const validation = await streamOwnershipService.validatePublishTicket(input.path, input.query);
+      if (!validation.ok) {
+        this.logRtmpAuthDecision("denied", input, {
+          reason: validation.reason,
+          credentialSource,
+          ticketId: validation.ticketId,
+        });
+        return false;
+      }
+
+      this.logRtmpAuthDecision("allowed", input, {
+        authenticatedUserId: validation.ticket.userId,
+        recordingSessionId: validation.ticket.recordingSessionId,
+        repositoryId: validation.ticket.repositoryId,
         credentialSource,
+        ticketId: validation.ticket.ticketId,
+        connectionId: validation.ticket.connectionId,
+        generation: validation.ticket.generation,
       });
-      return false;
+      return true;
     } catch (_error) {
       this.logRtmpAuthDecision("denied", input, {
         reason: "exception",

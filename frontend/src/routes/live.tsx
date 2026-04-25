@@ -4,7 +4,7 @@ import { Navigate, createFileRoute } from '@tanstack/react-router'
 import { Activity, RadioTower, RefreshCcw } from 'lucide-react'
 
 import { getApiErrorMessage } from '#/api/client'
-import { requestLiveStreamPlayback, requestLiveStreams } from '#/api/streams'
+import { requestLiveStreams } from '#/api/streams'
 import { Button } from '#/components/ui/button'
 import { useAuth } from '#/hooks/useAuth'
 import { formatDateTime } from '#/lib/format'
@@ -39,14 +39,6 @@ function LivePage() {
     }
   }, [selectedStreamId, streamsQuery.data])
 
-  const playbackQuery = useQuery({
-    queryKey: ['live-stream-playback', selectedStreamId],
-    queryFn: () => requestLiveStreamPlayback(selectedStreamId as string),
-    enabled: Boolean(selectedStreamId),
-    // playback token TTL은 5분. 만료 전에 rotate하도록 4분마다 재발급.
-    refetchInterval: 4 * 60 * 1000,
-  })
-
   if (!isReady) {
     return null
   }
@@ -58,7 +50,6 @@ function LivePage() {
   const streams = streamsQuery.data ?? []
   const selectedStream =
     streams.find((stream) => stream.streamId === selectedStreamId) ?? null
-  const playback = playbackQuery.data ?? null
   const isAdmin = session?.user.role === 'admin'
 
   return (
@@ -183,37 +174,27 @@ function LivePage() {
           </div>
 
           {selectedStream ? (
-            playbackQuery.isError ? (
-              <section className="rounded-2xl border border-red-500/25 bg-red-500/6 px-6 py-5 text-sm text-red-700 dark:text-red-300">
-                {getApiErrorMessage(playbackQuery.error, 'Failed to load playback info.')}
-              </section>
-            ) : playback ? (
-              <>
-                <Suspense
-                  fallback={
-                    <div className="grid aspect-video place-items-center rounded-2xl border border-[var(--line)] bg-black text-sm text-white/70">
-                      Loading live player...
-                    </div>
-                  }
-                >
-                  <HlsPlayer src={playback.hlsUrl} playbackToken={playback.auth.token} />
-                </Suspense>
-                <dl className="mt-5 grid gap-3 text-sm text-[var(--sea-ink-soft)] sm:grid-cols-2">
-                  <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
-                    <dt className="font-semibold text-[var(--sea-ink)]">HLS path</dt>
-                    <dd className="mt-1 break-all">{playback.hlsPath}</dd>
+            <>
+              <Suspense
+                fallback={
+                  <div className="grid aspect-video place-items-center rounded-2xl border border-[var(--line)] bg-black text-sm text-white/70">
+                    Loading live player...
                   </div>
-                  <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
-                    <dt className="font-semibold text-[var(--sea-ink)]">Registered at</dt>
-                    <dd className="mt-1">{formatDateTime(selectedStream.registeredAt)}</dd>
-                  </div>
-                </dl>
-              </>
-            ) : (
-              <div className="grid aspect-video place-items-center rounded-2xl border border-[var(--line)] bg-black text-sm text-white/70">
-                Loading playback info...
-              </div>
-            )
+                }
+              >
+                <HlsPlayer src={selectedStream.hlsPath} />
+              </Suspense>
+              <dl className="mt-5 grid gap-3 text-sm text-[var(--sea-ink-soft)] sm:grid-cols-2">
+                <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
+                  <dt className="font-semibold text-[var(--sea-ink)]">HLS path</dt>
+                  <dd className="mt-1 break-all">{selectedStream.hlsPath}</dd>
+                </div>
+                <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
+                  <dt className="font-semibold text-[var(--sea-ink)]">Registered at</dt>
+                  <dd className="mt-1">{formatDateTime(selectedStream.registeredAt)}</dd>
+                </div>
+              </dl>
+            </>
           ) : (
             <div className="grid min-h-80 place-items-center rounded-2xl border border-dashed border-[var(--line)] px-6 text-center">
               <div>

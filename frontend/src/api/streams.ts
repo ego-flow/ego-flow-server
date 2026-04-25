@@ -1,4 +1,4 @@
-import { apiClient, resolveBackendUrl } from '#/api/client'
+import { apiClient } from '#/api/client'
 
 export interface LiveStreamSummary {
   streamId: string
@@ -10,24 +10,6 @@ export interface LiveStreamSummary {
   registeredAt: string
   status: 'live'
   hlsPath: string
-}
-
-export interface LiveStreamPlaybackAuth {
-  type: 'bearer'
-  headerName: string
-  scheme: string
-  token: string
-  expiresInSeconds: number
-}
-
-export interface LiveStreamPlayback {
-  streamId: string
-  repositoryId: string
-  repositoryName: string
-  protocol: 'hls'
-  hlsPath: string
-  hlsUrl: string
-  auth: LiveStreamPlaybackAuth
 }
 
 export async function requestLiveStreams() {
@@ -45,50 +27,17 @@ export async function requestLiveStreams() {
     }>
   }>('/live-streams')
 
-  return response.data.streams.map((stream) => ({
-    streamId: stream.stream_id,
-    repositoryId: stream.repository_id,
-    repositoryName: stream.repository_name,
-    ownerId: stream.owner_id,
-    userId: stream.user_id,
-    deviceType: stream.device_type,
-    registeredAt: stream.registered_at,
-    status: stream.status,
-    hlsPath: stream.hls_path,
-  })) satisfies LiveStreamSummary[]
-}
-
-export async function requestLiveStreamPlayback(streamId: string) {
-  const response = await apiClient.get<{
-    stream_id: string
-    repository_id: string
-    repository_name: string
-    protocol: 'hls'
-    hls_path: string
-    auth: {
-      type: 'bearer'
-      header_name: string
-      scheme: string
-      token: string
-      expires_in_seconds: number
+  return response.data.streams.map((stream) => {
+    return {
+      streamId: stream.stream_id,
+      repositoryId: stream.repository_id,
+      repositoryName: stream.repository_name,
+      ownerId: stream.owner_id,
+      userId: stream.user_id,
+      deviceType: stream.device_type,
+      registeredAt: stream.registered_at,
+      status: stream.status,
+      hlsPath: stream.hls_path,
     }
-  }>(`/live-streams/${streamId}/playback`)
-
-  const data = response.data
-  const hlsPath = data.hls_path
-  return {
-    streamId: data.stream_id,
-    repositoryId: data.repository_id,
-    repositoryName: data.repository_name,
-    protocol: data.protocol,
-    hlsPath,
-    hlsUrl: resolveBackendUrl(hlsPath) ?? hlsPath,
-    auth: {
-      type: data.auth.type,
-      headerName: data.auth.header_name,
-      scheme: data.auth.scheme,
-      token: data.auth.token,
-      expiresInSeconds: data.auth.expires_in_seconds,
-    },
-  } satisfies LiveStreamPlayback
+  }) satisfies LiveStreamSummary[]
 }

@@ -10,6 +10,12 @@ apiAddress: :9997
 
 authMethod: http
 authHTTPAddress: http://backend:3000/api/v1/auth/rtmp
+# read/playback은 Caddy `forward_auth`(/api/v1/hls-auth)가 게이트하므로
+# MediaMTX 진입 시점에 backend auth callback을 호출하지 않는다.
+# publish는 그대로 backend가 ticket 기반으로 검증한다.
+authHTTPExclude:
+  - action: read
+  - action: playback
 
 pathDefaults:
   source: publisher
