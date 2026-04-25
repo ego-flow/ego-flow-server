@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { UserRole } from "@prisma/client";
+import { Prisma, UserRole } from "@prisma/client";
 
 import { AppError } from "../lib/errors";
 import { prisma } from "../lib/prisma";
@@ -43,22 +43,32 @@ export class AdminService {
     }
 
     const passwordHash = await bcrypt.hash(input.password, 10);
-    const user = await prisma.user.create({
-      data: {
-        id: input.id,
-        passwordHash,
-        role: UserRole.user,
-        isActive: true,
-        displayName: input.displayName ?? null,
-      },
-      select: {
-        id: true,
-        role: true,
-        displayName: true,
-        createdAt: true,
-        isActive: true,
-      },
-    });
+    let user;
+
+    try {
+      user = await prisma.user.create({
+        data: {
+          id: input.id,
+          passwordHash,
+          role: UserRole.user,
+          isActive: true,
+          displayName: input.displayName ?? null,
+        },
+        select: {
+          id: true,
+          role: true,
+          displayName: true,
+          createdAt: true,
+          isActive: true,
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new AppError(409, "CONFLICT", "User id already exists.");
+      }
+
+      throw error;
+    }
 
     return {
       user: toUserResponse(user),
