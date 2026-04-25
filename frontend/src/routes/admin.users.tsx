@@ -23,12 +23,14 @@ export const Route = createFileRoute("/admin/users")({
 });
 
 type UserTab = "active" | "deactivated";
+type UserSection = "create" | "current";
 
 function AdminUsersPage() {
 	const queryClient = useQueryClient();
 	const [newUserId, setNewUserId] = useState("");
 	const [newPassword, setNewPassword] = useState("");
 	const [displayName, setDisplayName] = useState("");
+	const [selectedSection, setSelectedSection] = useState<UserSection>("create");
 	const [selectedTab, setSelectedTab] = useState<UserTab>("active");
 	const [deleteDialogUser, setDeleteDialogUser] = useState<AdminUser | null>(
 		null,
@@ -188,281 +190,330 @@ function AdminUsersPage() {
 					<h1 className="display-title text-3xl font-bold text-[var(--sea-ink)] sm:text-4xl">
 						Users
 					</h1>
-					<p className="mt-2 text-sm text-[var(--sea-ink-soft)] sm:text-base">
-						Create users, review active and deactivated accounts, and cleanly
-						remove users that no longer have remaining references.
-					</p>
 				</header>
 
-				<section className="island-shell rounded-2xl p-5 shadow-sm">
-					<h2 className="text-lg font-semibold text-[var(--sea-ink)]">
-						Create user
-					</h2>
-					<form
-						className="mt-4 grid gap-4 md:grid-cols-3"
-						onSubmit={(event) => {
-							event.preventDefault();
-							submitCreateUser();
-						}}
-					>
-						<div className="space-y-2">
-							<Label htmlFor="new-user-id">User ID</Label>
-							<Input
-								id="new-user-id"
-								value={newUserId}
-								onChange={(event) => setNewUserId(event.target.value)}
-								placeholder="alice"
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="new-user-password">Password</Label>
-							<Input
-								id="new-user-password"
-								type="password"
-								value={newPassword}
-								onChange={(event) => setNewPassword(event.target.value)}
-								placeholder="At least 8 characters"
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="new-user-display-name">Display name</Label>
-							<Input
-								id="new-user-display-name"
-								value={displayName}
-								onChange={(event) => setDisplayName(event.target.value)}
-								placeholder="Optional"
-							/>
-						</div>
-
-						<div className="md:col-span-3">
-							<Button
-								type="submit"
-								disabled={createUserMutation.isPending || isCreateUserDisabled}
-							>
-								Create user
-							</Button>
-							{newPassword.length > 0 && newPassword.length < 8 ? (
-								<p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
-									Password must be at least 8 characters.
-								</p>
-							) : null}
-						</div>
-					</form>
-
-					{createUserMutation.isError ? (
-						<p className="mt-4 text-sm text-red-700 dark:text-red-300">
-							{getApiErrorMessage(
-								createUserMutation.error,
-								"Failed to create user.",
-							)}
+				<section className="mt-6 grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+					<aside className="island-shell h-fit rounded-2xl p-4 shadow-sm">
+						<p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--sea-ink-soft)]">
+							Contents
 						</p>
-					) : null}
-				</section>
+						<nav className="mt-3 space-y-2">
+							<Button
+								type="button"
+								variant={selectedSection === "create" ? "default" : "ghost"}
+								className="w-full justify-start"
+								onClick={() => setSelectedSection("create")}
+							>
+								Create Users
+							</Button>
+							<Button
+								type="button"
+								variant={selectedSection === "current" ? "default" : "ghost"}
+								className="w-full justify-start"
+								onClick={() => setSelectedSection("current")}
+							>
+								Current Users
+							</Button>
+						</nav>
+					</aside>
 
-				<section className="mt-6">
-					<div className="mb-4 flex flex-wrap gap-2">
-						<Button
-							type="button"
-							variant={selectedTab === "active" ? "default" : "outline"}
-							onClick={() => setSelectedTab("active")}
-						>
-							Active users ({activeUsers.length})
-						</Button>
-						<Button
-							type="button"
-							variant={selectedTab === "deactivated" ? "default" : "outline"}
-							onClick={() => setSelectedTab("deactivated")}
-						>
-							Deactivated users ({deactivatedUsers.length})
-						</Button>
-					</div>
+					<div className="space-y-6">
+						{selectedSection === "create" ? (
+							<section className="island-shell rounded-2xl p-5 shadow-sm">
+								<h2 className="text-lg font-semibold text-[var(--sea-ink)]">
+									Create users
+								</h2>
+								<p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
+									Create a new dashboard user account. This is the default sub
+									tab for the Users page.
+								</p>
+								<form
+									className="mt-4 grid gap-4 md:grid-cols-3"
+									onSubmit={(event) => {
+										event.preventDefault();
+										submitCreateUser();
+									}}
+								>
+									<div className="space-y-2">
+										<Label htmlFor="new-user-id">User ID</Label>
+										<Input
+											id="new-user-id"
+											value={newUserId}
+											onChange={(event) => setNewUserId(event.target.value)}
+											placeholder="alice"
+										/>
+									</div>
+									<div className="space-y-2">
+										<Label htmlFor="new-user-password">Password</Label>
+										<Input
+											id="new-user-password"
+											type="password"
+											value={newPassword}
+											onChange={(event) => setNewPassword(event.target.value)}
+											placeholder="At least 8 characters"
+										/>
+									</div>
+									<div className="space-y-2">
+										<Label htmlFor="new-user-display-name">Display name</Label>
+										<Input
+											id="new-user-display-name"
+											value={displayName}
+											onChange={(event) => setDisplayName(event.target.value)}
+											placeholder="Optional"
+										/>
+									</div>
 
-					<div className="space-y-4">
-						{usersQuery.isPending || adminTokensQuery.isPending ? (
-							<div className="rounded-2xl border border-dashed border-[var(--line)] px-6 py-12 text-center text-[var(--sea-ink-soft)]">
-								Loading users...
-							</div>
-						) : usersQuery.isError ? (
-							<div className="rounded-2xl border border-red-500/25 bg-red-500/6 px-6 py-5 text-sm text-red-700 dark:text-red-300">
-								{getApiErrorMessage(usersQuery.error, "Failed to load users.")}
-							</div>
-						) : visibleUsers.length === 0 ? (
-							<div className="rounded-2xl border border-dashed border-[var(--line)] px-6 py-12 text-center text-[var(--sea-ink-soft)]">
-								{selectedTab === "active"
-									? "No active users are available."
-									: "No deactivated users are available."}
-							</div>
+									<div className="md:col-span-3">
+										<Button
+											type="submit"
+											disabled={
+												createUserMutation.isPending || isCreateUserDisabled
+											}
+										>
+											Create user
+										</Button>
+										{newPassword.length > 0 && newPassword.length < 8 ? (
+											<p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
+												Password must be at least 8 characters.
+											</p>
+										) : null}
+									</div>
+								</form>
+
+								{createUserMutation.isError ? (
+									<p className="mt-4 text-sm text-red-700 dark:text-red-300">
+										{getApiErrorMessage(
+											createUserMutation.error,
+											"Failed to create user.",
+										)}
+									</p>
+								) : null}
+							</section>
 						) : (
-							visibleUsers.map((user) => {
-								const token = tokenByUserId.get(user.id);
+							<section className="space-y-4">
+								<div className="island-shell rounded-2xl p-5 shadow-sm">
+									<p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--sea-ink-soft)]">
+										Current Users
+									</p>
+									<h2 className="mt-2 text-lg font-semibold text-[var(--sea-ink)]">
+										Active and inactive users
+									</h2>
+									<div className="mt-4 flex flex-wrap gap-2">
+										<Button
+											type="button"
+											variant={selectedTab === "active" ? "default" : "outline"}
+											onClick={() => setSelectedTab("active")}
+										>
+											Active users ({activeUsers.length})
+										</Button>
+										<Button
+											type="button"
+											variant={
+												selectedTab === "deactivated" ? "default" : "outline"
+											}
+											onClick={() => setSelectedTab("deactivated")}
+										>
+											Inactive users ({deactivatedUsers.length})
+										</Button>
+									</div>
+								</div>
 
-								return (
-									<article
-										key={user.id}
-										className="island-shell rounded-2xl p-5 shadow-sm"
-									>
-										<div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-											<div>
-												<div className="flex flex-wrap items-center gap-2">
-													<h2 className="text-xl font-semibold text-[var(--sea-ink)]">
-														{user.displayName || user.id}
-													</h2>
-													<span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--sea-ink-soft)]">
-														{user.role}
-													</span>
-													<span
-														className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-															user.isActive
-																? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
-																: "bg-slate-500/12 text-slate-700 dark:text-slate-300"
-														}`}
-													>
-														{user.isActive ? "active" : "deactivated"}
-													</span>
-													<span
-														className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-															token
-																? "bg-amber-500/12 text-amber-700 dark:text-amber-300"
-																: "bg-slate-500/12 text-slate-700 dark:text-slate-300"
-														}`}
-													>
-														Python token: {token ? "issued" : "none"}
-													</span>
-												</div>
-												<p className="mt-1 text-sm text-[var(--sea-ink-soft)]">
-													{user.id}
-												</p>
-												<p className="mt-3 text-sm text-[var(--sea-ink-soft)]">
-													Created {formatDateTime(user.createdAt)}
-												</p>
-												{token ? (
-													<p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
-														Token{" "}
-														<span className="font-semibold text-[var(--sea-ink)]">
-															{token.name}
-														</span>{" "}
-														· Last used {formatDateTime(token.lastUsedAt)}
-													</p>
-												) : null}
-											</div>
-
-											<div className="flex flex-wrap gap-2">
-												{token ? (
-													<Button
-														type="button"
-														variant="outline"
-														disabled={revokeTokenMutation.isPending}
-														onClick={() => {
-															if (
-																!window.confirm(
-																	`Revoke the Python token for ${user.id}?`,
-																)
-															) {
-																return;
-															}
-
-															revokeTokenMutation.mutate(token.id);
-														}}
-													>
-														Revoke token
-													</Button>
-												) : null}
-												{user.isActive ? (
-													<>
-														<Button
-															type="button"
-															variant="outline"
-															onClick={() => {
-																const nextPassword = window.prompt(
-																	`Enter a new password for ${user.id}`,
-																);
-
-																if (!nextPassword) {
-																	return;
-																}
-
-																resetPasswordMutation.mutate({
-																	userId: user.id,
-																	password: nextPassword,
-																});
-															}}
-															disabled={resetPasswordMutation.isPending}
-														>
-															Reset password
-														</Button>
-														<Button
-															type="button"
-															variant="destructive"
-															disabled={
-																deactivateUserMutation.isPending ||
-																user.role === "admin"
-															}
-															onClick={() => {
-																if (!window.confirm(`Deactivate ${user.id}?`)) {
-																	return;
-																}
-
-																deactivateUserMutation.mutate(user.id);
-															}}
-														>
-															Deactivate
-														</Button>
-													</>
-												) : (
-													<Button
-														type="button"
-														variant="destructive"
-														disabled={
-															permanentDeleteMutation.isPending ||
-															user.role === "admin"
-														}
-														onClick={() => openDeleteDialog(user)}
-													>
-														Delete permanently
-													</Button>
-												)}
-											</div>
+								<div className="space-y-4">
+									{usersQuery.isPending || adminTokensQuery.isPending ? (
+										<div className="rounded-2xl border border-dashed border-[var(--line)] px-6 py-12 text-center text-[var(--sea-ink-soft)]">
+											Loading users...
 										</div>
-									</article>
-								);
-							})
+									) : usersQuery.isError ? (
+										<div className="rounded-2xl border border-red-500/25 bg-red-500/6 px-6 py-5 text-sm text-red-700 dark:text-red-300">
+											{getApiErrorMessage(
+												usersQuery.error,
+												"Failed to load users.",
+											)}
+										</div>
+									) : visibleUsers.length === 0 ? (
+										<div className="rounded-2xl border border-dashed border-[var(--line)] px-6 py-12 text-center text-[var(--sea-ink-soft)]">
+											{selectedTab === "active"
+												? "No active users are available."
+												: "No inactive users are available."}
+										</div>
+									) : (
+										visibleUsers.map((user) => {
+											const token = tokenByUserId.get(user.id);
+
+											return (
+												<article
+													key={user.id}
+													className="island-shell rounded-2xl p-5 shadow-sm"
+												>
+													<div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+														<div>
+															<div className="flex flex-wrap items-center gap-2">
+																<h2 className="text-xl font-semibold text-[var(--sea-ink)]">
+																	{user.displayName || user.id}
+																</h2>
+																<span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--sea-ink-soft)]">
+																	{user.role}
+																</span>
+																<span
+																	className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+																		user.isActive
+																			? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300"
+																			: "bg-slate-500/12 text-slate-700 dark:text-slate-300"
+																	}`}
+																>
+																	{user.isActive ? "active" : "inactive"}
+																</span>
+																<span
+																	className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+																		token
+																			? "bg-amber-500/12 text-amber-700 dark:text-amber-300"
+																			: "bg-slate-500/12 text-slate-700 dark:text-slate-300"
+																	}`}
+																>
+																	Python token: {token ? "issued" : "none"}
+																</span>
+															</div>
+															<p className="mt-1 text-sm text-[var(--sea-ink-soft)]">
+																{user.id}
+															</p>
+															<p className="mt-3 text-sm text-[var(--sea-ink-soft)]">
+																Created {formatDateTime(user.createdAt)}
+															</p>
+															{token ? (
+																<p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
+																	Token{" "}
+																	<span className="font-semibold text-[var(--sea-ink)]">
+																		{token.name}
+																	</span>{" "}
+																	· Last used {formatDateTime(token.lastUsedAt)}
+																</p>
+															) : null}
+														</div>
+
+														<div className="flex flex-wrap gap-2">
+															{token ? (
+																<Button
+																	type="button"
+																	variant="outline"
+																	disabled={revokeTokenMutation.isPending}
+																	onClick={() => {
+																		if (
+																			!window.confirm(
+																				`Revoke the Python token for ${user.id}?`,
+																			)
+																		) {
+																			return;
+																		}
+
+																		revokeTokenMutation.mutate(token.id);
+																	}}
+																>
+																	Revoke token
+																</Button>
+															) : null}
+															{user.isActive ? (
+																<>
+																	<Button
+																		type="button"
+																		variant="outline"
+																		onClick={() => {
+																			const nextPassword = window.prompt(
+																				`Enter a new password for ${user.id}`,
+																			);
+
+																			if (!nextPassword) {
+																				return;
+																			}
+
+																			resetPasswordMutation.mutate({
+																				userId: user.id,
+																				password: nextPassword,
+																			});
+																		}}
+																		disabled={resetPasswordMutation.isPending}
+																	>
+																		Reset password
+																	</Button>
+																	<Button
+																		type="button"
+																		variant="destructive"
+																		disabled={
+																			deactivateUserMutation.isPending ||
+																			user.role === "admin"
+																		}
+																		onClick={() => {
+																			if (
+																				!window.confirm(
+																					`Deactivate ${user.id}?`,
+																				)
+																			) {
+																				return;
+																			}
+
+																			deactivateUserMutation.mutate(user.id);
+																		}}
+																	>
+																		Deactivate
+																	</Button>
+																</>
+															) : (
+																<Button
+																	type="button"
+																	variant="destructive"
+																	disabled={
+																		permanentDeleteMutation.isPending ||
+																		user.role === "admin"
+																	}
+																	onClick={() => openDeleteDialog(user)}
+																>
+																	Delete permanently
+																</Button>
+															)}
+														</div>
+													</div>
+												</article>
+											);
+										})
+									)}
+
+									{adminTokensQuery.isError ? (
+										<p className="text-sm text-red-700 dark:text-red-300">
+											{getApiErrorMessage(
+												adminTokensQuery.error,
+												"Failed to load Python token status.",
+											)}
+										</p>
+									) : null}
+
+									{resetPasswordMutation.isError ? (
+										<p className="text-sm text-red-700 dark:text-red-300">
+											{getApiErrorMessage(
+												resetPasswordMutation.error,
+												"Failed to reset password.",
+											)}
+										</p>
+									) : null}
+
+									{deactivateUserMutation.isError ? (
+										<p className="text-sm text-red-700 dark:text-red-300">
+											{getApiErrorMessage(
+												deactivateUserMutation.error,
+												"Failed to deactivate user.",
+											)}
+										</p>
+									) : null}
+
+									{revokeTokenMutation.isError ? (
+										<p className="text-sm text-red-700 dark:text-red-300">
+											{getApiErrorMessage(
+												revokeTokenMutation.error,
+												"Failed to revoke token.",
+											)}
+										</p>
+									) : null}
+								</div>
+							</section>
 						)}
-
-						{adminTokensQuery.isError ? (
-							<p className="text-sm text-red-700 dark:text-red-300">
-								{getApiErrorMessage(
-									adminTokensQuery.error,
-									"Failed to load Python token status.",
-								)}
-							</p>
-						) : null}
-
-						{resetPasswordMutation.isError ? (
-							<p className="text-sm text-red-700 dark:text-red-300">
-								{getApiErrorMessage(
-									resetPasswordMutation.error,
-									"Failed to reset password.",
-								)}
-							</p>
-						) : null}
-
-						{deactivateUserMutation.isError ? (
-							<p className="text-sm text-red-700 dark:text-red-300">
-								{getApiErrorMessage(
-									deactivateUserMutation.error,
-									"Failed to deactivate user.",
-								)}
-							</p>
-						) : null}
-
-						{revokeTokenMutation.isError ? (
-							<p className="text-sm text-red-700 dark:text-red-300">
-								{getApiErrorMessage(
-									revokeTokenMutation.error,
-									"Failed to revoke token.",
-								)}
-							</p>
-						) : null}
 					</div>
 				</section>
 			</main>
