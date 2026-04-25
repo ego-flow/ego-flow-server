@@ -1,10 +1,5 @@
 import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
-import {
-	type KeyboardEvent as ReactKeyboardEvent,
-	useEffect,
-	useRef,
-	useState,
-} from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useState } from "react";
 import { z } from "zod";
 
 import { Button } from "#/components/ui/button";
@@ -28,8 +23,6 @@ function LoginPage() {
 	const [submitError, setSubmitError] = useState<string | null>(null);
 	const { isReady, isAuthenticated, login } = useAuth();
 	const navigate = useNavigate();
-	const formRef = useRef<HTMLFormElement | null>(null);
-	const passwordInputRef = useRef<HTMLInputElement | null>(null);
 
 	const form = useAppForm({
 		defaultValues: {
@@ -65,63 +58,14 @@ function LoginPage() {
 		void form.handleSubmit();
 	};
 
-	const requestFormSubmit = () => {
-		if (formRef.current) {
-			formRef.current.requestSubmit();
-			return;
-		}
-
-		submitLogin();
-	};
-
-	const handleFormEnter = (event: ReactKeyboardEvent<HTMLFormElement>) => {
+	const handleFormKeyPress = (event: ReactKeyboardEvent<HTMLFormElement>) => {
 		if (event.key !== "Enter" || event.nativeEvent.isComposing) {
 			return;
 		}
 
-		const target = event.target as HTMLElement | null;
-
-		if (target?.id === "login-id") {
-			event.preventDefault();
-			passwordInputRef.current?.focus();
-			return;
-		}
-
-		if (target?.id === "login-password") {
-			event.preventDefault();
-			requestFormSubmit();
-			return;
-		}
+		event.preventDefault();
+		submitLogin();
 	};
-
-	useEffect(() => {
-		const handleBackgroundEnter = (event: KeyboardEvent) => {
-			if (event.key !== "Enter" || event.isComposing) {
-				return;
-			}
-
-			const activeElement = document.activeElement;
-
-			if (
-				activeElement !== document.body &&
-				activeElement !== document.documentElement
-			) {
-				return;
-			}
-
-			event.preventDefault();
-
-			if (formRef.current) {
-				formRef.current.requestSubmit();
-			}
-		};
-
-		window.addEventListener("keydown", handleBackgroundEnter);
-
-		return () => {
-			window.removeEventListener("keydown", handleBackgroundEnter);
-		};
-	}, []);
 
 	if (!isReady) {
 		return null;
@@ -145,9 +89,8 @@ function LoginPage() {
 				</p>
 
 				<form
-					ref={formRef}
 					className="mt-7 space-y-4"
-					onKeyDownCapture={handleFormEnter}
+					onKeyPress={handleFormKeyPress}
 					onSubmit={(e) => {
 						e.preventDefault();
 						submitLogin();
@@ -188,7 +131,6 @@ function LoginPage() {
 									id="login-password"
 									name="password"
 									type="password"
-									ref={passwordInputRef}
 									autoComplete="current-password"
 									placeholder="Enter your Password"
 									minLength={1}
