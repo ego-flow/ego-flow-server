@@ -23,7 +23,7 @@ function LivePage() {
     queryKey: ['live-streams'],
     queryFn: requestLiveStreams,
     enabled: isReady && isAuthenticated,
-    refetchInterval: 5000,
+    refetchInterval: 2000,
   })
 
   useEffect(() => {
