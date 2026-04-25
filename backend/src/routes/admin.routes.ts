@@ -57,6 +57,24 @@ router.delete(
   }),
 );
 
+router.get(
+  "/users/:userId/delete-readiness",
+  validate(adminUserIdParamSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const response = await adminService.getUserDeleteReadiness((req.params as AdminUserIdParamInput).userId);
+    res.status(200).json(response);
+  }),
+);
+
+router.delete(
+  "/users/:userId/permanent",
+  validate(adminUserIdParamSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const response = await adminService.permanentlyDeleteUser((req.params as AdminUserIdParamInput).userId);
+    res.status(200).json(response);
+  }),
+);
+
 router.put(
   "/users/:userId/reset-password",
   validate(adminUserIdParamSchema, "params"),

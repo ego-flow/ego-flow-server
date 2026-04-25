@@ -618,6 +618,29 @@ export const openApiDocument = {
           },
         },
       },
+      AdminUserDeleteReadiness: {
+        type: "object",
+        required: ["user_id", "can_delete", "checks"],
+        properties: {
+          user_id: { type: "string" },
+          can_delete: { type: "boolean" },
+          checks: {
+            type: "object",
+            required: [
+              "is_deactivated",
+              "owned_repository_count",
+              "repository_membership_count",
+              "recording_session_count",
+            ],
+            properties: {
+              is_deactivated: { type: "boolean" },
+              owned_repository_count: { type: "integer", minimum: 0 },
+              repository_membership_count: { type: "integer", minimum: 0 },
+              recording_session_count: { type: "integer", minimum: 0 },
+            },
+          },
+        },
+      },
       ResetPasswordRequest: {
         type: "object",
         required: ["newPassword"],
@@ -2065,6 +2088,49 @@ export const openApiDocument = {
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/Forbidden" },
           "404": { $ref: "#/components/responses/NotFound" },
+        },
+      },
+    },
+    "/admin/users/{userId}/delete-readiness": {
+      get: {
+        tags: ["Admin"],
+        summary: "Check whether a user can be permanently deleted",
+        parameters: [{ $ref: "#/components/parameters/UserId" }],
+        responses: {
+          "200": {
+            description: "Permanent deletion readiness",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AdminUserDeleteReadiness" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+        },
+      },
+    },
+    "/admin/users/{userId}/permanent": {
+      delete: {
+        tags: ["Admin"],
+        summary: "Permanently delete a deactivated user with no remaining blockers",
+        parameters: [{ $ref: "#/components/parameters/UserId" }],
+        responses: {
+          "200": {
+            description: "User permanently deleted",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/DeleteResult" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+          "409": { $ref: "#/components/responses/Conflict" },
         },
       },
     },

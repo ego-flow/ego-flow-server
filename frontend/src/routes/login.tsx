@@ -19,7 +19,7 @@ const loginSchema = z.object({
 	rememberMe: z.boolean(),
 });
 
-function LoginPage() {
+export function LoginPage() {
 	const [submitError, setSubmitError] = useState<string | null>(null);
 	const { isReady, isAuthenticated, login } = useAuth();
 	const navigate = useNavigate();
@@ -58,8 +58,10 @@ function LoginPage() {
 		void form.handleSubmit();
 	};
 
-	const handleFormKeyPress = (event: ReactKeyboardEvent<HTMLFormElement>) => {
-		if (event.key !== "Enter" || event.nativeEvent.isComposing) {
+	const handlePasswordKeyDown = (
+		event: ReactKeyboardEvent<HTMLInputElement>,
+	) => {
+		if (event.key !== "Enter") {
 			return;
 		}
 
@@ -90,7 +92,6 @@ function LoginPage() {
 
 				<form
 					className="mt-7 space-y-4"
-					onKeyPress={handleFormKeyPress}
 					onSubmit={(e) => {
 						e.preventDefault();
 						submitLogin();
@@ -136,6 +137,7 @@ function LoginPage() {
 									minLength={1}
 									value={field.state.value}
 									onBlur={field.handleBlur}
+									onKeyDown={handlePasswordKeyDown}
 									onChange={(e) => field.handleChange(e.target.value)}
 								/>
 

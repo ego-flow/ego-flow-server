@@ -24,6 +24,62 @@ const toUserResponse = (user: {
 });
 
 export class AdminService {
+  private async getPermanentDeleteState(userId: string) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        role: true,
+        isActive: true,
+      },
+    });
+
+    if (!user) {
+      throw new AppError(404, "NOT_FOUND", "User not found.");
+    }
+
+    if (user.role === UserRole.admin) {
+      throw new AppError(400, "VALIDATION_ERROR", "Admin account cannot be permanently deleted.");
+    }
+
+    const [ownedRepositories, memberships, recordingSessionCount] = await Promise.all([
+      prisma.repository.findMany({
+        where: { ownerId: user.id },
+        select: { id: true },
+      }),
+      prisma.repoMember.findMany({
+        where: { userId: user.id },
+        select: { repositoryId: true },
+      }),
+      prisma.recordingSession.count({
+        where: {
+          OR: [{ userId: user.id }, { ownerId: user.id }],
+        },
+      }),
+    ]);
+
+    const ownedRepositoryIds = new Set(ownedRepositories.map((repository) => repository.id));
+    const repositoryMembershipCount = memberships.filter(
+      (membership) => !ownedRepositoryIds.has(membership.repositoryId),
+    ).length;
+    const checks = {
+      isDeactivated: !user.isActive,
+      ownedRepositoryCount: ownedRepositories.length,
+      repositoryMembershipCount,
+      recordingSessionCount,
+    };
+
+    return {
+      user,
+      checks,
+      canDelete:
+        checks.isDeactivated &&
+        checks.ownedRepositoryCount === 0 &&
+        checks.repositoryMembershipCount === 0 &&
+        checks.recordingSessionCount === 0,
+    };
+  }
+
   async getSettings() {
     return {
       settings: {
@@ -106,7 +162,7 @@ export class AdminService {
     }
 
     if (user.role === UserRole.admin) {
-      throw new AppError(400, "VALIDATION_ERROR", "Admin account cannot be deleted.");
+      throw new AppError(400, "VALIDATION_ERROR", "Admin account cannot be deactivated.");
     }
 
     await prisma.user.update({
@@ -118,6 +174,50 @@ export class AdminService {
 
     return {
       id: user.id,
+      deleted: true,
+    };
+  }
+
+  async getUserDeleteReadiness(userId: string) {
+    const state = await this.getPermanentDeleteState(userId);
+
+    return {
+      user_id: state.user.id,
+      can_delete: state.canDelete,
+      checks: {
+        is_deactivated: state.checks.isDeactivated,
+        owned_repository_count: state.checks.ownedRepositoryCount,
+        repository_membership_count: state.checks.repositoryMembershipCount,
+        recording_session_count: state.checks.recordingSessionCount,
+      },
+    };
+  }
+
+  async permanentlyDeleteUser(userId: string) {
+    const state = await this.getPermanentDeleteState(userId);
+
+    if (!state.checks.isDeactivated) {
+      throw new AppError(400, "VALIDATION_ERROR", "Deactivate the user before permanent deletion.");
+    }
+
+    if (
+      state.checks.ownedRepositoryCount > 0 ||
+      state.checks.repositoryMembershipCount > 0 ||
+      state.checks.recordingSessionCount > 0
+    ) {
+      throw new AppError(
+        409,
+        "CONFLICT",
+        "User cannot be permanently deleted while repositories, memberships, or recording history remain.",
+      );
+    }
+
+    await prisma.user.delete({
+      where: { id: state.user.id },
+    });
+
+    return {
+      id: state.user.id,
       deleted: true,
     };
   }
