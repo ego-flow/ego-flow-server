@@ -42,7 +42,6 @@ const envSchema = z.object({
   ADMIN_DEFAULT_PASSWORD: z.string().min(8),
   HF_TOKEN: optionalNonEmptyString,
   PUBLIC_RTMP_BASE_URL: optionalNonEmptyString,
-  PUBLIC_HLS_BASE_URL: optionalNonEmptyString,
   MEDIAMTX_API_URL: optionalNonEmptyString,
   RTMPS_ENCRYPTION_MODE: z.enum(["no", "optional", "strict"]).optional(),
   RTMPS_CERT_PATH: optionalNonEmptyString,

@@ -12,7 +12,7 @@ const router = Router();
 /**
  * [Live stream 목록]
  * 요청자가 접근 가능한 현재 활성 live stream의 metadata를 반환한다.
- * playback 정보(HLS URL, token)는 포함하지 않는다. 개별 /playback endpoint에서 선택 후 발급.
+ * playback 정보(HLS path, token)는 포함하지 않는다. 개별 /playback endpoint에서 선택 후 발급.
  * dashboard Live 페이지와 Python package가 모두 사용하는 canonical list endpoint.
  */
 router.get(
@@ -47,7 +47,7 @@ router.get(
 
 /**
  * [Live stream playback]
- * HLS URL과 ephemeral bearer token을 발급한다.
+ * HLS path와 ephemeral bearer token을 발급한다.
  * Dashboard와 Python package 모두 이 응답의 auth.token을
  * "Authorization: Bearer <token>" header로 HLS 요청에 붙이면 MediaMTX가 검증한다.
  */

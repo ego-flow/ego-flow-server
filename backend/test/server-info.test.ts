@@ -24,7 +24,7 @@ test("getServerInfo exposes the expected public capability metadata", () => {
     },
     urls: {
       api_base: "/api/v1",
-      hls_base: runtimeConfig.HLS_BASE_URL,
+      hls_base: runtimeConfig.HLS_PATH_PREFIX,
     },
   });
 });

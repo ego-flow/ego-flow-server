@@ -141,7 +141,7 @@ export const openApiDocument = {
             required: ["api_base", "hls_base"],
             properties: {
               api_base: { type: "string", example: "/api/v1" },
-              hls_base: { type: "string", example: "http://127.0.0.1:8888" },
+              hls_base: { type: "string", example: "/hls" },
             },
           },
         },
@@ -324,7 +324,7 @@ export const openApiDocument = {
           "device_type",
           "registered_at",
           "status",
-          "hls_url",
+          "hls_path",
         ],
         properties: {
           stream_id: { type: "string", format: "uuid" },
@@ -335,7 +335,7 @@ export const openApiDocument = {
           device_type: { type: ["string", "null"] },
           registered_at: { type: "string", format: "date-time" },
           status: { type: "string", enum: ["live"] },
-          hls_url: { type: "string", example: "http://127.0.0.1/hls/live/daily_kitchen/index.m3u8" },
+          hls_path: { type: "string", example: "/hls/live/daily_kitchen/index.m3u8" },
         },
       },
       LiveStreamListResponse: {
@@ -381,13 +381,13 @@ export const openApiDocument = {
       },
       LiveStreamPlayback: {
         type: "object",
-        required: ["stream_id", "repository_id", "repository_name", "protocol", "hls_url", "auth"],
+        required: ["stream_id", "repository_id", "repository_name", "protocol", "hls_path", "auth"],
         properties: {
           stream_id: { type: "string", format: "uuid" },
           repository_id: { type: "string", format: "uuid" },
           repository_name: { type: "string" },
           protocol: { type: "string", enum: ["hls"] },
-          hls_url: { type: "string", example: "http://127.0.0.1/hls/live/daily_kitchen/index.m3u8" },
+          hls_path: { type: "string", example: "/hls/live/daily_kitchen/index.m3u8" },
           auth: {
             type: "object",
             required: ["type", "header_name", "scheme", "token", "expires_in_seconds"],
@@ -1593,7 +1593,7 @@ export const openApiDocument = {
     "/live-streams/{streamId}/playback": {
       get: {
         tags: ["Live Streams"],
-        summary: "Get HLS playback URL and ephemeral bearer token",
+        summary: "Get HLS playback path and ephemeral bearer token",
         parameters: [
           {
             name: "streamId",

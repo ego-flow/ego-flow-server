@@ -111,7 +111,7 @@ const start = async () => {
     hlsPort: env.HLS_PORT,
     mediamtxApiPort: env.MEDIAMTX_API_PORT,
     rtmpBaseUrl: env.RTMP_BASE_URL,
-    hlsBaseUrl: env.HLS_BASE_URL,
+    hlsPathPrefix: env.HLS_PATH_PREFIX,
     mediamtxApiUrl: env.MEDIAMTX_API_URL,
   });
   console.log("[startup] starting reconcile loop");

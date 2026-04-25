@@ -29,6 +29,6 @@ export const runtimeConfig = {
   RTMPS_CERT_PATH: env.RTMPS_CERT_PATH ?? "/certs/server.crt",
   RTMPS_KEY_PATH: env.RTMPS_KEY_PATH ?? "/certs/server.key",
   RTMP_BASE_URL: env.PUBLIC_RTMP_BASE_URL ?? `rtmp://127.0.0.1:${fileConfig.RTMP_PORT}/live`,
-  HLS_BASE_URL: env.PUBLIC_HLS_BASE_URL ?? `http://127.0.0.1:${fileConfig.HLS_PORT}`,
+  HLS_PATH_PREFIX: "/hls",
   MEDIAMTX_API_URL: env.MEDIAMTX_API_URL ?? `http://mediamtx:${fileConfig.MEDIAMTX_API_PORT}`,
 } as const;

@@ -300,11 +300,11 @@ export class StreamService {
   }
 
   /**
-   * [HLS playback URL 조립]
-   * `<PUBLIC_HLS_BASE_URL>/live/{repository_name}/index.m3u8` 형태로 URL을 만든다.
+   * [HLS playback path 조립]
+   * `/hls/live/{repository_name}/index.m3u8` 형태의 origin-relative path를 만든다.
    */
-  buildHlsUrl(repoName: string) {
-    const hlsBase = env.HLS_BASE_URL.replace(/\/+$/, "");
+  buildHlsPath(repoName: string) {
+    const hlsBase = env.HLS_PATH_PREFIX.replace(/\/+$/, "");
     return `${hlsBase}/live/${repoName}/index.m3u8`;
   }
 
@@ -361,7 +361,7 @@ export class StreamService {
       device_type: entry.deviceType ?? null,
       registered_at: entry.registeredAt,
       status: "live" as const,
-      hls_url: this.buildHlsUrl(entry.repositoryName),
+      hls_path: this.buildHlsPath(entry.repositoryName),
     }));
 
     if (streams.length > 0) {
@@ -431,7 +431,7 @@ export class StreamService {
     }
 
     const repoName = recordingSessionService.extractRepositoryName(session.streamPath);
-    const hlsUrl = this.buildHlsUrl(repoName);
+    const hlsPath = this.buildHlsPath(repoName);
     const playback = await playbackTokenService.issueToken({
       userId: requestUserId,
       repositoryId: session.repositoryId,
@@ -443,7 +443,7 @@ export class StreamService {
       requestUserId,
       streamId: session.id,
       repositoryName: repoName,
-      hlsUrl,
+      hlsPath,
     });
 
     return {
@@ -451,7 +451,7 @@ export class StreamService {
       repository_id: session.repositoryId,
       repository_name: repoName,
       protocol: "hls" as const,
-      hls_url: hlsUrl,
+      hls_path: hlsPath,
       auth: {
         type: "bearer" as const,
         header_name: "Authorization",

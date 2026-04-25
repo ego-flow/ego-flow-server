@@ -162,7 +162,6 @@ REDIS_URL=redis://redis:6379
 
 # Optional public URL overrides
 # PUBLIC_RTMP_BASE_URL=rtmp://your-host:1935/live
-# PUBLIC_HLS_BASE_URL=http://your-host/hls
 # RTMPS_ENCRYPTION_MODE=no
 # RTMPS_CERT_PATH=/certs/server.crt
 # RTMPS_KEY_PATH=/certs/server.key
@@ -179,7 +178,6 @@ REDIS_URL=redis://redis:6379
 | `REDIS_URL` | No | `redis://redis:6379` | Redis connection string override. |
 | `HF_TOKEN` | No | None | Hugging Face token used for Hugging Face integration. |
 | `PUBLIC_RTMP_BASE_URL` | No | `rtmp://127.0.0.1:{RTMP_PORT}/live` | Public RTMP base URL returned to clients. Set it explicitly on any machine that other devices connect to. |
-| `PUBLIC_HLS_BASE_URL` | No | `http://127.0.0.1:{HLS_PORT}` | Public HLS base URL returned to clients. For remote deployments, prefer a reverse-proxied path such as `http://your-host/hls` unless port `8888` is intentionally exposed to clients. |
 | `MEDIAMTX_API_URL` | No | `http://mediamtx:{MEDIAMTX_API_PORT}` | Internal MediaMTX API URL override used by the backend. |
 | `RTMPS_ENCRYPTION_MODE` | No | `no` | MediaMTX RTMP encryption mode. |
 | `RTMPS_CERT_PATH` | No | `/certs/server.crt` | MediaMTX RTMPS server certificate path. |

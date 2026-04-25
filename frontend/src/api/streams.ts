@@ -1,4 +1,4 @@
-import { apiClient } from '#/api/client'
+import { apiClient, resolveBackendUrl } from '#/api/client'
 
 export interface LiveStreamSummary {
   streamId: string
@@ -9,6 +9,7 @@ export interface LiveStreamSummary {
   deviceType: string | null
   registeredAt: string
   status: 'live'
+  hlsPath: string
 }
 
 export interface LiveStreamPlaybackAuth {
@@ -24,6 +25,7 @@ export interface LiveStreamPlayback {
   repositoryId: string
   repositoryName: string
   protocol: 'hls'
+  hlsPath: string
   hlsUrl: string
   auth: LiveStreamPlaybackAuth
 }
@@ -39,6 +41,7 @@ export async function requestLiveStreams() {
       device_type: string | null
       registered_at: string
       status: 'live'
+      hls_path: string
     }>
   }>('/live-streams')
 
@@ -51,6 +54,7 @@ export async function requestLiveStreams() {
     deviceType: stream.device_type,
     registeredAt: stream.registered_at,
     status: stream.status,
+    hlsPath: stream.hls_path,
   })) satisfies LiveStreamSummary[]
 }
 
@@ -60,7 +64,7 @@ export async function requestLiveStreamPlayback(streamId: string) {
     repository_id: string
     repository_name: string
     protocol: 'hls'
-    hls_url: string
+    hls_path: string
     auth: {
       type: 'bearer'
       header_name: string
@@ -71,12 +75,14 @@ export async function requestLiveStreamPlayback(streamId: string) {
   }>(`/live-streams/${streamId}/playback`)
 
   const data = response.data
+  const hlsPath = data.hls_path
   return {
     streamId: data.stream_id,
     repositoryId: data.repository_id,
     repositoryName: data.repository_name,
     protocol: data.protocol,
-    hlsUrl: data.hls_url,
+    hlsPath,
+    hlsUrl: resolveBackendUrl(hlsPath) ?? hlsPath,
     auth: {
       type: data.auth.type,
       headerName: data.auth.header_name,

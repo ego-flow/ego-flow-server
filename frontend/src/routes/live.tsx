@@ -200,8 +200,8 @@ function LivePage() {
                 </Suspense>
                 <dl className="mt-5 grid gap-3 text-sm text-[var(--sea-ink-soft)] sm:grid-cols-2">
                   <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
-                    <dt className="font-semibold text-[var(--sea-ink)]">HLS URL</dt>
-                    <dd className="mt-1 break-all">{playback.hlsUrl}</dd>
+                    <dt className="font-semibold text-[var(--sea-ink)]">HLS path</dt>
+                    <dd className="mt-1 break-all">{playback.hlsPath}</dd>
                   </div>
                   <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
                     <dt className="font-semibold text-[var(--sea-ink)]">Registered at</dt>
