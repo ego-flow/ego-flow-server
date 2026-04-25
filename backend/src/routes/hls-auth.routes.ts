@@ -18,7 +18,7 @@ router.get(
   "/",
   requireAuth,
   asyncHandler(async (req, res) => {
-    if (!req.user || !req.auth) {
+    if (!req.user || !req.auth?.rawCredential) {
       throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
     }
 
