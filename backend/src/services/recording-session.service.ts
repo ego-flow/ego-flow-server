@@ -29,6 +29,7 @@ const streamPathKey = (repoName: string) => `stream:path:${repoName}`;
 const streamSourceKey = (sourceId: string) => `stream:source:${sourceId}`;
 const streamRecordingKey = (recordingSessionId: string) => `stream:recording:${recordingSessionId}`;
 const streamSegmentKey = (segmentPath: string) => `segment:${segmentPath}`;
+export const STREAM_ACTIVE_SET_KEY = "stream:active:sessions";
 const SEGMENT_MAPPING_TTL_SECONDS = 24 * 60 * 60;
 
 /**
@@ -76,6 +77,7 @@ export class RecordingSessionService {
       ownerId: session.ownerId,
       userId: session.userId,
       targetDirectory: session.targetDirectory,
+      registeredAt: session.createdAt.toISOString(),
       status: "PENDING",
     };
     if (session.deviceType) {
@@ -228,6 +230,7 @@ export class RecordingSessionService {
       ownerId: session.ownerId,
       userId: session.userId,
       targetDirectory: session.targetDirectory,
+      registeredAt: existingLiveCache?.registeredAt ?? session.createdAt.toISOString(),
       status: "STREAMING",
       sourceId: input.source_id,
       sourceType: input.source_type,
@@ -245,7 +248,8 @@ export class RecordingSessionService {
       .set(streamRecordingKey(recordingSessionId), JSON.stringify(liveCache), "EX", ACTIVE_TTL_SECONDS)
       .set(streamRepoKey(session.repositoryId), recordingSessionId, "EX", ACTIVE_TTL_SECONDS)
       .set(streamPathKey(repoName), recordingSessionId, "EX", ACTIVE_TTL_SECONDS)
-      .set(streamSourceKey(input.source_id), JSON.stringify(sourceMapping), "EX", ACTIVE_TTL_SECONDS);
+      .set(streamSourceKey(input.source_id), JSON.stringify(sourceMapping), "EX", ACTIVE_TTL_SECONDS)
+      .sadd(STREAM_ACTIVE_SET_KEY, recordingSessionId);
 
     if (previousSourceId && previousSourceId !== input.source_id) {
       pipeline.del(streamSourceKey(previousSourceId));
@@ -1139,6 +1143,8 @@ export class RecordingSessionService {
         clearedKeys.push(key);
       }
     }
+
+    await redis.srem(STREAM_ACTIVE_SET_KEY, recordingSessionId);
 
     if (clearedKeys.length > 0) {
       console.info("[rtmp-state] live-pointers-cleared", {

@@ -233,6 +233,39 @@ export class RepositoryService {
     };
   }
 
+  /**
+   * [접근 가능한 repository id 집합]
+   * /live API filter를 위해 호출자 권한으로 read 가능한 repository id 집합을 계산한다.
+   * - admin: null (filter 없음)
+   * - 일반 사용자: owner / member / public repository id의 합집합
+   */
+  async listAccessibleRepositoryIds(userId: string, userRole: AppUserRole): Promise<Set<string> | null> {
+    if (userRole === "admin") {
+      return null;
+    }
+
+    const [ownedOrMember, publicRepos] = await Promise.all([
+      prisma.repoMember.findMany({
+        where: { userId },
+        select: { repositoryId: true },
+      }),
+      prisma.repository.findMany({
+        where: { visibility: RepoVisibility.public },
+        select: { id: true },
+      }),
+    ]);
+
+    const accessible = new Set<string>();
+    for (const membership of ownedOrMember) {
+      accessible.add(membership.repositoryId);
+    }
+    for (const repo of publicRepos) {
+      accessible.add(repo.id);
+    }
+
+    return accessible;
+  }
+
   async listMaintainedRepositories(userId: string, userRole: AppUserRole) {
     return {
       repositories: await this.getAccessibleRepositories(userId, userRole, "maintain"),

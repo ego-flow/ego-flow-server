@@ -9,7 +9,7 @@ import type { AppUserRole } from "../types/auth";
 import type { StreamRegisterInput } from "../schemas/stream.schema";
 import type { RecordingSessionLiveCache } from "../types/stream";
 import { repositoryService } from "./repository.service";
-import { recordingSessionService } from "./recording-session.service";
+import { recordingSessionService, STREAM_ACTIVE_SET_KEY } from "./recording-session.service";
 import { streamOwnershipService } from "./stream-ownership.service";
 import { playbackTokenService } from "./playback-token.service";
 
@@ -300,61 +300,68 @@ export class StreamService {
   }
 
   /**
-   * [Live stream 공통 접근 가능 session 수집]
-   * DB에서 STREAMING 상태 session을 가져와 요청자의 repository read 권한으로 필터링하고,
-   * MediaMTX가 실제로 송출 중인 path와 교집합한 결과를 반환한다.
-   * list/detail/playback 경로에서 공통으로 사용한다.
+   * [HLS playback URL 조립]
+   * `<PUBLIC_HLS_BASE_URL>/live/{repository_name}/index.m3u8` 형태로 URL을 만든다.
    */
-  private async collectAccessibleLiveSessions(requestUserId: string, requestUserRole: AppUserRole) {
-    const sessions = await prisma.recordingSession.findMany({
-      where: { status: RecordingSessionStatus.STREAMING },
-    });
-
-    if (sessions.length === 0) {
-      return [] as Array<(typeof sessions)[number]>;
-    }
-
-    const visibleResults = await Promise.all(
-      sessions.map(async (session) => ({
-        session,
-        access: await repositoryService.getRepositoryAccess(requestUserId, requestUserRole, session.repositoryId),
-      })),
-    );
-
-    const visible = visibleResults
-      .filter((result): result is { session: (typeof sessions)[0]; access: NonNullable<typeof result.access> } =>
-        Boolean(result.access),
-      )
-      .map((result) => result.session);
-
-    const activeRepoNames = await this.getActiveRepositoryNames();
-    const activeVisible = activeRepoNames
-      ? visible.filter((session) => {
-          const repoName = recordingSessionService.extractRepositoryName(session.streamPath);
-          return activeRepoNames.has(repoName);
-        })
-      : visible;
-
-    return activeVisible.sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
+  buildHlsUrl(repoName: string) {
+    const hlsBase = env.HLS_BASE_URL.replace(/\/+$/, "");
+    return `${hlsBase}/live/${repoName}/index.m3u8`;
   }
 
   /**
-   * [Live stream 목록]
-   * 요청자가 read 권한을 가진 repository 중 STREAMING 상태이고
-   * MediaMTX가 실제 송출 중인 session의 metadata만 반환한다.
-   * playback 정보(HLS URL, token)는 포함하지 않는다. 선택 후 /playback 호출로 개별 발급.
+   * [Live stream 목록 - Redis read-only]
+   * Redis active set + live cache만 읽어 응답을 만든다. DB / MediaMTX는 조회하지 않는다.
+   * 1. 요청자가 접근 가능한 repository id set 계산 (admin이면 null)
+   * 2. SMEMBERS stream:active:sessions
+   * 3. 각 id를 stream:recording:{id}로 MGET
+   * 4. status === STREAMING + 접근 가능 repo만 응답에 포함
+   * 5. registeredAt desc로 정렬
+   *
+   * cache가 없거나 깨졌거나 STREAMING이 아닌 entry는 무시만 한다 (cleanup은 hook/reconcile이 담당).
    */
   async listLiveStreams(requestUserId: string, requestUserRole: AppUserRole) {
-    const sessions = await this.collectAccessibleLiveSessions(requestUserId, requestUserRole);
-    const streams = sessions.map((session) => ({
-      stream_id: session.id,
-      repository_id: session.repositoryId,
-      repository_name: recordingSessionService.extractRepositoryName(session.streamPath),
-      owner_id: session.ownerId,
-      user_id: session.userId,
-      device_type: session.deviceType ?? null,
-      registered_at: session.createdAt.toISOString(),
+    const accessibleRepoIds = await repositoryService.listAccessibleRepositoryIds(requestUserId, requestUserRole);
+    const activeIds = await redis.smembers(STREAM_ACTIVE_SET_KEY);
+
+    if (activeIds.length === 0) {
+      return [];
+    }
+
+    const cacheKeys = activeIds.map((id) => streamRecordingKey(id));
+    const cachedRaw = await redis.mget(...cacheKeys);
+
+    const entries: RecordingSessionLiveCache[] = [];
+    for (const raw of cachedRaw) {
+      if (!raw) {
+        continue;
+      }
+      let parsed: RecordingSessionLiveCache;
+      try {
+        parsed = JSON.parse(raw) as RecordingSessionLiveCache;
+      } catch (_error) {
+        continue;
+      }
+      if (parsed.status !== "STREAMING") {
+        continue;
+      }
+      if (accessibleRepoIds && !accessibleRepoIds.has(parsed.repositoryId)) {
+        continue;
+      }
+      entries.push(parsed);
+    }
+
+    entries.sort((a, b) => (a.registeredAt > b.registeredAt ? -1 : 1));
+
+    const streams = entries.map((entry) => ({
+      stream_id: entry.recordingSessionId,
+      repository_id: entry.repositoryId,
+      repository_name: entry.repositoryName,
+      owner_id: entry.ownerId,
+      user_id: entry.userId,
+      device_type: entry.deviceType ?? null,
+      registered_at: entry.registeredAt,
       status: "live" as const,
+      hls_url: this.buildHlsUrl(entry.repositoryName),
     }));
 
     if (streams.length > 0) {
@@ -424,8 +431,7 @@ export class StreamService {
     }
 
     const repoName = recordingSessionService.extractRepositoryName(session.streamPath);
-    const hlsBase = env.HLS_BASE_URL.replace(/\/+$/, "");
-    const hlsUrl = `${hlsBase}/live/${repoName}/index.m3u8`;
+    const hlsUrl = this.buildHlsUrl(repoName);
     const playback = await playbackTokenService.issueToken({
       userId: requestUserId,
       repositoryId: session.repositoryId,
@@ -560,6 +566,7 @@ export class StreamService {
           await redis.del(streamRepoKey(repositoryId));
           await redis.del(streamPathKey(repoName));
           await redis.del(streamRecordingKey(existingSession.id));
+          await redis.srem(STREAM_ACTIVE_SET_KEY, existingSession.id);
           return;
         }
 
@@ -583,6 +590,7 @@ export class StreamService {
           await redis.del(streamRepoKey(repositoryId));
           await redis.del(streamPathKey(repoName));
           await redis.del(streamRecordingKey(existingSession.id));
+          await redis.srem(STREAM_ACTIVE_SET_KEY, existingSession.id);
           return;
         }
       }
@@ -641,6 +649,7 @@ export class StreamService {
           await redis.del(streamRepoKey(repositoryId));
           await redis.del(streamPathKey(repositoryName));
           await redis.del(streamRecordingKey(existingSession.id));
+          await redis.srem(STREAM_ACTIVE_SET_KEY, existingSession.id);
           if (existingSession.sourceId) {
             await redis.del(`stream:source:${existingSession.sourceId}`);
           }
@@ -675,6 +684,7 @@ export class StreamService {
       await redis.del(streamRepoKey(repositoryId));
       await redis.del(streamPathKey(repositoryName));
       await redis.del(streamRecordingKey(staleId));
+      await redis.srem(STREAM_ACTIVE_SET_KEY, staleId);
     }
   }
 

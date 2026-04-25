@@ -6,6 +6,7 @@ export interface RecordingSessionLiveCache {
   userId: string;
   deviceType?: string;
   targetDirectory: string;
+  registeredAt: string;
   status: "PENDING" | "STREAMING" | "STOP_REQUESTED" | "FINALIZING";
   sourceId?: string;
   sourceType?: string;

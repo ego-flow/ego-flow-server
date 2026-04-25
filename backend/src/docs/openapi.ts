@@ -324,6 +324,7 @@ export const openApiDocument = {
           "device_type",
           "registered_at",
           "status",
+          "hls_url",
         ],
         properties: {
           stream_id: { type: "string", format: "uuid" },
@@ -334,6 +335,7 @@ export const openApiDocument = {
           device_type: { type: ["string", "null"] },
           registered_at: { type: "string", format: "date-time" },
           status: { type: "string", enum: ["live"] },
+          hls_url: { type: "string", example: "http://127.0.0.1/hls/live/daily_kitchen/index.m3u8" },
         },
       },
       LiveStreamListResponse: {

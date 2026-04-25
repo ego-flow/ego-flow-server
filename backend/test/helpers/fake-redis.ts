@@ -20,6 +20,16 @@ class FakeRedisMulti {
     return this;
   }
 
+  sadd(key: string, ...members: string[]) {
+    this.commands.push(() => this.redis.sadd(key, ...members));
+    return this;
+  }
+
+  srem(key: string, ...members: string[]) {
+    this.commands.push(() => this.redis.srem(key, ...members));
+    return this;
+  }
+
   async exec() {
     const results: Array<[null, unknown]> = [];
     for (const command of this.commands) {
@@ -31,6 +41,7 @@ class FakeRedisMulti {
 
 export class FakeRedis {
   private readonly store = new Map<string, RedisValue>();
+  private readonly sets = new Map<string, Set<string>>();
 
   async get(key: string) {
     return this.store.get(key) ?? null;
@@ -59,6 +70,41 @@ export class FakeRedis {
     return keys.map((key) => this.store.get(key) ?? null);
   }
 
+  async sadd(key: string, ...members: string[]) {
+    const bucket = this.sets.get(key) ?? new Set<string>();
+    let added = 0;
+    for (const member of members) {
+      if (!bucket.has(member)) {
+        bucket.add(member);
+        added += 1;
+      }
+    }
+    this.sets.set(key, bucket);
+    return added;
+  }
+
+  async srem(key: string, ...members: string[]) {
+    const bucket = this.sets.get(key);
+    if (!bucket) {
+      return 0;
+    }
+    let removed = 0;
+    for (const member of members) {
+      if (bucket.delete(member)) {
+        removed += 1;
+      }
+    }
+    if (bucket.size === 0) {
+      this.sets.delete(key);
+    }
+    return removed;
+  }
+
+  async smembers(key: string) {
+    const bucket = this.sets.get(key);
+    return bucket ? Array.from(bucket.values()) : [];
+  }
+
   async scan(cursor: string, ...args: Array<string | number>) {
     const currentCursor = Number(cursor);
     const matchIndex = args.findIndex((value) => String(value).toUpperCase() === "MATCH");
@@ -85,6 +131,7 @@ export class FakeRedis {
 
   clear() {
     this.store.clear();
+    this.sets.clear();
   }
 
   has(key: string) {
