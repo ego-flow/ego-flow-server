@@ -13,6 +13,23 @@ export const Route = createFileRoute("/login")({
 	component: LoginPage,
 });
 
+type PasswordEnterEvent = Pick<
+	ReactKeyboardEvent<HTMLInputElement>,
+	"key" | "preventDefault"
+>;
+
+export function triggerLoginOnPasswordEnter(
+	event: PasswordEnterEvent,
+	onSubmit: () => void,
+) {
+	if (event.key !== "Enter") {
+		return;
+	}
+
+	event.preventDefault();
+	onSubmit();
+}
+
 const loginSchema = z.object({
 	id: z.string().min(1, "ID is required"),
 	password: z.string().trim().min(1, "Password is required"),
@@ -61,12 +78,7 @@ export function LoginPage() {
 	const handlePasswordKeyDown = (
 		event: ReactKeyboardEvent<HTMLInputElement>,
 	) => {
-		if (event.key !== "Enter") {
-			return;
-		}
-
-		event.preventDefault();
-		submitLogin();
+		triggerLoginOnPasswordEnter(event, submitLogin);
 	};
 
 	if (!isReady) {
