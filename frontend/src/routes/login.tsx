@@ -51,6 +51,10 @@ function LoginPage() {
     },
   })
 
+  const submitLogin = () => {
+    void form.handleSubmit()
+  }
+
   if (!isReady) {
     return null
   }
@@ -75,7 +79,14 @@ function LoginPage() {
           className="mt-7 space-y-4"
           onSubmit={(e) => {
             e.preventDefault()
-            void form.handleSubmit()
+            submitLogin()
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter' || e.nativeEvent.isComposing) {
+              return
+            }
+            e.preventDefault()
+            submitLogin()
           }}
         >
           <form.Field name="id">
