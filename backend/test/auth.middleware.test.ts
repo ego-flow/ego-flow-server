@@ -17,7 +17,7 @@ const { adminService } =
   require("../src/services/admin.service") as typeof import("../src/services/admin.service");
 const { apiTokenService } =
   require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
-const { requireAuth } =
+const { requireDashboardOrAppOrPython } =
   require("../src/middleware/auth.middleware") as typeof import("../src/middleware/auth.middleware");
 
 type HeaderMap = Record<string, string>;
@@ -47,7 +47,7 @@ beforeEach(() => {
   (jwtLib as any).signAccessToken = originalSignAccessToken;
 });
 
-test("requireAuth accepts ef_ Python tokens without emitting a refreshed header", async () => {
+test("requireDashboardOrAppOrPython accepts ef_ Python tokens without emitting a refreshed header", async () => {
   let jwtVerified = false;
 
   apiTokenService.verifyPythonToken = async (token: string) => {
@@ -76,7 +76,7 @@ test("requireAuth accepts ef_ Python tokens without emitting a refreshed header"
   const res = createResponse();
   let nextError: unknown = null;
 
-  await requireAuth(req, res as any, (error?: unknown) => {
+  await requireDashboardOrAppOrPython(req, res as any, (error?: unknown) => {
     nextError = error ?? null;
   });
 
@@ -90,7 +90,7 @@ test("requireAuth accepts ef_ Python tokens without emitting a refreshed header"
   assert.equal(res.headers["X-Refreshed-Token"], undefined);
 });
 
-test("requireAuth keeps the JWT refresh behavior for non-Python bearer tokens", async () => {
+test("requireDashboardOrAppOrPython keeps JWT refresh behavior for non-Python bearer tokens", async () => {
   (jwtLib as any).verifyAccessToken = (() => ({
     userId: "alice",
     role: "user",
@@ -112,7 +112,7 @@ test("requireAuth keeps the JWT refresh behavior for non-Python bearer tokens", 
   const res = createResponse();
   let nextError: unknown = null;
 
-  await requireAuth(req, res as any, (error?: unknown) => {
+  await requireDashboardOrAppOrPython(req, res as any, (error?: unknown) => {
     nextError = error ?? null;
   });
 
@@ -125,7 +125,7 @@ test("requireAuth keeps the JWT refresh behavior for non-Python bearer tokens", 
   assert.equal(res.headers["X-Refreshed-Token"], "refreshed.jwt");
 });
 
-test("requireAuth rejects invalid Python tokens with 401", async () => {
+test("requireDashboardOrAppOrPython rejects invalid Python tokens with 401", async () => {
   apiTokenService.verifyPythonToken = async () => null;
 
   const req: any = {
@@ -137,7 +137,7 @@ test("requireAuth rejects invalid Python tokens with 401", async () => {
   const res = createResponse();
   let nextError: unknown = null;
 
-  await requireAuth(req, res as any, (error?: unknown) => {
+  await requireDashboardOrAppOrPython(req, res as any, (error?: unknown) => {
     nextError = error ?? null;
   });
 
