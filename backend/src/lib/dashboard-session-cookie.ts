@@ -1,6 +1,5 @@
 import type { CookieOptions, Request, Response } from "express";
 
-import { runtimeConfig as env } from "../config/runtime";
 import { DASHBOARD_SESSION_COOKIE_NAME } from "../services/dashboard-session.service";
 
 const isSecureRequest = (req: Request) => req.secure || req.headers["x-forwarded-proto"] === "https";
@@ -8,7 +7,9 @@ const isSecureRequest = (req: Request) => req.secure || req.headers["x-forwarded
 const baseCookieOptions = (req: Request) =>
   ({
     httpOnly: true,
-    secure: env.NODE_ENV === "production" || isSecureRequest(req),
+    // Browsers ignore Secure cookies on plain HTTP origins, so only enable it when
+    // the public request actually arrived over HTTPS (directly or via trusted proxy).
+    secure: isSecureRequest(req),
     sameSite: "lax" as const,
     path: "/",
   }) satisfies CookieOptions;
