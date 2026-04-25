@@ -3,7 +3,7 @@ import { Router } from "express";
 import { asyncHandler } from "../lib/async-handler";
 import { clearDashboardSessionCookie, setDashboardSessionCookie } from "../lib/dashboard-session-cookie";
 import { AppError } from "../lib/errors";
-import { requireCredential, requireDashboardSession } from "../middleware/auth.middleware";
+import { requireDashboardOrAppOrPython, requireDashboardSession } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import type { ApiTokenIdParamInput } from "../schemas/api-token.schema";
 import { apiTokenIdParamSchema, createApiTokenSchema } from "../schemas/api-token.schema";
@@ -104,7 +104,7 @@ router.get(
 
 router.get(
   "/validate",
-  requireCredential("dashboard", "app", "python"),
+  requireDashboardOrAppOrPython,
   asyncHandler(async (req, res) => {
     if (!req.user) {
       throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");

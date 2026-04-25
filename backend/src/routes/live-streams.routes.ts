@@ -2,7 +2,7 @@ import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
 import { AppError } from "../lib/errors";
-import { requireAuth } from "../middleware/auth.middleware";
+import { requireDashboardOrAppOrPython } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import { liveStreamIdParamSchema } from "../schemas/live-stream.schema";
 import { streamService } from "../services/stream.service";
@@ -18,7 +18,7 @@ const router = Router();
  */
 router.get(
   "/",
-  requireAuth,
+  requireDashboardOrAppOrPython,
   asyncHandler(async (req, res) => {
     if (!req.user) {
       throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
@@ -35,7 +35,7 @@ router.get(
  */
 router.get(
   "/:streamId",
-  requireAuth,
+  requireDashboardOrAppOrPython,
   validate(liveStreamIdParamSchema, "params"),
   asyncHandler(async (req, res) => {
     if (!req.user) {

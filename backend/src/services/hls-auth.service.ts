@@ -27,7 +27,7 @@ interface AuthorizeInput {
 /**
  * [HLS playback gate]
  * Caddy `forward_auth` 진입점에서 호출되는 권한 검증 로직.
- * - credential은 이미 requireAuth에서 검증되어 있으므로 여기서는 권한만 확인한다.
+ * - credential은 이미 requireDashboardOrAppOrPython에서 검증되어 있으므로 여기서는 권한만 확인한다.
  * - cache key는 (credential SHA-256 hash) x repoName 조합 (30초 TTL).
  * - cache hit면 즉시 allow.
  * - miss면 live session 존재 여부와 repository read 권한을 확인한 뒤 cache.
