@@ -25,6 +25,8 @@ function AdminUsersPage() {
   const [newPassword, setNewPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
 
+  const isCreateUserDisabled = !newUserId.trim() || newPassword.length < 8
+
   const usersQuery = useQuery({
     queryKey: ['admin', 'users'],
     queryFn: requestAdminUsers,
@@ -76,6 +78,13 @@ function AdminUsersPage() {
     (adminTokensQuery.data ?? []).map((token) => [token.userId, token]),
   )
 
+  const submitCreateUser = () => {
+    if (isCreateUserDisabled || createUserMutation.isPending) {
+      return
+    }
+    createUserMutation.mutate()
+  }
+
   return (
     <main className="page-wrap px-4 py-8 sm:py-10">
       <header className="mb-6">
@@ -94,7 +103,7 @@ function AdminUsersPage() {
           className="mt-4 grid gap-4 md:grid-cols-3"
           onSubmit={(event) => {
             event.preventDefault()
-            createUserMutation.mutate()
+            submitCreateUser()
           }}
         >
           <div className="space-y-2">
@@ -129,14 +138,16 @@ function AdminUsersPage() {
           <div className="md:col-span-3">
             <Button
               type="submit"
-              disabled={
-                createUserMutation.isPending ||
-                !newUserId.trim() ||
-                newPassword.length < 8
-              }
+              disabled={createUserMutation.isPending || isCreateUserDisabled}
+              onClick={submitCreateUser}
             >
               Create user
             </Button>
+            {newPassword.length > 0 && newPassword.length < 8 ? (
+              <p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
+                Password must be at least 8 characters.
+              </p>
+            ) : null}
           </div>
         </form>
 
