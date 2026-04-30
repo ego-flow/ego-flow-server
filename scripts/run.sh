@@ -8,6 +8,14 @@ RUN_STATE_DIR="$ROOT_DIR/.run"
 TARGET_DIRECTORY_STATE_FILE="$RUN_STATE_DIR/target-directory"
 FILE_MOVE_HELPER_IMAGE="redis:7-alpine"
 
+# bind-mount config 경로와 그 변경 시 restart 가 필요한 service 매핑.
+# `docker compose up -d --build`는 외부 image 를 쓰는 컨테이너의 bind-mount 파일/디렉터리 변경을
+# 감지하지 못하므로, 여기서 sha256 을 추적해 변경 시에만 해당 service 를 restart 한다.
+TRACKED_BIND_MOUNT_CONFIGS=(
+  "proxy:Caddyfile"
+  "mediamtx:mediamtx.yml mediamtx-hooks certs"
+)
+
 cd "$ROOT_DIR"
 
 usage() {
@@ -185,7 +193,7 @@ check_prereqs() {
   echo "HTTP port: ${PUBLIC_HTTP_PORT}"
   echo "RTMP port: ${RTMP_PORT}"
   echo "RTMPS port: ${RTMPS_PORT}"
-  echo "HLS port: ${HLS_PORT}"
+  echo "HLS internal port: ${HLS_PORT}"
   echo "Data root: ${TARGET_DIRECTORY}"
   echo "Datasets dir: ${TARGET_DIRECTORY}/datasets"
 }
@@ -361,6 +369,61 @@ prepare_target_directory() {
   mkdir -p "$TARGET_DIRECTORY/datasets"
 }
 
+config_hash_state_file() {
+  echo "$RUN_STATE_DIR/config-hash-$1"
+}
+
+tracked_config_hash() {
+  local relative_path absolute_path child relative_child
+
+  for relative_path in "$@"; do
+    absolute_path="$ROOT_DIR/$relative_path"
+
+    if [[ -f "$absolute_path" ]]; then
+      printf 'file %s ' "$relative_path"
+      sha256sum "$absolute_path" | awk '{print $1}'
+      continue
+    fi
+
+    if [[ -d "$absolute_path" ]]; then
+      printf 'dir %s\n' "$relative_path"
+      while IFS= read -r -d '' child; do
+        relative_child="${child#$ROOT_DIR/}"
+        printf 'file %s ' "$relative_child"
+        sha256sum "$child" | awk '{print $1}'
+      done < <(find "$absolute_path" -type f -print0 | sort -z)
+      continue
+    fi
+
+    printf 'missing %s\n' "$relative_path"
+  done | sha256sum | awk '{print $1}'
+}
+
+restart_services_with_changed_configs() {
+  mkdir -p "$RUN_STATE_DIR"
+
+  local entry service paths hash_file current_hash previous_hash
+  for entry in "${TRACKED_BIND_MOUNT_CONFIGS[@]}"; do
+    service="${entry%%:*}"
+    paths="${entry#*:}"
+    hash_file="$(config_hash_state_file "$service")"
+
+    # shellcheck disable=SC2086
+    current_hash="$(tracked_config_hash $paths)"
+    previous_hash=""
+    if [[ -f "$hash_file" ]]; then
+      previous_hash="$(tr -d '\r\n' < "$hash_file")"
+    fi
+
+    if [[ -n "$previous_hash" && "$previous_hash" != "$current_hash" ]] && container_running "$service"; then
+      echo "[config] ${paths} changed since last up — restarting ${service}"
+      compose_cmd restart "$service"
+    fi
+
+    printf '%s\n' "$current_hash" > "$hash_file"
+  done
+}
+
 migrate_previous_data_root_if_needed() {
   local previous_data_root=""
   local destination_path source_path
@@ -435,6 +498,8 @@ up_stack() {
   echo "[compose] Starting stack: ${COMPOSE_SERVICES[*]}"
   compose_cmd up -d --build --remove-orphans "${COMPOSE_SERVICES[@]}"
 
+  restart_services_with_changed_configs
+
   wait_for_healthy postgres
   wait_for_healthy redis
   wait_for_healthy backend
@@ -450,7 +515,7 @@ up_stack() {
   echo "Dashboard:      ${http_base}"
   echo "RTMP ingest:    rtmp://localhost:${RTMP_PORT}/live"
   echo "RTMPS ingest:   rtmps://localhost:${RTMPS_PORT}/live"
-  echo "HLS output:     http://localhost:${HLS_PORT}"
+  echo "HLS output:     ${http_base}/hls"
 }
 
 doctor() {
@@ -496,6 +561,9 @@ reset_env() {
 
   echo "Clearing persisted target-directory state..."
   rm -f "$TARGET_DIRECTORY_STATE_FILE"
+  for entry in "${TRACKED_BIND_MOUNT_CONFIGS[@]}"; do
+    rm -f "$(config_hash_state_file "${entry%%:*}")"
+  done
   rmdir "$RUN_STATE_DIR" 2>/dev/null || true
 
   echo "Reset complete."

@@ -12,3 +12,4 @@ data/redis/
 .env
 config.json
 backend/.env
+.codex
