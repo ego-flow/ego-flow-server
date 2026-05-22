@@ -36,7 +36,7 @@ function AdminUsersPage() {
 		null,
 	);
 
-	const isCreateUserDisabled = !newUserId.trim() || newPassword.length < 8;
+	const isCreateUserDisabled = !newUserId.trim();
 
 	const usersQuery = useQuery({
 		queryKey: ["admin", "users"],
@@ -250,7 +250,7 @@ function AdminUsersPage() {
 											type="password"
 											value={newPassword}
 											onChange={(event) => setNewPassword(event.target.value)}
-											placeholder="At least 8 characters"
+											placeholder="Password"
 										/>
 									</div>
 									<div className="space-y-2">
@@ -272,11 +272,6 @@ function AdminUsersPage() {
 										>
 											Create user
 										</Button>
-										{newPassword.length > 0 && newPassword.length < 8 ? (
-											<p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
-												Password must be at least 8 characters.
-											</p>
-										) : null}
 									</div>
 								</form>
 
@@ -421,7 +416,7 @@ function AdminUsersPage() {
 																				`Enter a new password for ${user.id}`,
 																			);
 
-																			if (!nextPassword) {
+																			if (nextPassword === null) {
 																				return;
 																			}
 

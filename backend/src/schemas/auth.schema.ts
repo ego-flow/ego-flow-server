@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const loginSchema = z.object({
   id: z.string().min(1).max(64),
-  password: z.string().min(1).max(255),
+  password: z.string(),
 });
 
 export const dashboardLoginSchema = loginSchema.extend({

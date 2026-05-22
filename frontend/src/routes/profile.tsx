@@ -88,8 +88,7 @@ function ProfilePage() {
     return <Navigate to="/login" />
   }
 
-  const isPasswordMismatch =
-    confirmPassword.length > 0 && newPassword !== confirmPassword
+  const isPasswordMismatch = newPassword !== confirmPassword
   const currentToken = currentTokenQuery.data?.token ?? null
 
   return (
@@ -113,8 +112,7 @@ function ProfilePage() {
         <section className="mt-8 rounded-2xl border border-[var(--line)] bg-[var(--chip-bg)] p-5">
           <h2 className="text-lg font-semibold text-[var(--sea-ink)]">Change password</h2>
           <p className="mt-1 text-sm text-[var(--sea-ink-soft)]">
-            Enter your current password and set a new password with at least 8
-            characters.
+            Enter your current password and set a new password.
           </p>
 
           <form
@@ -182,11 +180,7 @@ function ProfilePage() {
             <Button
               type="submit"
               disabled={
-                changePasswordMutation.isPending ||
-                !currentPassword ||
-                !newPassword ||
-                !confirmPassword ||
-                isPasswordMismatch
+                changePasswordMutation.isPending || isPasswordMismatch
               }
             >
               Change password

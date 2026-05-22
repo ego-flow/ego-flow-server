@@ -4,7 +4,7 @@ const userIdSchema = z.string().min(1).max(64).regex(/^[a-z0-9_]+$/);
 
 export const createAdminUserSchema = z.object({
   id: userIdSchema,
-  password: z.string().min(8).max(255),
+  password: z.string(),
   displayName: z.string().trim().min(1).max(255).optional(),
 });
 
@@ -13,7 +13,7 @@ export const adminUserIdParamSchema = z.object({
 });
 
 export const resetUserPasswordSchema = z.object({
-  newPassword: z.string().min(8).max(255),
+  newPassword: z.string(),
 });
 
 export type CreateAdminUserInput = z.infer<typeof createAdminUserSchema>;

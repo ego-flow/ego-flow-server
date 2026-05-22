@@ -54,7 +54,7 @@ export const openApiDocument = {
         required: ["id", "password"],
         properties: {
           id: { type: "string", maxLength: 64, example: "admin" },
-          password: { type: "string", maxLength: 255, example: "changeme123" },
+          password: { type: "string", example: "changeme123" },
         },
       },
       AuthUser: {
@@ -79,7 +79,7 @@ export const openApiDocument = {
         required: ["id", "password"],
         properties: {
           id: { type: "string", maxLength: 64, example: "admin" },
-          password: { type: "string", maxLength: 255, example: "changeme123" },
+          password: { type: "string", example: "changeme123" },
           remember_me: { type: "boolean", default: false },
         },
       },
@@ -530,7 +530,7 @@ export const openApiDocument = {
         required: ["currentPassword", "newPassword"],
         properties: {
           currentPassword: { type: "string" },
-          newPassword: { type: "string", minLength: 8, maxLength: 255 },
+          newPassword: { type: "string" },
         },
       },
       CreateApiTokenRequest: {
@@ -604,7 +604,7 @@ export const openApiDocument = {
         required: ["id", "password"],
         properties: {
           id: { type: "string", pattern: "^[a-z0-9_]+$", maxLength: 64 },
-          password: { type: "string", minLength: 8, maxLength: 255 },
+          password: { type: "string" },
           displayName: { type: "string", minLength: 1, maxLength: 255 },
         },
       },
@@ -645,7 +645,7 @@ export const openApiDocument = {
         type: "object",
         required: ["newPassword"],
         properties: {
-          newPassword: { type: "string", minLength: 8, maxLength: 255 },
+          newPassword: { type: "string" },
         },
       },
       PasswordResetResponse: {

@@ -39,7 +39,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),
   JWT_SECRET: z.string().min(16),
-  ADMIN_DEFAULT_PASSWORD: z.string().min(8),
+  ADMIN_DEFAULT_PASSWORD: z.string(),
   HF_TOKEN: optionalNonEmptyString,
   PUBLIC_RTMP_BASE_URL: optionalNonEmptyString,
   MEDIAMTX_API_URL: optionalNonEmptyString,
