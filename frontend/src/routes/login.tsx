@@ -1,5 +1,5 @@
 import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
-import { type KeyboardEvent as ReactKeyboardEvent, useState } from "react";
+import { useState } from "react";
 import { z } from "zod";
 
 import { Button } from "#/components/ui/button";
@@ -13,26 +13,9 @@ export const Route = createFileRoute("/login")({
 	component: LoginPage,
 });
 
-type PasswordEnterEvent = Pick<
-	ReactKeyboardEvent<HTMLInputElement>,
-	"key" | "preventDefault"
->;
-
-export function triggerLoginOnPasswordEnter(
-	event: PasswordEnterEvent,
-	onSubmit: () => void,
-) {
-	if (event.key !== "Enter") {
-		return;
-	}
-
-	event.preventDefault();
-	onSubmit();
-}
-
 const loginSchema = z.object({
 	id: z.string().min(1, "ID is required"),
-	password: z.string().trim().min(1, "Password is required"),
+	password: z.string(),
 	rememberMe: z.boolean(),
 });
 
@@ -75,12 +58,6 @@ export function LoginPage() {
 		void form.handleSubmit();
 	};
 
-	const handlePasswordKeyDown = (
-		event: ReactKeyboardEvent<HTMLInputElement>,
-	) => {
-		triggerLoginOnPasswordEnter(event, submitLogin);
-	};
-
 	if (!isReady) {
 		return null;
 	}
@@ -106,6 +83,7 @@ export function LoginPage() {
 					className="mt-7 space-y-4"
 					onSubmit={(e) => {
 						e.preventDefault();
+						e.stopPropagation();
 						submitLogin();
 					}}
 				>
@@ -146,22 +124,10 @@ export function LoginPage() {
 									type="password"
 									autoComplete="current-password"
 									placeholder="Enter your Password"
-									minLength={1}
 									value={field.state.value}
 									onBlur={field.handleBlur}
-									onKeyDown={handlePasswordKeyDown}
 									onChange={(e) => field.handleChange(e.target.value)}
 								/>
-
-								{field.state.meta.isTouched &&
-									field.state.value.trim().length === 0 &&
-									field.state.meta.errors.length > 0 && (
-										<p className="text-sm font-medium text-red-600">
-											{typeof field.state.meta.errors[0] === "string"
-												? field.state.meta.errors[0]
-												: field.state.meta.errors[0]?.message}
-										</p>
-									)}
 							</div>
 						)}
 					</form.Field>
