@@ -20,11 +20,10 @@ Verify your environment:
 Create `config.json` and `.env` in the `ego-flow-server` root before starting the stack.
 
 ```bash
-cp ./config.json.example ./config.json
-cp ./.env.example ./.env
+./scripts/setup-server-config.sh
 ```
 
-Then update the values for your environment.
+The script asks for every `config.json` and `.env` value in order. Existing files are overwritten after the prompts complete.
 
 ### Start the Stack
 
