@@ -12,6 +12,7 @@ export const runtimeConfig = {
   RTMP_PORT: fileConfig.RTMP_PORT,
   RTMPS_PORT: fileConfig.RTMPS_PORT,
   HLS_PORT: fileConfig.HLS_PORT,
+  WEBRTC_PORT: fileConfig.WEBRTC_PORT,
   MEDIAMTX_API_PORT: fileConfig.MEDIAMTX_API_PORT,
   CORS_ORIGIN: fileConfig.CORS_ORIGIN,
   WORKER_CONCURRENCY: fileConfig.WORKER_CONCURRENCY,
@@ -29,6 +30,10 @@ export const runtimeConfig = {
   RTMPS_CERT_PATH: env.RTMPS_CERT_PATH ?? "/certs/server.crt",
   RTMPS_KEY_PATH: env.RTMPS_KEY_PATH ?? "/certs/server.key",
   RTMP_BASE_URL: env.PUBLIC_RTMP_BASE_URL ?? `rtmp://127.0.0.1:${fileConfig.RTMP_PORT}/live`,
+  WHIP_BASE_URL: env.PUBLIC_WHIP_BASE_URL ?? `http://127.0.0.1:${fileConfig.PUBLIC_HTTP_PORT}/live`,
+  WHEP_BASE_URL: env.PUBLIC_WHEP_BASE_URL ?? `http://127.0.0.1:${fileConfig.PUBLIC_HTTP_PORT}/live`,
   HLS_PATH_PREFIX: "/hls",
+  WHIP_PATH_PREFIX: "/live",
+  WHEP_PATH_PREFIX: "/live",
   MEDIAMTX_API_URL: env.MEDIAMTX_API_URL ?? `http://mediamtx:${fileConfig.MEDIAMTX_API_PORT}`,
 } as const;

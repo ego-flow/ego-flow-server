@@ -155,6 +155,7 @@ services:
     ports:
       - "${RTMP_PORT:-1935}:1935"
       - "${RTMPS_PORT:-1936}:1936"
+      - "${WEBRTC_UDP_PORT:-8189}:8189/udp"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
       - ./mediamtx-hooks:/mediamtx-hooks:ro

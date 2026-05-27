@@ -23,6 +23,7 @@ import { repositoryVideosRoutes } from "./routes/repository-videos.routes";
 import { repositoriesRoutes } from "./routes/repositories.routes";
 import { streamsRoutes } from "./routes/streams.routes";
 import { usersRoutes } from "./routes/users.routes";
+import { whepAuthRoutes } from "./routes/whep-auth.routes";
 import { streamService } from "./services/stream.service";
 
 const app = express();
@@ -72,6 +73,7 @@ app.use("/api/v1/repositories/:repoId/videos", repositoryVideosRoutes);
 app.use("/api/v1/repositories", repositoriesRoutes);
 app.use("/api/v1/live-streams", liveStreamsRoutes);
 app.use("/api/v1/hls-auth", hlsAuthRoutes);
+app.use("/api/v1/whep-auth", whepAuthRoutes);
 app.use("/api/v1/streams", streamsRoutes);
 app.use("/api/v1/hooks", hooksRoutes);
 app.use("/api/v1/recordings", recordingsRoutes);
@@ -111,9 +113,14 @@ const start = async () => {
     rtmpsCertPath: env.RTMPS_CERT_PATH,
     rtmpsKeyPath: env.RTMPS_KEY_PATH,
     hlsPort: env.HLS_PORT,
+    webrtcPort: env.WEBRTC_PORT,
     mediamtxApiPort: env.MEDIAMTX_API_PORT,
     rtmpBaseUrl: env.RTMP_BASE_URL,
+    whipBaseUrl: env.WHIP_BASE_URL,
+    whepBaseUrl: env.WHEP_BASE_URL,
     hlsPathPrefix: env.HLS_PATH_PREFIX,
+    whipPathPrefix: env.WHIP_PATH_PREFIX,
+    whepPathPrefix: env.WHEP_PATH_PREFIX,
     mediamtxApiUrl: env.MEDIAMTX_API_URL,
   });
   console.log("[startup] starting reconcile loop");

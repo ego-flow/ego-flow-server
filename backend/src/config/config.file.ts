@@ -19,6 +19,7 @@ const configFileSchema = z.object({
   RTMP_PORT: z.coerce.number().int().positive().default(1935),
   RTMPS_PORT: z.coerce.number().int().positive().default(1936),
   HLS_PORT: z.coerce.number().int().positive().default(8888),
+  WEBRTC_PORT: z.coerce.number().int().positive().default(8889),
   MEDIAMTX_API_PORT: z.coerce.number().int().positive().default(9997),
   CORS_ORIGIN: z.string().default("*"),
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),

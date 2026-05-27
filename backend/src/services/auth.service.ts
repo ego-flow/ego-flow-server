@@ -105,12 +105,13 @@ export class AuthService {
   }
 
   /**
-   * [RTMP publish 인증]
+   * [Publish 인증 (RTMP / WHIP 공통)]
    * MediaMTX가 POST /api/v1/auth/rtmp로 전달한 publish 요청을 검증한다.
-   * 1. publish ticket와 current owner lease만 검증한다.
-   * 2. owner truth를 mutate하지 않고, 상태 승격은 stream-ready hook이 담당한다.
-   * 3. read/playback action은 mediamtx.yml `authHTTPExclude`로 우회되므로 호출되지 않는다.
-   *    혹시 우회 설정이 누락되어 들어오면 deny한다 (Caddy `forward_auth`가 진짜 gate).
+   * - RTMP publish, WHIP publish 모두 같은 callback을 받으며 `protocol` 필드만 다르다.
+   * - publish ticket와 current owner lease만 검증한다.
+   * - owner truth를 mutate하지 않고, 상태 승격은 stream-ready hook이 담당한다.
+   * - read/playback action은 mediamtx.yml `authHTTPExclude`로 우회되므로 호출되지 않는다.
+   *   혹시 우회 설정이 누락되어 들어오면 deny한다 (Caddy `forward_auth`가 진짜 gate).
    */
   async verifyRtmpAuthorization(input: RtmpAuthInput): Promise<boolean> {
     try {

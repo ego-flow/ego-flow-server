@@ -274,6 +274,7 @@ export const openApiDocument = {
           "publish_ticket",
           "publish_ticket_expires_at",
           "rtmp_publish_base_url",
+          "whip_publish_url",
         ],
         properties: {
           recording_session_id: { type: "string", format: "uuid" },
@@ -285,6 +286,7 @@ export const openApiDocument = {
           publish_ticket: { type: "string", example: "t_0d87967b-903e-4f69-af58-24fdd6dd2a82" },
           publish_ticket_expires_at: { type: "string", format: "date-time" },
           rtmp_publish_base_url: { type: "string", example: "rtmp://127.0.0.1:1935/live" },
+          whip_publish_url: { type: "string", example: "http://127.0.0.1/live/daily_kitchen/whip?ticket=t_0d87967b-903e-4f69-af58-24fdd6dd2a82" },
         },
       },
       StreamConnectionHeartbeatRequest: {
@@ -325,6 +327,7 @@ export const openApiDocument = {
           "registered_at",
           "status",
           "hls_path",
+          "whep_path",
         ],
         properties: {
           stream_id: { type: "string", format: "uuid" },
@@ -336,6 +339,7 @@ export const openApiDocument = {
           registered_at: { type: "string", format: "date-time" },
           status: { type: "string", enum: ["live"] },
           hls_path: { type: "string", example: "/hls/live/daily_kitchen/index.m3u8" },
+          whep_path: { type: "string", example: "/live/daily_kitchen/whep" },
         },
       },
       LiveStreamListResponse: {

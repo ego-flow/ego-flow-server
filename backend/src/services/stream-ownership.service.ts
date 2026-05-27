@@ -358,6 +358,11 @@ export class StreamOwnershipService {
     return `${normalizedBaseUrl}/${repositoryName}?ticket=${encodeURIComponent(publishTicket)}`;
   }
 
+  buildWhipPublishUrl(baseUrl: string, repositoryName: string, publishTicket: string) {
+    const normalizedBaseUrl = this.getPublishBaseUrl(baseUrl);
+    return `${normalizedBaseUrl}/${repositoryName}/whip?ticket=${encodeURIComponent(publishTicket)}`;
+  }
+
   isHealthyOwner(owner: StreamOwnerLease, now = Date.now()) {
     if (owner.leaseExpiresAt <= now) {
       return false;

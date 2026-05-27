@@ -30,6 +30,13 @@ beforeEach(() => {
   fakeRedis.clear();
 });
 
+test("buildWhipPublishUrl uses the MediaMTX native WHIP path shape", () => {
+  assert.equal(
+    service.buildWhipPublishUrl("https://streams.example.com/live/", "repo-name", "ticket value"),
+    "https://streams.example.com/live/repo-name/whip?ticket=ticket%20value",
+  );
+});
+
 test("issuePublishTicket rejects reconnect takeover until the owner is actually stale", async () => {
   const firstGrant = await service.issuePublishTicket(publishParams);
   const streamId = service.buildStreamId(publishParams.repositoryId);

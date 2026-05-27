@@ -160,6 +160,11 @@ export class StreamService {
         publish_ticket: ticketGrant.ticket.ticketId,
         publish_ticket_expires_at: new Date(ticketGrant.ticket.expiresAt).toISOString(),
         rtmp_publish_base_url: streamOwnershipService.getPublishBaseUrl(env.RTMP_BASE_URL),
+        whip_publish_url: streamOwnershipService.buildWhipPublishUrl(
+          env.WHIP_BASE_URL,
+          repositoryName,
+          ticketGrant.ticket.ticketId,
+        ),
       };
     } catch (error) {
       if (
@@ -308,6 +313,15 @@ export class StreamService {
   }
 
   /**
+   * [WHEP playback path 조립]
+   * MediaMTX native WHEP path인 `/live/{repository_name}/whep` 형태의 origin-relative path를 만든다.
+   */
+  buildWhepPath(repoName: string) {
+    const whepBase = env.WHEP_PATH_PREFIX.replace(/\/+$/, "");
+    return `${whepBase}/${repoName}/whep`;
+  }
+
+  /**
    * [Live stream 목록 - Redis read-only]
    * Redis active set + live cache만 읽어 응답을 만든다. DB / MediaMTX는 조회하지 않는다.
    * 1. 요청자가 접근 가능한 repository id set 계산 (admin이면 null)
@@ -361,6 +375,7 @@ export class StreamService {
       registered_at: entry.registeredAt,
       status: "live" as const,
       hls_path: this.buildHlsPath(entry.repositoryName),
+      whep_path: this.buildWhepPath(entry.repositoryName),
     }));
 
     if (streams.length > 0) {
