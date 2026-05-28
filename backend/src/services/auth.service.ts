@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { UserRole } from "@prisma/client";
 
-import { AppError } from "../lib/errors";
+import { ErrorCode, Unauthorized } from "../lib/errors";
 import { signAccessToken } from "../lib/jwt";
 import { prisma } from "../lib/prisma";
 import type { LoginInput, RtmpAuthInput } from "../schemas/auth.schema";
@@ -53,16 +53,16 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new AppError(401, "INVALID_CREDENTIALS", "Invalid id or password.");
+      throw Unauthorized("Invalid id or password.", ErrorCode.INVALID_CREDENTIALS);
     }
 
     if (!user.isActive) {
-      throw new AppError(401, "INVALID_CREDENTIALS", "Invalid id or password.");
+      throw Unauthorized("Invalid id or password.", ErrorCode.INVALID_CREDENTIALS);
     }
 
     const isPasswordValid = await bcrypt.compare(input.password, user.passwordHash);
     if (!isPasswordValid) {
-      throw new AppError(401, "INVALID_CREDENTIALS", "Invalid id or password.");
+      throw Unauthorized("Invalid id or password.", ErrorCode.INVALID_CREDENTIALS);
     }
 
     const role: AppUserRole = user.role === UserRole.admin ? "admin" : "user";
@@ -180,16 +180,16 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new AppError(401, "INVALID_CREDENTIALS", "Current password is incorrect.");
+      throw Unauthorized("Current password is incorrect.", ErrorCode.INVALID_CREDENTIALS);
     }
 
     if (!user.isActive) {
-      throw new AppError(401, "INVALID_CREDENTIALS", "Current password is incorrect.");
+      throw Unauthorized("Current password is incorrect.", ErrorCode.INVALID_CREDENTIALS);
     }
 
     const isPasswordValid = await bcrypt.compare(input.currentPassword, user.passwordHash);
     if (!isPasswordValid) {
-      throw new AppError(401, "INVALID_CREDENTIALS", "Current password is incorrect.");
+      throw Unauthorized("Current password is incorrect.", ErrorCode.INVALID_CREDENTIALS);
     }
 
     const nextPasswordHash = await bcrypt.hash(input.newPassword, 10);

@@ -70,7 +70,7 @@ test("createUser returns 409 when the id already exists before create", async ()
   );
 });
 
-test("createUser converts Prisma unique constraint races into 409", async () => {
+test("createUser lets Prisma unique-constraint races surface to the error middleware", async () => {
   fakePrisma.user.create = async () => {
     throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed on the fields: (`id`)", {
       code: "P2002",
@@ -86,10 +86,7 @@ test("createUser converts Prisma unique constraint races into 409", async () => 
       displayName: "Alice Kim",
     }),
     (error: unknown) =>
-      error instanceof AppError &&
-      error.statusCode === 409 &&
-      error.code === "CONFLICT" &&
-      error.message === "User id already exists.",
+      error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002",
   );
 });
 

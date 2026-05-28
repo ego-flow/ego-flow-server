@@ -2,7 +2,7 @@ import fs from "fs/promises";
 
 import { VideoStatus, type Prisma } from "@prisma/client";
 
-import { AppError } from "../lib/errors";
+import { Internal, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { toSignedFileUrl } from "../lib/signed-file-url";
 import { getTargetDirectory, toStorageRelativePath } from "../lib/storage";
@@ -76,7 +76,7 @@ const getManifestArtifactMetadata = (video: {
   vlmSha256: string | null;
 }) => {
   if (video.vlmSizeBytes === null || !video.vlmSha256) {
-    throw new AppError(500, "INTERNAL_ERROR", `Manifest metadata is missing for completed video '${video.id}'.`);
+    throw Internal(`Manifest metadata is missing for completed video '${video.id}'.`);
   }
 
   return {
@@ -134,7 +134,7 @@ export class VideoService {
     });
 
     if (!video || video.repositoryId !== repoId) {
-      throw new AppError(404, "NOT_FOUND", "Video not found in this repository.");
+      throw NotFound("Video not found in this repository.");
     }
 
     return video;
@@ -155,7 +155,7 @@ export class VideoService {
     });
 
     if (!video || video.repositoryId !== repoId) {
-      throw new AppError(404, "NOT_FOUND", "Video not found in this repository.");
+      throw NotFound("Video not found in this repository.");
     }
 
     return video;
@@ -177,7 +177,7 @@ export class VideoService {
     });
 
     if (!video || video.repositoryId !== repoId) {
-      throw new AppError(404, "NOT_FOUND", "Video not found in this repository.");
+      throw NotFound("Video not found in this repository.");
     }
 
     return video;
@@ -346,7 +346,7 @@ export class VideoService {
     const video = await this.getManagedRepositoryVideo(repoId, videoId);
 
     if (!video.vlmVideoPath || video.status !== "COMPLETED") {
-      throw new AppError(404, "NOT_FOUND", "Video file is not available.");
+      throw NotFound("Video file is not available.");
     }
 
     return {
@@ -361,7 +361,7 @@ export class VideoService {
     const video = await this.getManagedRepositoryVideo(repoId, videoId);
 
     if (!video.thumbnailPath) {
-      throw new AppError(404, "NOT_FOUND", "Thumbnail is not available.");
+      throw NotFound("Thumbnail is not available.");
     }
 
     return {

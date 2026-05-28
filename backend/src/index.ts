@@ -7,7 +7,7 @@ import swaggerUi from "swagger-ui-express";
 
 import { runtimeConfig as env } from "./config/runtime";
 import { openApiDocument } from "./docs/openapi";
-import { AppError } from "./lib/errors";
+import { NotFound } from "./lib/errors";
 import { redis } from "./lib/redis";
 import { getServerInfo } from "./lib/server-info";
 import { getTargetDirectory, initializeTargetDirectory } from "./lib/storage";
@@ -96,7 +96,7 @@ app.use(
 );
 
 app.use((_req, _res, next) => {
-  next(new AppError(404, "NOT_FOUND", "Route not found."));
+  next(NotFound("Route not found."));
 });
 app.use(errorMiddleware);
 

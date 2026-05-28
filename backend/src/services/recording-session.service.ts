@@ -1,6 +1,6 @@
 import { RecordingSessionStatus, RecordingSessionEndReason, RecordingSegmentStatus, VideoStatus } from "@prisma/client";
 
-import { AppError } from "../lib/errors";
+import { BadRequest, Conflict, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { runtimeConfig as env } from "../config/runtime";
@@ -576,14 +576,14 @@ export class RecordingSessionService {
       where: { id: recordingSessionId },
     });
     if (!session) {
-      throw new AppError(404, "NOT_FOUND", "Recording session not found.");
+      throw NotFound("Recording session not found.");
     }
 
     if (
       session.status !== RecordingSessionStatus.PENDING &&
       session.status !== RecordingSessionStatus.STREAMING
     ) {
-      throw new AppError(409, "CONFLICT", `Recording session is already in ${session.status} state.`);
+      throw Conflict(`Recording session is already in ${session.status} state.`);
     }
 
     const endReason = reason === "GLASSES_STOP"
@@ -632,7 +632,7 @@ export class RecordingSessionService {
     });
 
     if (!session) {
-      throw new AppError(404, "NOT_FOUND", "Recording session not found.");
+      throw NotFound("Recording session not found.");
     }
 
     return {
@@ -655,7 +655,7 @@ export class RecordingSessionService {
     });
 
     if (!session) {
-      throw new AppError(404, "NOT_FOUND", "Recording session not found.");
+      throw NotFound("Recording session not found.");
     }
 
     return session.repositoryId;
@@ -1193,7 +1193,7 @@ export class RecordingSessionService {
     const normalized = streamPath.trim().replace(/^\/+/, "");
     const parts = normalized.split("/");
     if (parts.length < 2 || parts[0] !== "live" || !parts[1]) {
-      throw new AppError(400, "VALIDATION_ERROR", "Invalid stream path format.");
+      throw BadRequest("Invalid stream path format.");
     }
     return parts[1];
   }
@@ -1251,7 +1251,10 @@ export class RecordingSessionService {
     try {
       const response = await fetch(`${baseUrl}/v3/paths/list`);
       if (!response.ok) {
-        throw new Error(`MediaMTX API responded with ${response.status}`);
+        console.warn("[rtmp-reconcile] active-path-query-failed", {
+          reason: `status ${response.status}`,
+        });
+        return null;
       }
 
       const payload = (await response.json()) as { items?: Array<{ name?: unknown }> };

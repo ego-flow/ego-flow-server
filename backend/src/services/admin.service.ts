@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
-import { Prisma, UserRole } from "@prisma/client";
+import { UserRole } from "@prisma/client";
 
-import { AppError } from "../lib/errors";
+import { BadRequest, Conflict, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { getTargetDirectory } from "../lib/storage";
 import type { CreateAdminUserInput, ResetUserPasswordInput } from "../schemas/admin.schema";
@@ -35,11 +35,11 @@ export class AdminService {
     });
 
     if (!user) {
-      throw new AppError(404, "NOT_FOUND", "User not found.");
+      throw NotFound("User not found.");
     }
 
     if (user.role === UserRole.admin) {
-      throw new AppError(400, "VALIDATION_ERROR", "Admin account cannot be permanently deleted.");
+      throw BadRequest("Admin account cannot be permanently deleted.");
     }
 
     const [ownedRepositories, memberships, recordingSessionCount] = await Promise.all([
@@ -95,36 +95,26 @@ export class AdminService {
     });
 
     if (existingUser) {
-      throw new AppError(409, "CONFLICT", "User id already exists.");
+      throw Conflict("User id already exists.");
     }
 
     const passwordHash = await bcrypt.hash(input.password, 10);
-    let user;
-
-    try {
-      user = await prisma.user.create({
-        data: {
-          id: input.id,
-          passwordHash,
-          role: UserRole.user,
-          isActive: true,
-          displayName: input.displayName ?? null,
-        },
-        select: {
-          id: true,
-          role: true,
-          displayName: true,
-          createdAt: true,
-          isActive: true,
-        },
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        throw new AppError(409, "CONFLICT", "User id already exists.");
-      }
-
-      throw error;
-    }
+    const user = await prisma.user.create({
+      data: {
+        id: input.id,
+        passwordHash,
+        role: UserRole.user,
+        isActive: true,
+        displayName: input.displayName ?? null,
+      },
+      select: {
+        id: true,
+        role: true,
+        displayName: true,
+        createdAt: true,
+        isActive: true,
+      },
+    });
 
     return {
       user: toUserResponse(user),
@@ -158,11 +148,11 @@ export class AdminService {
     });
 
     if (!user) {
-      throw new AppError(404, "NOT_FOUND", "User not found.");
+      throw NotFound("User not found.");
     }
 
     if (user.role === UserRole.admin) {
-      throw new AppError(400, "VALIDATION_ERROR", "Admin account cannot be deactivated.");
+      throw BadRequest("Admin account cannot be deactivated.");
     }
 
     await prisma.user.update({
@@ -197,7 +187,7 @@ export class AdminService {
     const state = await this.getPermanentDeleteState(userId);
 
     if (!state.checks.isDeactivated) {
-      throw new AppError(400, "VALIDATION_ERROR", "Deactivate the user before permanent deletion.");
+      throw BadRequest("Deactivate the user before permanent deletion.");
     }
 
     if (
@@ -205,9 +195,7 @@ export class AdminService {
       state.checks.repositoryMembershipCount > 0 ||
       state.checks.recordingSessionCount > 0
     ) {
-      throw new AppError(
-        409,
-        "CONFLICT",
+      throw Conflict(
         "User cannot be permanently deleted while repositories, memberships, or recording history remain.",
       );
     }
@@ -229,7 +217,7 @@ export class AdminService {
     });
 
     if (!user) {
-      throw new AppError(404, "NOT_FOUND", "User not found.");
+      throw NotFound("User not found.");
     }
 
     const passwordHash = await bcrypt.hash(input.newPassword, 10);

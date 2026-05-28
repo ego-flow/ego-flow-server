@@ -1,7 +1,7 @@
 import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
-import { AppError } from "../lib/errors";
+import { getAuthUser } from "../lib/request-context";
 import { requireAppJwt } from "../middleware/auth.middleware";
 import { repoAccess } from "../middleware/repo-access.middleware";
 import { validate } from "../middleware/validate.middleware";
@@ -27,11 +27,8 @@ router.post(
   validate(streamRegisterSchema),
   repoAccess({ minRole: "maintain", repoIdFrom: "body.repository_id" }),
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
-    const response = await streamService.registerSession(req.user.userId, req.user.role, req.body);
+    const user = getAuthUser(req);
+    const response = await streamService.registerSession(user.userId, user.role, req.body);
     res.status(200).json(response);
   }),
 );
@@ -41,14 +38,11 @@ router.post(
   requireAppJwt,
   validate(publishTicketParamsSchema, "params"),
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
+    const user = getAuthUser(req);
     const { recordingSessionId } = req.params as { recordingSessionId: string };
     const response = await streamService.issuePublishTicket(
-      req.user.userId,
-      req.user.role,
+      user.userId,
+      user.role,
       recordingSessionId,
     );
     res.status(200).json(response);
@@ -61,17 +55,14 @@ router.post(
   validate(streamConnectionHeartbeatParamsSchema, "params"),
   validate(streamConnectionHeartbeatBodySchema),
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-
+    const user = getAuthUser(req);
     const { recordingSessionId, connectionId } = req.params as {
       recordingSessionId: string;
       connectionId: string;
     };
     const response = await streamService.refreshPublishConnectionLease(
-      req.user.userId,
-      req.user.role,
+      user.userId,
+      user.role,
       recordingSessionId,
       connectionId,
       req.body.generation,

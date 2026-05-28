@@ -2,11 +2,12 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 
-import type { Request, Response } from "express";
+import type { Response } from "express";
 import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
-import { AppError } from "../lib/errors";
+import { NotFound } from "../lib/errors";
+import { getRepositoryAccess } from "../lib/request-context";
 import { toSignedFileUrl } from "../lib/signed-file-url";
 import { getTargetDirectory } from "../lib/storage";
 import { requireDashboardOrPython, requireDashboardSession } from "../middleware/auth.middleware";
@@ -25,14 +26,6 @@ import { videoService } from "../services/video.service";
 
 const router = Router({ mergeParams: true });
 
-const getRepositoryAccess = (req: Request) => {
-  if (!req.repositoryAccess) {
-    throw new AppError(500, "INTERNAL_ERROR", "Repository access context is missing.");
-  }
-
-  return req.repositoryAccess;
-};
-
 const isMissingFileError = (error: unknown) =>
   error instanceof Error && "code" in error && String(error.code) === "ENOENT";
 
@@ -41,7 +34,7 @@ const ensureFileExists = async (filePath: string, missingMessage: string) => {
     await fsp.stat(filePath);
   } catch (error) {
     if (isMissingFileError(error)) {
-      throw new AppError(404, "NOT_FOUND", missingMessage);
+      throw NotFound(missingMessage);
     }
 
     throw error;
@@ -58,7 +51,7 @@ const redirectToSignedDownload = async (
 
   const signedUrl = toSignedFileUrl(getTargetDirectory(), video.path);
   if (!signedUrl) {
-    throw new AppError(404, "NOT_FOUND", "Video file is not available.");
+    throw NotFound("Video file is not available.");
   }
 
   res.redirect(307, signedUrl);
@@ -157,7 +150,7 @@ router.get(
       await fsp.stat(video.path);
     } catch (error) {
       if (isMissingFileError(error)) {
-        throw new AppError(404, "NOT_FOUND", "Thumbnail is not available.");
+        throw NotFound("Thumbnail is not available.");
       }
 
       throw error;

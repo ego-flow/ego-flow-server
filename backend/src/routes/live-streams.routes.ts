@@ -1,7 +1,7 @@
 import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
-import { AppError } from "../lib/errors";
+import { getAuthUser } from "../lib/request-context";
 import { requireDashboardOrAppOrPython } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import { liveStreamIdParamSchema } from "../schemas/live-stream.schema";
@@ -20,10 +20,8 @@ router.get(
   "/",
   requireDashboardOrAppOrPython,
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
-    const streams = await streamService.listLiveStreams(req.user.userId, req.user.role);
+    const user = getAuthUser(req);
+    const streams = await streamService.listLiveStreams(user.userId, user.role);
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json({ streams });
   }),
@@ -38,11 +36,9 @@ router.get(
   requireDashboardOrAppOrPython,
   validate(liveStreamIdParamSchema, "params"),
   asyncHandler(async (req, res) => {
-    if (!req.user) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
-    }
+    const user = getAuthUser(req);
     const { streamId } = req.params as { streamId: string };
-    const result = await streamService.getLiveStreamDetail(streamId, req.user.userId, req.user.role);
+    const result = await streamService.getLiveStreamDetail(streamId, user.userId, user.role);
     res.status(200).json(result);
   }),
 );

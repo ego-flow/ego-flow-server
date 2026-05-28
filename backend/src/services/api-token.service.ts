@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { UserRole } from "@prisma/client";
 
-import { AppError } from "../lib/errors";
+import { Forbidden, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import type { CreateApiTokenInput } from "../schemas/api-token.schema";
 import type { AppUserRole } from "../types/auth";
@@ -157,11 +157,11 @@ export class ApiTokenService {
     });
 
     if (!token) {
-      throw new AppError(404, "NOT_FOUND", "Python token not found.");
+      throw NotFound("Python token not found.");
     }
 
     if (requestUserRole !== "admin" && token.userId !== requestUserId) {
-      throw new AppError(403, "FORBIDDEN", "You do not have permission for this action.");
+      throw Forbidden("You do not have permission for this action.");
     }
 
     await prisma.apiToken.delete({

@@ -1,6 +1,6 @@
 import { RecordingSessionEndReason, RecordingSessionStatus } from "@prisma/client";
 
-import { AppError } from "../lib/errors";
+import { Conflict, ErrorCode, Forbidden, NotFound } from "../lib/errors";
 import { redis } from "../lib/redis";
 import { getTargetDirectory } from "../lib/storage";
 import { prisma } from "../lib/prisma";
@@ -86,25 +86,28 @@ export class StreamService {
     });
 
     if (!session) {
-      throw new AppError(404, "NOT_FOUND", "Recording session not found.");
+      throw NotFound("Recording session not found.");
     }
 
     await repositoryService.assertRepositoryAccess(requestUserId, requestUserRole, session.repositoryId, "maintain");
 
     if (session.userId !== requestUserId) {
-      throw new AppError(403, "FORBIDDEN", "Only the session owner can request a publish ticket.");
+      throw Forbidden("Only the session owner can request a publish ticket.");
     }
 
     if (
       session.status !== RecordingSessionStatus.PENDING &&
       session.status !== RecordingSessionStatus.STREAMING
     ) {
-      throw new AppError(409, "CONFLICT", `Recording session is already in ${session.status} state.`);
+      throw Conflict(`Recording session is already in ${session.status} state.`);
     }
 
     const firstPublishDeadlineMs = session.createdAt.getTime() + FIRST_PUBLISH_DEADLINE_MS;
     if (session.status === RecordingSessionStatus.PENDING && Date.now() > firstPublishDeadlineMs) {
-      throw new AppError(409, "REGISTRATION_TIMEOUT", "Recording session registration expired before publish started.");
+      throw Conflict(
+        "Recording session registration expired before publish started.",
+        ErrorCode.REGISTRATION_TIMEOUT,
+      );
     }
 
     const repositoryName = recordingSessionService.extractRepositoryName(session.streamPath);
@@ -196,7 +199,7 @@ export class StreamService {
             : null,
           reason: "healthy-owner-exists",
         });
-        throw new AppError(409, "CONFLICT", "Repository already has a healthy active publisher.");
+        throw Conflict("Repository already has a healthy active publisher.");
       }
 
       throw error;
@@ -215,13 +218,13 @@ export class StreamService {
     });
 
     if (!session) {
-      throw new AppError(404, "NOT_FOUND", "Recording session not found.");
+      throw NotFound("Recording session not found.");
     }
 
     await repositoryService.assertRepositoryAccess(requestUserId, requestUserRole, session.repositoryId, "maintain");
 
     if (session.userId !== requestUserId) {
-      throw new AppError(403, "FORBIDDEN", "Only the session owner can refresh the publish heartbeat.");
+      throw Forbidden("Only the session owner can refresh the publish heartbeat.");
     }
 
     if (
@@ -230,18 +233,13 @@ export class StreamService {
       session.status === RecordingSessionStatus.FAILED ||
       session.status === RecordingSessionStatus.ABORTED
     ) {
-      throw new AppError(
-        409,
-        "RECORDING_SESSION_NOT_ACTIVE",
-        `Recording session is already in ${session.status} state.`,
-      );
+      throw Conflict(`Recording session is already in ${session.status} state.`);
     }
 
     if (session.status === RecordingSessionStatus.STOP_REQUESTED) {
-      throw new AppError(
-        409,
-        "STALE_PUBLISH_CONNECTION",
+      throw Conflict(
         "Recording session is stopping; the current publish connection is no longer refreshable.",
+        ErrorCode.STALE_PUBLISH_CONNECTION,
       );
     }
 
@@ -267,18 +265,16 @@ export class StreamService {
 
       if (refreshResult.reason === "owner-missing" || refreshResult.reason === "connection-missing") {
         console.warn("[rtmp-owner] heartbeat-rejected", logPayload);
-        throw new AppError(
-          409,
-          "OWNER_LEASE_MISSING",
+        throw Conflict(
           "Publish ownership metadata is missing; request a new publish ticket before reconnecting.",
+          ErrorCode.OWNER_LEASE_MISSING,
         );
       }
 
       console.warn("[rtmp-owner] generation-mismatch", logPayload);
-      throw new AppError(
-        409,
-        "STALE_PUBLISH_CONNECTION",
+      throw Conflict(
         "Publish connection is stale; request a new publish ticket before reconnecting.",
+        ErrorCode.STALE_PUBLISH_CONNECTION,
       );
     }
 
@@ -399,12 +395,12 @@ export class StreamService {
     const session = await prisma.recordingSession.findUnique({ where: { id: streamId } });
 
     if (!session || session.status !== RecordingSessionStatus.STREAMING) {
-      throw new AppError(404, "NOT_FOUND", "Live stream not found.");
+      throw NotFound("Live stream not found.");
     }
 
     const access = await repositoryService.getRepositoryAccess(requestUserId, requestUserRole, session.repositoryId);
     if (!access) {
-      throw new AppError(404, "NOT_FOUND", "Live stream not found.");
+      throw NotFound("Live stream not found.");
     }
 
     const repoName = recordingSessionService.extractRepositoryName(session.streamPath);
@@ -484,7 +480,7 @@ export class StreamService {
         repositoryName,
         reason: "mediamtx-active-path",
       });
-      throw new AppError(409, "CONFLICT", "Repository already has an active stream.");
+      throw Conflict("Repository already has an active stream.");
     }
 
     const existingSession = await prisma.recordingSession.findFirst({
@@ -629,7 +625,7 @@ export class StreamService {
         existingRecordingSessionId: existingSession.id,
         existingStatus: existingSession.status,
       });
-      throw new AppError(409, "CONFLICT", "Repository already has an active stream.");
+      throw Conflict("Repository already has an active stream.");
     }
 
     const [repoSessionId, pathSessionId] = await Promise.all([
@@ -665,7 +661,8 @@ export class StreamService {
     try {
       const response = await fetch(`${baseUrl}/v3/paths/list`);
       if (!response.ok) {
-        throw new Error(`MediaMTX API responded with ${response.status}`);
+        console.warn(`[streams] failed to query MediaMTX active paths: status ${response.status}`);
+        return null;
       }
 
       const payload = (await response.json()) as { items?: Array<{ name?: unknown }> };

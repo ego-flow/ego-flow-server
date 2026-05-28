@@ -1,7 +1,8 @@
 import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
-import { AppError } from "../lib/errors";
+import { NotFound, Unauthorized } from "../lib/errors";
+import { getAuthUser } from "../lib/request-context";
 import { requireDashboardOrAppOrPython } from "../middleware/auth.middleware";
 import { whepAuthService } from "../services/whep-auth.service";
 
@@ -18,24 +19,25 @@ router.get(
   "/",
   requireDashboardOrAppOrPython,
   asyncHandler(async (req, res) => {
-    if (!req.user || !req.auth?.rawCredential) {
-      throw new AppError(401, "UNAUTHORIZED", "Authentication is required.");
+    const user = getAuthUser(req);
+    if (!req.auth?.rawCredential) {
+      throw Unauthorized();
     }
 
     const path = typeof req.query.path === "string" ? req.query.path : "";
     if (!path) {
-      throw new AppError(404, "NOT_FOUND", "Stream not found.");
+      throw NotFound("Stream not found.");
     }
 
     const outcome = await whepAuthService.authorize({
       rawCredential: req.auth.rawCredential,
       path,
-      userId: req.user.userId,
-      userRole: req.user.role,
+      userId: user.userId,
+      userRole: user.role,
     });
 
     if (!outcome.ok) {
-      throw new AppError(404, "NOT_FOUND", "Stream not found.");
+      throw NotFound("Stream not found.");
     }
 
     res.setHeader("Cache-Control", "no-store");

@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 
-import { AppError } from "../lib/errors";
+import { Unauthorized } from "../lib/errors";
 import { shouldRefreshToken, signAccessToken, verifyAccessToken } from "../lib/jwt";
 import { apiTokenService } from "../services/api-token.service";
 import { adminService } from "../services/admin.service";
@@ -60,7 +60,7 @@ const authenticateDashboardSession = async (req: Request): Promise<AuthContext |
 
   const session = await dashboardSessionService.verifySession(sessionToken);
   if (!session) {
-    throw new AppError(401, "UNAUTHORIZED", "Dashboard session is invalid or expired.");
+    throw Unauthorized("Dashboard session is invalid or expired.");
   }
 
   return {
@@ -81,12 +81,12 @@ const authenticatePythonToken = async (req: Request): Promise<AuthContext | null
 
   const payload = await apiTokenService.verifyPythonToken(token);
   if (!payload) {
-    throw new AppError(401, "UNAUTHORIZED", "Invalid token.");
+    throw Unauthorized("Invalid token.");
   }
 
   const authenticatedUser = await adminService.getAuthenticatedUser(payload.userId);
   if (!authenticatedUser) {
-    throw new AppError(401, "UNAUTHORIZED", "Invalid token.");
+    throw Unauthorized("Invalid token.");
   }
 
   return {
@@ -106,7 +106,7 @@ const authenticateAppJwt = async (req: Request, res: Response): Promise<AuthCont
     const payload = verifyAccessToken(token);
     const authenticatedUser = await adminService.getAuthenticatedUser(payload.userId);
     if (!authenticatedUser) {
-      throw new AppError(401, "UNAUTHORIZED", "App access token is invalid or expired.");
+      throw Unauthorized("App access token is invalid or expired.");
     }
 
     if (shouldRefreshToken(token) || authenticatedUser.role !== payload.role) {
@@ -121,7 +121,7 @@ const authenticateAppJwt = async (req: Request, res: Response): Promise<AuthCont
     };
   } catch (error) {
     if (error instanceof jwt.JsonWebTokenError) {
-      throw new AppError(401, "UNAUTHORIZED", "App access token is invalid or expired.");
+      throw Unauthorized("App access token is invalid or expired.");
     }
     throw error;
   }
@@ -153,7 +153,7 @@ export const requireCredential =
         }
       }
 
-      return next(new AppError(401, "UNAUTHORIZED", "Authentication is required."));
+      return next(Unauthorized());
     } catch (error) {
       return next(error);
     }

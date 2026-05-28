@@ -1,7 +1,8 @@
-import { Router, type Request } from "express";
+import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
-import { AppError } from "../lib/errors";
+import { BadRequest, ErrorCode } from "../lib/errors";
+import { getAuthUser, getRepositoryAccess } from "../lib/request-context";
 import { repoAccess } from "../middleware/repo-access.middleware";
 import {
   requireDashboardOrApp,
@@ -31,22 +32,12 @@ import { videoService } from "../services/video.service";
 
 const router = Router();
 
-const getAuthenticatedUser = (req: Request) => req.user!;
-
-const getRepositoryAccess = (req: Request) => {
-  if (!req.repositoryAccess) {
-    throw new AppError(500, "INTERNAL_ERROR", "Repository access context is missing.");
-  }
-
-  return req.repositoryAccess;
-};
-
 router.post(
   "/",
   requireDashboardSession,
   validate(createRepositorySchema),
   asyncHandler(async (req, res) => {
-    const user = getAuthenticatedUser(req);
+    const user = getAuthUser(req);
     const response = await repositoryService.createRepository(user.userId, req.body);
     res.status(201).json(response);
   }),
@@ -56,7 +47,7 @@ router.get(
   "/mine",
   requireDashboardOrApp,
   asyncHandler(async (req, res) => {
-    const user = getAuthenticatedUser(req);
+    const user = getAuthUser(req);
     const response = await repositoryService.listMaintainedRepositories(user.userId, user.role);
     res.status(200).json(response);
   }),
@@ -66,7 +57,7 @@ router.get(
   "/",
   requireDashboardSession,
   asyncHandler(async (req, res) => {
-    const user = getAuthenticatedUser(req);
+    const user = getAuthUser(req);
     const response = await repositoryService.listAccessibleRepositories(user.userId, user.role);
     res.status(200).json(response);
   }),
@@ -77,7 +68,7 @@ router.get(
   requireDashboardOrAppOrPython,
   validate(repositoryResolveQuerySchema, "query"),
   asyncHandler(async (req, res) => {
-    const user = getAuthenticatedUser(req);
+    const user = getAuthUser(req);
     const query = req.query as unknown as RepositoryResolveQueryInput;
     let ownerId: string;
     let repoName: string;
@@ -85,7 +76,7 @@ router.get(
     if (query.slug) {
       const parts = query.slug.split("/");
       if (parts.length !== 2 || !parts[0] || !parts[1]) {
-        throw new AppError(400, "INVALID_SLUG", "Slug must be in 'owner/name' format.");
+        throw BadRequest("Slug must be in 'owner/name' format.", ErrorCode.INVALID_SLUG);
       }
 
       [ownerId, repoName] = parts;
@@ -126,7 +117,7 @@ router.get(
   validate(repositoryIdParamSchema, "params"),
   repoAccess({ minRole: "read" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthenticatedUser(req);
+    const user = getAuthUser(req);
     const response = await repositoryService.getRepositoryDetail(
       user.userId,
       user.role,
@@ -143,7 +134,7 @@ router.patch(
   validate(updateRepositorySchema),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthenticatedUser(req);
+    const user = getAuthUser(req);
     const response = await repositoryService.updateRepository(
       user.userId,
       user.role,
@@ -160,7 +151,7 @@ router.delete(
   validate(repositoryIdParamSchema, "params"),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthenticatedUser(req);
+    const user = getAuthUser(req);
     const response = await repositoryService.deleteRepository(
       user.userId,
       user.role,
@@ -176,7 +167,7 @@ router.get(
   validate(repositoryIdParamSchema, "params"),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthenticatedUser(req);
+    const user = getAuthUser(req);
     const response = await repositoryService.listRepositoryMembers(
       user.userId,
       user.role,
@@ -193,7 +184,7 @@ router.post(
   validate(createRepositoryMemberSchema),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthenticatedUser(req);
+    const user = getAuthUser(req);
     const response = await repositoryService.addRepositoryMember(
       user.userId,
       user.role,
@@ -211,7 +202,7 @@ router.patch(
   validate(updateRepositoryMemberSchema),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthenticatedUser(req);
+    const user = getAuthUser(req);
     const params = req.params as RepositoryMemberParamInput;
     const response = await repositoryService.updateRepositoryMember(
       user.userId,
@@ -230,7 +221,7 @@ router.delete(
   validate(repositoryMemberParamSchema, "params"),
   repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthenticatedUser(req);
+    const user = getAuthUser(req);
     const params = req.params as RepositoryMemberParamInput;
     const response = await repositoryService.deleteRepositoryMember(
       user.userId,

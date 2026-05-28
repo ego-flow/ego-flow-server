@@ -3,7 +3,7 @@ import path from "path";
 
 import { Prisma, RepoRole, RepoVisibility } from "@prisma/client";
 
-import { AppError } from "../lib/errors";
+import { BadRequest, Conflict, Forbidden, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { getTargetDirectory } from "../lib/storage";
@@ -190,14 +190,14 @@ export class RepositoryService {
       });
 
       if (!exists) {
-        throw new AppError(404, "NOT_FOUND", "Repository not found.");
+        throw NotFound("Repository not found.");
       }
 
-      throw new AppError(403, "FORBIDDEN", "You do not have access to this repository.");
+      throw Forbidden("You do not have access to this repository.");
     }
 
     if (!isRoleAtLeast(access.effectiveRole, minRole)) {
-      throw new AppError(403, "FORBIDDEN", "You do not have permission for this repository action.");
+      throw Forbidden("You do not have permission for this repository action.");
     }
 
     return access;
@@ -221,7 +221,7 @@ export class RepositoryService {
     });
 
     if (!repository) {
-      throw new AppError(404, "NOT_FOUND", "Repository not found.");
+      throw NotFound("Repository not found.");
     }
 
     return this.assertRepositoryAccess(userId, userRole, repository.id, minRole);
@@ -304,12 +304,12 @@ export class RepositoryService {
     });
 
     if (!repository) {
-      throw new AppError(404, "NOT_FOUND", "Repository not found.");
+      throw NotFound("Repository not found.");
     }
 
     const access = await this.getRepositoryAccess(requestUserId, requestUserRole, repository.id);
     if (!access) {
-      throw new AppError(404, "NOT_FOUND", "Repository not found.");
+      throw NotFound("Repository not found.");
     }
 
     return {
@@ -350,7 +350,7 @@ export class RepositoryService {
       };
     } catch (error) {
       if (isConflictError(error)) {
-        throw new AppError(409, "CONFLICT", "Repository name already exists for this owner.");
+        throw Conflict("Repository name already exists for this owner.");
       }
 
       throw error;
@@ -409,7 +409,7 @@ export class RepositoryService {
       };
     } catch (error) {
       if (isConflictError(error)) {
-        throw new AppError(409, "CONFLICT", "Repository name already exists for this owner.");
+        throw Conflict("Repository name already exists for this owner.");
       }
 
       throw error;
@@ -547,7 +547,7 @@ export class RepositoryService {
     });
 
     if (!membership) {
-      throw new AppError(404, "NOT_FOUND", "Repository member not found.");
+      throw NotFound("Repository member not found.");
     }
 
     await prisma.repoMember.update({
@@ -585,7 +585,7 @@ export class RepositoryService {
     });
 
     if (!membership) {
-      throw new AppError(404, "NOT_FOUND", "Repository member not found.");
+      throw NotFound("Repository member not found.");
     }
 
     await prisma.repoMember.delete({
@@ -676,7 +676,7 @@ export class RepositoryService {
 
   private async ensureTargetUserCanBeManaged(ownerId: string, targetUserId: string) {
     if (ownerId === targetUserId) {
-      throw new AppError(400, "VALIDATION_ERROR", "Repository owner membership cannot be changed.");
+      throw BadRequest("Repository owner membership cannot be changed.");
     }
 
     const targetUser = await prisma.user.findUnique({
@@ -688,11 +688,11 @@ export class RepositoryService {
     });
 
     if (!targetUser) {
-      throw new AppError(404, "NOT_FOUND", "User not found.");
+      throw NotFound("User not found.");
     }
 
     if (!targetUser.isActive) {
-      throw new AppError(400, "VALIDATION_ERROR", "Inactive users cannot be added to a repository.");
+      throw BadRequest("Inactive users cannot be added to a repository.");
     }
   }
 
@@ -703,7 +703,7 @@ export class RepositoryService {
     ]);
 
     if (sessionById || sessionByPath) {
-      throw new AppError(409, "CONFLICT", "Repository cannot be modified while a stream is active.");
+      throw Conflict("Repository cannot be modified while a stream is active.");
     }
   }
 
@@ -713,7 +713,7 @@ export class RepositoryService {
     const nextDirectory = path.join(targetDirectory, ownerId, nextName);
 
     if (await pathExists(nextDirectory)) {
-      throw new AppError(409, "CONFLICT", "Target repository directory already exists.");
+      throw Conflict("Target repository directory already exists.");
     }
 
     if (await pathExists(previousDirectory)) {
