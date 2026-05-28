@@ -12,6 +12,7 @@ export interface RepositoryRecord {
   myRole: RepositoryRole
   createdAt: string
   updatedAt: string
+  videoCount: number | null
 }
 
 export interface RepositoryMember {
@@ -32,6 +33,7 @@ interface RepositoryApiRecord {
   my_role: RepositoryRole
   created_at: string
   updated_at: string
+  video_count?: number
 }
 
 function normalizeRepository(repository: RepositoryApiRecord): RepositoryRecord {
@@ -44,6 +46,7 @@ function normalizeRepository(repository: RepositoryApiRecord): RepositoryRecord 
     myRole: repository.my_role,
     createdAt: repository.created_at,
     updatedAt: repository.updated_at,
+    videoCount: typeof repository.video_count === 'number' ? repository.video_count : null,
   }
 }
 

@@ -1,10 +1,11 @@
+import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { FolderOpen, Plus, RefreshCcw, Search } from 'lucide-react'
+import { Database, Eye, EyeOff, FolderOpen, Plus, RefreshCcw, Search, ShieldCheck, UserRound } from 'lucide-react'
 
 import { getApiErrorMessage } from '#/api/client'
-import { requestRepositories } from '#/api/repositories'
+import { type RepositoryRecord, type RepositoryRole, requestRepositories } from '#/api/repositories'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { formatDateTime } from '#/lib/format'
@@ -16,6 +17,17 @@ export const Route = createFileRoute('/repositories/')({
   }),
   component: RepositoriesPage,
 })
+
+function roleBadgeClassName(role: RepositoryRole) {
+  switch (role) {
+    case 'admin':
+      return 'bg-indigo-500/14 text-indigo-700 dark:text-indigo-300'
+    case 'maintain':
+      return 'bg-amber-500/14 text-amber-700 dark:text-amber-300'
+    case 'read':
+      return 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
+  }
+}
 
 function RepositoriesPage() {
   const navigate = useNavigate({ from: '/repositories/' })
@@ -55,7 +67,7 @@ function RepositoriesPage() {
   }
 
   return (
-    <main className="page-wide px-6 py-8 sm:py-10">
+    <main className="page-full px-6 py-8 sm:py-10">
       <section className="island-shell mb-6 rounded-2xl p-4 shadow-sm">
         <form
           className="flex flex-col gap-3 sm:flex-row sm:items-center"
@@ -112,50 +124,21 @@ function RepositoriesPage() {
         </Link>
       </header>
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+      <section className="flex flex-col gap-3">
         {repositoriesQuery.isPending ? (
-          <div className="rounded-2xl border border-dashed border-[var(--line)] px-6 py-8 text-center text-[var(--sea-ink-soft)] sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-5">
+          <div className="rounded-2xl border border-dashed border-[var(--line)] px-6 py-8 text-center text-[var(--sea-ink-soft)]">
             Loading repositories...
           </div>
         ) : repositoriesQuery.isError ? (
-          <div className="rounded-2xl border border-red-500/25 bg-red-500/6 px-6 py-5 text-sm text-red-700 dark:text-red-300 sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-5">
+          <div className="rounded-2xl border border-red-500/25 bg-red-500/6 px-6 py-5 text-sm text-red-700 dark:text-red-300">
             {getApiErrorMessage(repositoriesQuery.error, 'Failed to load repositories.')}
           </div>
         ) : visibleRepositories.length > 0 ? (
           visibleRepositories.map((repository) => (
-            <Link
-              key={repository.id}
-              to="/repositories/$repoId"
-              params={{ repoId: repository.id }}
-              search={defaultRepositoryVideosSearch}
-              className="island-shell rounded-2xl p-5 no-underline shadow-sm transition-transform hover:-translate-y-0.5"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="truncate text-xl font-semibold text-[var(--sea-ink)]">
-                    {repository.name}
-                  </h2>
-                  <p className="mt-1 text-sm text-[var(--sea-ink-soft)]">{repository.ownerId}</p>
-                </div>
-                <span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--sea-ink-soft)]">
-                  {repository.myRole}
-                </span>
-              </div>
-              <p className="mt-4 line-clamp-2 text-sm text-[var(--sea-ink-soft)]">
-                {repository.description || 'No description provided.'}
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2 text-xs text-[var(--sea-ink-soft)]">
-                <span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1">
-                  {repository.visibility}
-                </span>
-                <span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1">
-                  Updated {formatDateTime(repository.updatedAt)}
-                </span>
-              </div>
-            </Link>
+            <RepositoryRow key={repository.id} repository={repository} />
           ))
         ) : (
-          <div className="rounded-2xl border border-dashed border-[var(--line)] px-6 py-10 text-center sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-5">
+          <div className="rounded-2xl border border-dashed border-[var(--line)] px-6 py-10 text-center">
             <FolderOpen className="mx-auto text-[var(--sea-ink-soft)]" size={28} aria-hidden="true" />
             <h2 className="mt-3 text-lg font-semibold text-[var(--sea-ink)]">
               {normalizedQuery ? 'No matching repositories' : 'No repositories yet'}
@@ -169,5 +152,105 @@ function RepositoriesPage() {
         )}
       </section>
     </main>
+  )
+}
+
+function RepositoryRow({ repository }: { repository: RepositoryRecord }) {
+  const isPublic = repository.visibility === 'public'
+  const datasetCount = repository.videoCount ?? 0
+
+  return (
+    <Link
+      to="/repositories/$repoId"
+      params={{ repoId: repository.id }}
+      search={defaultRepositoryVideosSearch}
+      className="island-shell block w-full rounded-2xl p-5 no-underline shadow-sm transition-transform hover:-translate-y-0.5"
+    >
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="text-sm font-semibold text-[var(--sea-ink-soft)]">{repository.ownerId}</span>
+            <span className="text-sm text-[var(--sea-ink-soft)]">/</span>
+            <h2 className="truncate text-xl font-bold text-[var(--sea-ink)]">{repository.name}</h2>
+          </div>
+          <p className="mt-2 line-clamp-2 text-sm text-[var(--sea-ink-soft)]">
+            {repository.description || 'No description provided.'}
+          </p>
+        </div>
+
+        <div className="flex w-full shrink-0 flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
+          <Chip
+            icon={<UserRound size={12} aria-hidden="true" />}
+            label="Owner"
+            value={repository.ownerId}
+          />
+          <Chip
+            icon={isPublic ? <Eye size={12} aria-hidden="true" /> : <EyeOff size={12} aria-hidden="true" />}
+            label="Visibility"
+            value={repository.visibility}
+            tone={isPublic ? 'emerald' : 'slate'}
+          />
+          <Chip
+            icon={<ShieldCheck size={12} aria-hidden="true" />}
+            label="My role"
+            value={repository.myRole}
+            valueClassName={roleBadgeClassName(repository.myRole)}
+          />
+          <Chip
+            icon={<Database size={12} aria-hidden="true" />}
+            label="Datasets"
+            value={datasetCount.toLocaleString()}
+            tone="lagoon"
+          />
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--line)] pt-3 text-xs text-[var(--sea-ink-soft)]">
+        <span>
+          Created <span className="text-[var(--sea-ink)]">{formatDateTime(repository.createdAt)}</span>
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>
+          Updated <span className="text-[var(--sea-ink)]">{formatDateTime(repository.updatedAt)}</span>
+        </span>
+        <span aria-hidden="true">·</span>
+        <span className="truncate font-mono text-[10px] text-[var(--sea-ink-soft)]">{repository.id}</span>
+      </div>
+    </Link>
+  )
+}
+
+function Chip({
+  icon,
+  label,
+  value,
+  tone,
+  valueClassName,
+}: {
+  icon: ReactNode
+  label: string
+  value: string
+  tone?: 'emerald' | 'slate' | 'lagoon'
+  valueClassName?: string
+}) {
+  const defaultToneClass =
+    tone === 'emerald'
+      ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
+      : tone === 'lagoon'
+        ? 'bg-sky-500/14 text-sky-700 dark:text-sky-300'
+        : tone === 'slate'
+          ? 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
+          : 'bg-[var(--chip-bg)] text-[var(--sea-ink)]'
+
+  return (
+    <div className="flex items-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--chip-bg)] py-1 pl-2 pr-2.5 text-xs">
+      <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--sea-ink-soft)]">
+        {icon}
+        {label}
+      </span>
+      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${valueClassName ?? defaultToneClass}`}>
+        {value}
+      </span>
+    </div>
   )
 }

@@ -58,6 +58,15 @@ const toRepositoryResponse = (
   updated_at: repository.updatedAt.toISOString(),
 });
 
+const toRepositorySummary = (
+  repository: RepositoryRecord,
+  effectiveRole: AppRepoRole,
+  videoCount: number,
+) => ({
+  ...toRepositoryResponse(repository, effectiveRole),
+  video_count: videoCount,
+});
+
 const isRoleAtLeast = (actualRole: AppRepoRole, minimumRole: AppRepoRole): boolean =>
   REPO_ROLE_RANK[actualRole] >= REPO_ROLE_RANK[minimumRole];
 
@@ -604,6 +613,20 @@ export class RepositoryService {
     };
   }
 
+  private async getVideoCountsByRepositoryId(repositoryIds: string[]): Promise<Map<string, number>> {
+    if (repositoryIds.length === 0) {
+      return new Map();
+    }
+
+    const grouped = await prisma.video.groupBy({
+      by: ["repositoryId"],
+      where: { repositoryId: { in: repositoryIds } },
+      _count: { _all: true },
+    });
+
+    return new Map(grouped.map((row) => [row.repositoryId, row._count._all]));
+  }
+
   private async getAccessibleRepositories(userId: string, userRole: AppUserRole, minRole: AppRepoRole = "read") {
     if (userRole === "admin") {
       const repositories = await prisma.repository.findMany({
@@ -619,7 +642,10 @@ export class RepositoryService {
         },
       });
 
-      return repositories.map((repository) => toRepositoryResponse(toRepositoryRecord(repository), "admin"));
+      const videoCounts = await this.getVideoCountsByRepositoryId(repositories.map((repository) => repository.id));
+      return repositories.map((repository) =>
+        toRepositorySummary(toRepositoryRecord(repository), "admin", videoCounts.get(repository.id) ?? 0),
+      );
     }
 
     const memberships = await prisma.repoMember.findMany({
@@ -661,7 +687,7 @@ export class RepositoryService {
       },
     });
 
-    return repositories
+    const accessible = repositories
       .map((repository) => {
         const repositoryRecord = toRepositoryRecord(repository);
         const effectiveRole = membershipRoleMap.get(repository.id) ?? (repository.visibility === RepoVisibility.public ? "read" : null);
@@ -669,9 +695,14 @@ export class RepositoryService {
           return null;
         }
 
-        return toRepositoryResponse(repositoryRecord, effectiveRole);
+        return { record: repositoryRecord, effectiveRole };
       })
-      .filter((repository): repository is ReturnType<typeof toRepositoryResponse> => Boolean(repository));
+      .filter((entry): entry is { record: RepositoryRecord; effectiveRole: AppRepoRole } => Boolean(entry));
+
+    const videoCounts = await this.getVideoCountsByRepositoryId(accessible.map((entry) => entry.record.id));
+    return accessible.map((entry) =>
+      toRepositorySummary(entry.record, entry.effectiveRole, videoCounts.get(entry.record.id) ?? 0),
+    );
   }
 
   private async ensureTargetUserCanBeManaged(ownerId: string, targetUserId: string) {

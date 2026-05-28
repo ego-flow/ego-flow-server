@@ -160,13 +160,25 @@ export const openApiDocument = {
           updated_at: { type: "string", format: "date-time" },
         },
       },
+      RepositorySummary: {
+        allOf: [
+          { $ref: "#/components/schemas/Repository" },
+          {
+            type: "object",
+            required: ["video_count"],
+            properties: {
+              video_count: { type: "integer", minimum: 0, example: 12 },
+            },
+          },
+        ],
+      },
       RepositoryListResponse: {
         type: "object",
         required: ["repositories"],
         properties: {
           repositories: {
             type: "array",
-            items: { $ref: "#/components/schemas/Repository" },
+            items: { $ref: "#/components/schemas/RepositorySummary" },
           },
         },
       },

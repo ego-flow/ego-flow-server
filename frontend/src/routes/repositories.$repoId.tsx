@@ -74,9 +74,9 @@ function roleBadgeClassName(role: string) {
   switch (role) {
     case 'admin':
       return 'bg-indigo-500/14 text-indigo-700 dark:text-indigo-300'
-    case 'contributor':
+    case 'maintain':
       return 'bg-amber-500/14 text-amber-700 dark:text-amber-300'
-    case 'viewer':
+    case 'read':
       return 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
     default:
       return 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
