@@ -1,18 +1,31 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
+import { Lock } from 'lucide-react'
 
-import { requestAdminSettings } from '#/api/admin'
+import { type AdminSettingValue, requestAdminSettings } from '#/api/admin'
 import { getApiErrorMessage } from '#/api/client'
 
 export const Route = createFileRoute('/admin/settings')({
   component: AdminSettingsPage,
 })
 
+function formatValue(value: AdminSettingValue) {
+  if (value === null) {
+    return '(null)'
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false'
+  }
+  return String(value)
+}
+
 function AdminSettingsPage() {
   const settingsQuery = useQuery({
     queryKey: ['admin', 'settings'],
     queryFn: requestAdminSettings,
   })
+
+  const data = settingsQuery.data
 
   return (
     <main className="page-wrap px-4 py-8 sm:py-10">
@@ -22,33 +35,77 @@ function AdminSettingsPage() {
           Settings
         </h1>
         <p className="mt-2 text-sm text-[var(--sea-ink-soft)] sm:text-base">
-          The dataset target directory is fixed when the server boots.
+          Resolved runtime configuration. Edit <code className="rounded bg-black/5 px-1.5 py-0.5 text-xs">config.json</code> or
+          <code className="mx-1 rounded bg-black/5 px-1.5 py-0.5 text-xs">.env</code> and restart the backend to apply changes.
         </p>
       </header>
 
-      <section className="island-shell space-y-4 rounded-2xl p-5 shadow-sm">
-        <div className="space-y-2">
-          <h2 className="text-lg font-semibold text-[var(--sea-ink)]">Current target directory</h2>
-          <p className="rounded-xl border border-[var(--line)] bg-[var(--card-bg)] px-4 py-3 font-mono text-sm text-[var(--sea-ink)]">
-            {settingsQuery.data?.targetDirectory ?? 'Unavailable'}
+      {settingsQuery.isPending ? (
+        <section className="rounded-2xl border border-dashed border-[var(--line)] px-6 py-12 text-center text-sm text-[var(--sea-ink-soft)]">
+          Loading settings...
+        </section>
+      ) : null}
+
+      {settingsQuery.isError ? (
+        <section className="rounded-2xl border border-red-500/25 bg-red-500/6 px-6 py-5 text-sm text-red-700 dark:text-red-300">
+          {getApiErrorMessage(settingsQuery.error, 'Failed to load settings.')}
+        </section>
+      ) : null}
+
+      {data ? (
+        <>
+          <section className="island-shell mb-6 grid gap-4 rounded-2xl p-5 shadow-sm sm:grid-cols-2">
+            <SourceCard label="config.json" path={data.configPath} />
+            <SourceCard label=".env" path={data.dotenvPath} />
+          </section>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            {data.sections.map((section) => (
+              <section key={section.title} className="island-shell rounded-2xl p-5 shadow-sm">
+                <header className="mb-4">
+                  <h2 className="text-lg font-semibold text-[var(--sea-ink)]">{section.title}</h2>
+                  {section.description ? (
+                    <p className="mt-1 text-sm text-[var(--sea-ink-soft)]">{section.description}</p>
+                  ) : null}
+                </header>
+                <dl className="divide-y divide-[var(--line)]">
+                  {section.entries.map((entry) => (
+                    <div
+                      key={entry.key}
+                      className="grid grid-cols-[minmax(0,12rem)_minmax(0,1fr)] gap-4 py-2.5 text-sm"
+                    >
+                      <dt className="flex items-center gap-1.5 font-mono text-xs text-[var(--sea-ink-soft)]">
+                        {entry.sensitive ? (
+                          <Lock size={12} aria-hidden="true" className="text-amber-700 dark:text-amber-300" />
+                        ) : null}
+                        {entry.key}
+                      </dt>
+                      <dd className="break-all font-mono text-xs text-[var(--sea-ink)]">
+                        {formatValue(entry.value)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ))}
+          </div>
+
+          <p className="mt-6 text-xs text-[var(--sea-ink-soft)]">
+            Values marked with the lock icon are masked. Connection URLs hide their embedded credentials, while raw secrets such as
+            <code className="mx-1 rounded bg-black/5 px-1.5 py-0.5 text-[10px]">JWT_SECRET</code>
+            only report whether they are set.
           </p>
-        </div>
-
-        <div className="space-y-2 text-sm text-[var(--sea-ink-soft)]">
-          <p>To change this path, update the server `config.json` file and restart the backend.</p>
-          <p>When the configured path changes on boot, EgoFlow migrates existing generated datasets to the new directory automatically.</p>
-        </div>
-
-        {settingsQuery.isPending ? (
-          <p className="text-sm text-[var(--sea-ink-soft)]">Loading settings...</p>
-        ) : null}
-
-        {settingsQuery.isError ? (
-          <p className="text-sm text-red-700 dark:text-red-300">
-            {getApiErrorMessage(settingsQuery.error, 'Failed to load settings.')}
-          </p>
-        ) : null}
-      </section>
+        </>
+      ) : null}
     </main>
+  )
+}
+
+function SourceCard({ label, path }: { label: string; path: string | null }) {
+  return (
+    <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--sea-ink-soft)]">{label}</p>
+      <p className="mt-1.5 break-all font-mono text-xs text-[var(--sea-ink)]">{path ?? 'Unavailable'}</p>
+    </div>
   )
 }

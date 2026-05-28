@@ -106,6 +106,16 @@ body {
   margin-inline: auto;
 }
 
+.page-wide {
+  width: min(100%, 110rem);
+  margin-inline: auto;
+}
+
+.page-full {
+  width: 100%;
+  margin-inline: auto;
+}
+
 .island-shell {
   border: 1px solid var(--line);
   background: color-mix(in oklab, var(--card) 85%, transparent);

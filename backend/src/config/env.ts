@@ -16,6 +16,8 @@ const resolveEnvPath = (value: string | undefined) => {
 
 const dotenvPath = resolveEnvPath(process.env.DOTENV_PATH);
 
+export const getDotenvPath = () => dotenvPath;
+
 if (!fs.existsSync(dotenvPath)) {
   console.error(`Missing env file: ${dotenvPath}`);
   console.error("Create it from .env.example before starting the server.");

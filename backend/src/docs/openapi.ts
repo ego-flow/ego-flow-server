@@ -666,9 +666,42 @@ export const openApiDocument = {
         properties: {
           settings: {
             type: "object",
-            required: ["target_directory"],
+            required: ["target_directory", "config_path", "dotenv_path", "sections"],
             properties: {
               target_directory: { type: "string", example: "/home/egoflow/ego-flow-data/datasets" },
+              config_path: { type: "string", example: "/home/egoflow/ego-flow-server/config.json" },
+              dotenv_path: { type: "string", example: "/home/egoflow/ego-flow-server/.env" },
+              sections: {
+                type: "array",
+                items: {
+                  type: "object",
+                  required: ["title", "description", "entries"],
+                  properties: {
+                    title: { type: "string", example: "Runtime" },
+                    description: { type: ["string", "null"], example: "Node process environment loaded from .env." },
+                    entries: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        required: ["key", "value", "sensitive", "source_path"],
+                        properties: {
+                          key: { type: "string", example: "PORT" },
+                          value: {
+                            oneOf: [
+                              { type: "string" },
+                              { type: "number" },
+                              { type: "boolean" },
+                              { type: "null" },
+                            ],
+                          },
+                          sensitive: { type: "boolean", example: false },
+                          source_path: { type: ["string", "null"], example: "/home/egoflow/ego-flow-server/.env" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
         },

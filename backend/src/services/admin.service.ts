@@ -1,11 +1,39 @@
 import bcrypt from "bcryptjs";
 import { UserRole } from "@prisma/client";
 
+import { getConfigFilePath } from "../config/config.file";
+import { getDotenvPath } from "../config/env";
+import { runtimeConfig } from "../config/runtime";
 import { BadRequest, Conflict, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { getTargetDirectory } from "../lib/storage";
 import type { CreateAdminUserInput, ResetUserPasswordInput } from "../schemas/admin.schema";
 import type { AuthenticatedUser } from "../types/auth";
+
+type ConfigValue = string | number | boolean | null;
+
+const SECRET_PLACEHOLDER = "********";
+const SECRET_EMPTY_PLACEHOLDER = "(not set)";
+
+const maskConnectionUrl = (url: string | undefined): string => {
+  if (!url) {
+    return SECRET_EMPTY_PLACEHOLDER;
+  }
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.username || parsed.password) {
+      parsed.username = parsed.username ? SECRET_PLACEHOLDER : "";
+      parsed.password = parsed.password ? SECRET_PLACEHOLDER : "";
+    }
+    return parsed.toString();
+  } catch {
+    return SECRET_PLACEHOLDER;
+  }
+};
+
+const maskSecretPresence = (value: string | undefined): string =>
+  value && value.length > 0 ? SECRET_PLACEHOLDER : SECRET_EMPTY_PLACEHOLDER;
 
 const toUserRole = (role: UserRole): "admin" | "user" => (role === UserRole.admin ? "admin" : "user");
 
@@ -81,9 +109,107 @@ export class AdminService {
   }
 
   async getSettings() {
+    const sections: Array<{
+      title: string;
+      description?: string;
+      entries: Array<{
+        key: string;
+        value: ConfigValue;
+        sensitive?: boolean;
+        sourcePath?: string;
+      }>;
+    }> = [
+      {
+        title: "Runtime",
+        description: "Node process environment loaded from .env.",
+        entries: [
+          { key: "NODE_ENV", value: runtimeConfig.NODE_ENV, sourcePath: getDotenvPath() },
+          { key: "PORT", value: runtimeConfig.PORT, sourcePath: getDotenvPath() },
+        ],
+      },
+      {
+        title: "Storage",
+        description: "Filesystem locations resolved at startup.",
+        entries: [
+          { key: "DATA_ROOT", value: runtimeConfig.DATA_ROOT, sourcePath: getConfigFilePath() },
+          { key: "TARGET_DIRECTORY", value: getTargetDirectory(), sourcePath: getConfigFilePath() },
+        ],
+      },
+      {
+        title: "Ports",
+        description: "Public-facing service ports.",
+        entries: [
+          { key: "PUBLIC_HTTP_PORT", value: runtimeConfig.PUBLIC_HTTP_PORT, sourcePath: getConfigFilePath() },
+          { key: "RTMP_PORT", value: runtimeConfig.RTMP_PORT, sourcePath: getConfigFilePath() },
+          { key: "RTMPS_PORT", value: runtimeConfig.RTMPS_PORT, sourcePath: getConfigFilePath() },
+          { key: "HLS_PORT", value: runtimeConfig.HLS_PORT, sourcePath: getConfigFilePath() },
+          { key: "WEBRTC_PORT", value: runtimeConfig.WEBRTC_PORT, sourcePath: getConfigFilePath() },
+          { key: "MEDIAMTX_API_PORT", value: runtimeConfig.MEDIAMTX_API_PORT, sourcePath: getConfigFilePath() },
+        ],
+      },
+      {
+        title: "Streaming",
+        description: "Endpoints handed out to publishers and players.",
+        entries: [
+          { key: "RTMP_BASE_URL", value: runtimeConfig.RTMP_BASE_URL, sourcePath: getDotenvPath() },
+          { key: "WHIP_BASE_URL", value: runtimeConfig.WHIP_BASE_URL, sourcePath: getDotenvPath() },
+          { key: "WHEP_BASE_URL", value: runtimeConfig.WHEP_BASE_URL, sourcePath: getDotenvPath() },
+          { key: "HLS_PATH_PREFIX", value: runtimeConfig.HLS_PATH_PREFIX },
+          { key: "WHIP_PATH_PREFIX", value: runtimeConfig.WHIP_PATH_PREFIX },
+          { key: "WHEP_PATH_PREFIX", value: runtimeConfig.WHEP_PATH_PREFIX },
+          { key: "MEDIAMTX_API_URL", value: runtimeConfig.MEDIAMTX_API_URL, sourcePath: getDotenvPath() },
+        ],
+      },
+      {
+        title: "RTMPS",
+        description: "TLS settings for the secure RTMP listener.",
+        entries: [
+          { key: "RTMPS_ENABLED", value: runtimeConfig.RTMPS_ENABLED, sourcePath: getDotenvPath() },
+          { key: "RTMPS_ENCRYPTION_MODE", value: runtimeConfig.RTMPS_ENCRYPTION_MODE, sourcePath: getDotenvPath() },
+          { key: "RTMPS_CERT_PATH", value: runtimeConfig.RTMPS_CERT_PATH, sourcePath: getDotenvPath() },
+          { key: "RTMPS_KEY_PATH", value: runtimeConfig.RTMPS_KEY_PATH, sourcePath: getDotenvPath() },
+        ],
+      },
+      {
+        title: "Sessions",
+        description: "Auth, signed URL, and worker tuning.",
+        entries: [
+          { key: "JWT_EXPIRES_IN", value: runtimeConfig.JWT_EXPIRES_IN, sourcePath: getConfigFilePath() },
+          { key: "JWT_REFRESH_THRESHOLD_SECONDS", value: runtimeConfig.JWT_REFRESH_THRESHOLD_SECONDS, sourcePath: getConfigFilePath() },
+          { key: "SIGNED_FILE_URL_EXPIRES_IN", value: runtimeConfig.SIGNED_FILE_URL_EXPIRES_IN, sourcePath: getConfigFilePath() },
+          { key: "WORKER_CONCURRENCY", value: runtimeConfig.WORKER_CONCURRENCY, sourcePath: getConfigFilePath() },
+          { key: "DELETE_RAW_AFTER_PROCESSING", value: runtimeConfig.DELETE_RAW_AFTER_PROCESSING, sourcePath: getConfigFilePath() },
+          { key: "CORS_ORIGIN", value: runtimeConfig.CORS_ORIGIN, sourcePath: getConfigFilePath() },
+        ],
+      },
+      {
+        title: "Secrets",
+        description: "Credentials and connection strings (values are masked).",
+        entries: [
+          { key: "DATABASE_URL", value: maskConnectionUrl(runtimeConfig.DATABASE_URL), sensitive: true, sourcePath: getDotenvPath() },
+          { key: "REDIS_URL", value: maskConnectionUrl(runtimeConfig.REDIS_URL), sensitive: true, sourcePath: getDotenvPath() },
+          { key: "JWT_SECRET", value: maskSecretPresence(runtimeConfig.JWT_SECRET), sensitive: true, sourcePath: getDotenvPath() },
+          { key: "ADMIN_DEFAULT_PASSWORD", value: maskSecretPresence(runtimeConfig.ADMIN_DEFAULT_PASSWORD), sensitive: true, sourcePath: getDotenvPath() },
+          { key: "HF_TOKEN", value: maskSecretPresence(runtimeConfig.HF_TOKEN), sensitive: true, sourcePath: getDotenvPath() },
+        ],
+      },
+    ];
+
     return {
       settings: {
         target_directory: getTargetDirectory(),
+        config_path: getConfigFilePath(),
+        dotenv_path: getDotenvPath(),
+        sections: sections.map((section) => ({
+          title: section.title,
+          description: section.description ?? null,
+          entries: section.entries.map((entry) => ({
+            key: entry.key,
+            value: entry.value,
+            sensitive: Boolean(entry.sensitive),
+            source_path: entry.sourcePath ?? null,
+          })),
+        })),
       },
     };
   }

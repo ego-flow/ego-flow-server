@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Filter, FolderOpen, Plus, RefreshCcw } from 'lucide-react'
+import { FolderOpen, Plus, RefreshCcw, Search } from 'lucide-react'
 
 import { getApiErrorMessage } from '#/api/client'
 import { requestRepositories } from '#/api/repositories'
 import { Button } from '#/components/ui/button'
-import { Label } from '#/components/ui/label'
+import { Input } from '#/components/ui/input'
 import { formatDateTime } from '#/lib/format'
 import { defaultRepositoryVideosSearch } from '#/lib/route-search'
 
@@ -20,41 +20,80 @@ export const Route = createFileRoute('/repositories/')({
 function RepositoriesPage() {
   const navigate = useNavigate({ from: '/repositories/' })
   const search = Route.useSearch()
-  const [filters, setFilters] = useState(search)
+  const [queryText, setQueryText] = useState(search.repositoryId)
 
   useEffect(() => {
-    setFilters(search)
-  }, [search])
+    setQueryText(search.repositoryId)
+  }, [search.repositoryId])
 
   const repositoriesQuery = useQuery({
     queryKey: ['repositories'],
     queryFn: requestRepositories,
   })
 
-  const visibleRepositories = (repositoriesQuery.data ?? []).filter((repository) =>
-    !search.repositoryId || repository.id === search.repositoryId,
-  )
+  const normalizedQuery = queryText.trim().toLowerCase()
+  const visibleRepositories = (repositoriesQuery.data ?? []).filter((repository) => {
+    if (!normalizedQuery) {
+      return true
+    }
+    const haystack = `${repository.ownerId}/${repository.name}`.toLowerCase()
+    return haystack.includes(normalizedQuery) || repository.id.toLowerCase().includes(normalizedQuery)
+  })
 
-  const applyFilters = async () => {
+  const applyFilter = async (next: string) => {
     await navigate({
       to: '/repositories',
       search: {
-        repositoryId: filters.repositoryId,
+        repositoryId: next,
       },
     })
   }
 
-  const resetFilters = async () => {
-    await navigate({
-      to: '/repositories',
-      search: {
-        repositoryId: '',
-      },
-    })
+  const resetFilter = async () => {
+    setQueryText('')
+    await applyFilter('')
   }
 
   return (
-    <main className="page-wrap px-4 py-8 sm:py-10">
+    <main className="page-wide px-6 py-8 sm:py-10">
+      <section className="island-shell mb-6 rounded-2xl p-4 shadow-sm">
+        <form
+          className="flex flex-col gap-3 sm:flex-row sm:items-center"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void applyFilter(queryText.trim())
+          }}
+        >
+          <div className="relative flex-1">
+            <Search
+              size={16}
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--sea-ink-soft)]"
+            />
+            <Input
+              id="repository-search"
+              value={queryText}
+              onChange={(event) => setQueryText(event.target.value)}
+              placeholder="Search repositories by owner, name, or id"
+              className="h-10 pl-9"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button type="submit">Search</Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void resetFilter()
+              }}
+            >
+              <RefreshCcw size={16} aria-hidden="true" />
+              Reset
+            </Button>
+          </div>
+        </form>
+      </section>
+
       <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="island-kicker mb-2">Dashboard</p>
@@ -73,13 +112,13 @@ function RepositoriesPage() {
         </Link>
       </header>
 
-      <section className="grid gap-4 lg:grid-cols-3">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         {repositoriesQuery.isPending ? (
-          <div className="lg:col-span-3 rounded-2xl border border-dashed border-[var(--line)] px-6 py-8 text-center text-[var(--sea-ink-soft)]">
+          <div className="rounded-2xl border border-dashed border-[var(--line)] px-6 py-8 text-center text-[var(--sea-ink-soft)] sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-5">
             Loading repositories...
           </div>
         ) : repositoriesQuery.isError ? (
-          <div className="lg:col-span-3 rounded-2xl border border-red-500/25 bg-red-500/6 px-6 py-5 text-sm text-red-700 dark:text-red-300">
+          <div className="rounded-2xl border border-red-500/25 bg-red-500/6 px-6 py-5 text-sm text-red-700 dark:text-red-300 sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-5">
             {getApiErrorMessage(repositoriesQuery.error, 'Failed to load repositories.')}
           </div>
         ) : visibleRepositories.length > 0 ? (
@@ -116,63 +155,18 @@ function RepositoriesPage() {
             </Link>
           ))
         ) : (
-          <div className="lg:col-span-3 rounded-2xl border border-dashed border-[var(--line)] px-6 py-10 text-center">
+          <div className="rounded-2xl border border-dashed border-[var(--line)] px-6 py-10 text-center sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-5">
             <FolderOpen className="mx-auto text-[var(--sea-ink-soft)]" size={28} aria-hidden="true" />
-            <h2 className="mt-3 text-lg font-semibold text-[var(--sea-ink)]">No repositories yet</h2>
+            <h2 className="mt-3 text-lg font-semibold text-[var(--sea-ink)]">
+              {normalizedQuery ? 'No matching repositories' : 'No repositories yet'}
+            </h2>
             <p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
-              Create a repository before starting a new stream.
+              {normalizedQuery
+                ? 'Try a different search term or reset the filter.'
+                : 'Create a repository before starting a new stream.'}
             </p>
           </div>
         )}
-      </section>
-
-      <section className="island-shell mt-6 rounded-2xl p-5 shadow-sm">
-        <form
-          className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_auto]"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void applyFilters()
-          }}
-        >
-          <div className="space-y-2">
-            <Label htmlFor="repository-filter">Repository</Label>
-            <select
-              id="repository-filter"
-              value={filters.repositoryId}
-              onChange={(event) =>
-                setFilters((current) => ({
-                  ...current,
-                  repositoryId: event.target.value,
-                }))
-              }
-              className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              <option value="">All accessible repositories</option>
-              {(repositoriesQuery.data ?? []).map((repository) => (
-                <option key={repository.id} value={repository.id}>
-                  {repository.ownerId}/{repository.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-end gap-2">
-            <Button type="submit" className="w-full sm:w-auto">
-              <Filter size={16} aria-hidden="true" />
-              Apply
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                void resetFilters()
-              }}
-            >
-              <RefreshCcw size={16} aria-hidden="true" />
-              Reset
-            </Button>
-          </div>
-        </form>
       </section>
     </main>
   )

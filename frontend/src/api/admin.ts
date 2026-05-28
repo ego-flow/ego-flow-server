@@ -9,8 +9,26 @@ export interface AdminUser {
 	isActive: boolean;
 }
 
+export type AdminSettingValue = string | number | boolean | null;
+
+export interface AdminSettingEntry {
+	key: string;
+	value: AdminSettingValue;
+	sensitive: boolean;
+	sourcePath: string | null;
+}
+
+export interface AdminSettingSection {
+	title: string;
+	description: string | null;
+	entries: AdminSettingEntry[];
+}
+
 export interface AdminSettings {
 	targetDirectory: string | null;
+	configPath: string | null;
+	dotenvPath: string | null;
+	sections: AdminSettingSection[];
 }
 
 export interface AdminUserDeleteReadiness {
@@ -115,10 +133,34 @@ export async function requestAdminSettings() {
 	const response = await apiClient.get<{
 		settings: {
 			target_directory: string | null;
+			config_path: string | null;
+			dotenv_path: string | null;
+			sections: Array<{
+				title: string;
+				description: string | null;
+				entries: Array<{
+					key: string;
+					value: AdminSettingValue;
+					sensitive: boolean;
+					source_path: string | null;
+				}>;
+			}>;
 		};
 	}>("/admin/settings");
 
 	return {
 		targetDirectory: response.data.settings.target_directory,
+		configPath: response.data.settings.config_path,
+		dotenvPath: response.data.settings.dotenv_path,
+		sections: response.data.settings.sections.map((section) => ({
+			title: section.title,
+			description: section.description,
+			entries: section.entries.map((entry) => ({
+				key: entry.key,
+				value: entry.value,
+				sensitive: entry.sensitive,
+				sourcePath: entry.source_path,
+			})),
+		})),
 	} satisfies AdminSettings;
 }

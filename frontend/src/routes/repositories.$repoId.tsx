@@ -1,6 +1,7 @@
+import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, Outlet, createFileRoute, useNavigate, useRouterState } from '@tanstack/react-router'
-import { PlayCircle, Settings } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, PlayCircle, Settings, ShieldCheck, UserRound } from 'lucide-react'
 
 import { getApiErrorMessage } from '#/api/client'
 import { requestRepositoryDetail } from '#/api/repositories'
@@ -12,7 +13,6 @@ import {
 } from '#/api/videos'
 import { Button } from '#/components/ui/button'
 import ProtectedImage from '#/components/ProtectedImage'
-import { useAuth } from '#/hooks/useAuth'
 import { formatDateTime, formatDuration, formatResolution } from '#/lib/format'
 import { defaultRepositoriesSearch, defaultRepositoryVideosSearch } from '#/lib/route-search'
 import { saveVideoSnapshot } from '#/lib/video-snapshots'
@@ -70,6 +70,39 @@ function statusClassName(status: string) {
   }
 }
 
+function roleBadgeClassName(role: string) {
+  switch (role) {
+    case 'admin':
+      return 'bg-indigo-500/14 text-indigo-700 dark:text-indigo-300'
+    case 'contributor':
+      return 'bg-amber-500/14 text-amber-700 dark:text-amber-300'
+    case 'viewer':
+      return 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
+    default:
+      return 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
+  }
+}
+
+function MetaCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode
+  label: string
+  value: ReactNode
+}) {
+  return (
+    <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--sea-ink-soft)]">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-1.5 truncate text-sm font-semibold text-[var(--sea-ink)]">{value}</div>
+    </div>
+  )
+}
+
 function RepositoryDetailPage() {
   const { repoId } = Route.useParams()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
@@ -121,8 +154,14 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
         <Link
           to="/repositories"
           search={defaultRepositoriesSearch}
-          className="text-sm font-semibold text-[var(--lagoon-deep)] no-underline hover:underline"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--lagoon-deep)] no-underline hover:underline"
         >
+          <span
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--chip-bg)] text-[var(--sea-ink)] transition-colors hover:bg-[var(--card)]"
+            aria-hidden="true"
+          >
+            <ArrowLeft size={16} />
+          </span>
           Back to repositories
         </Link>
       </div>
@@ -135,8 +174,8 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
 
       {repository ? (
         <>
-          <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
+          <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
               <p className="island-kicker mb-2">Repository</p>
               <h1 className="display-title text-3xl font-bold text-[var(--sea-ink)] sm:text-4xl">
                 {repository.name}
@@ -144,17 +183,6 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
               <p className="mt-2 text-sm text-[var(--sea-ink-soft)] sm:text-base">
                 {repository.description || 'No description provided.'}
               </p>
-              <div className="mt-4 flex flex-wrap gap-2 text-xs text-[var(--sea-ink-soft)]">
-                <span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1">
-                  owner {repository.ownerId}
-                </span>
-                <span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1">
-                  {repository.visibility}
-                </span>
-                <span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1">
-                  my role {repository.myRole}
-                </span>
-              </div>
             </div>
 
             {repository.myRole === 'admin' ? (
@@ -171,6 +199,40 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
               </Link>
             ) : null}
           </header>
+
+          <section className="mb-6 grid gap-3 sm:grid-cols-3">
+            <MetaCard
+              icon={<UserRound size={14} aria-hidden="true" />}
+              label="Owner"
+              value={repository.ownerId}
+            />
+            <MetaCard
+              icon={repository.visibility === 'public' ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}
+              label="Visibility"
+              value={
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                    repository.visibility === 'public'
+                      ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {repository.visibility}
+                </span>
+              }
+            />
+            <MetaCard
+              icon={<ShieldCheck size={14} aria-hidden="true" />}
+              label="My role"
+              value={
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${roleBadgeClassName(repository.myRole)}`}
+                >
+                  {repository.myRole}
+                </span>
+              }
+            />
+          </section>
 
           <section className="island-shell rounded-2xl p-5 shadow-sm">
             <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
