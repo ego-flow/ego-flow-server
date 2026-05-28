@@ -261,6 +261,7 @@ test("handleStreamReady leaves DB and Redis untouched when owner publishing refr
     sourceId: null,
     sourceType: null,
     readyAt: null,
+    createdAt: new Date("2026-04-09T00:00:00.000Z"),
   };
   const updateCalls: Array<unknown> = [];
 
@@ -300,6 +301,84 @@ test("handleStreamReady leaves DB and Redis untouched when owner publishing refr
   assert.equal(updateCalls.length, 0);
   assert.equal(fakeRedis.has("stream:recording:session-1"), false);
   assert.equal(fakeRedis.has("stream:source:new-source"), false);
+});
+
+test("handleStreamReady accepts an explicit ticket field when hook query is empty", async () => {
+  const session = {
+    id: "session-1",
+    repositoryId: "repo-1",
+    ownerId: "owner-1",
+    userId: "user-1",
+    deviceType: null,
+    streamPath: "live/repo-name",
+    status: RecordingSessionStatus.PENDING,
+    targetDirectory: "/data/raw",
+    sourceId: null,
+    sourceType: null,
+    readyAt: null,
+    createdAt: new Date("2026-04-09T00:00:00.000Z"),
+  };
+  const updateCalls: Array<unknown> = [];
+  const validationQueries: Array<string | undefined> = [];
+  const consumeQueries: Array<string | undefined> = [];
+
+  fakePrisma.recordingSession.findUnique = async () => session;
+  fakePrisma.recordingSession.update = async (args: unknown) => {
+    updateCalls.push(args);
+    return session;
+  };
+
+  recordingSessionService.getLiveCacheByRecordingSessionId = async () => null;
+  streamOwnershipService.validatePublishTicket = async (_path: string, query?: string) => {
+    validationQueries.push(query);
+    return {
+      ok: true,
+      ticket,
+      ticketId: ticket.ticketId,
+      owner: claimedOwner,
+      connection: claimedConnection,
+    };
+  };
+  streamOwnershipService.consumePublishTicket = async (_path: string, query?: string) => {
+    consumeQueries.push(query);
+    return {
+      ok: true,
+      ticket: {
+        ...ticket,
+        status: "consumed",
+      },
+    };
+  };
+  streamOwnershipService.refreshConnectionLease = async () => ({
+    outcome: "refreshed",
+    owner: {
+      ...claimedOwner,
+      status: "publishing",
+      sourceId: "new-source",
+      sourceType: "rtmp",
+      leaseExpiresAt: Date.now() + 30_000,
+    },
+    connection: {
+      ...claimedConnection,
+      status: "publishing",
+      sourceId: "new-source",
+      sourceType: "rtmp",
+      leaseExpiresAt: Date.now() + 30_000,
+    },
+  });
+
+  await recordingSessionService.handleStreamReady({
+    path: "live/repo-name",
+    query: "",
+    ticket: "ticket-1",
+    source_id: "new-source",
+    source_type: "rtmp",
+  });
+
+  assert.deepEqual(validationQueries, ["ticket=ticket-1"]);
+  assert.deepEqual(consumeQueries, ["ticket=ticket-1"]);
+  assert.equal(updateCalls.length, 1);
+  assert.ok(fakeRedis.getJson("stream:source:new-source"));
 });
 
 test("handleStreamNotReady finalizes only the authoritative source mapping", async () => {

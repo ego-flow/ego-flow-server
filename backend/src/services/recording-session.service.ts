@@ -115,7 +115,8 @@ export class RecordingSessionService {
    * 4. Redis live cache를 24시간 TTL로 갱신하고 reconnect면 이전 source pointer를 교체한다.
    */
   async handleStreamReady(input: StreamReadyHookInput) {
-    const ticketValidation = await streamOwnershipService.validatePublishTicket(input.path, input.query);
+    const publishTicketQuery = this.resolvePublishTicketQuery(input.query, input.ticket);
+    const ticketValidation = await streamOwnershipService.validatePublishTicket(input.path, publishTicketQuery);
     if (!ticketValidation.ok) {
       console.warn("[rtmp-ticket] stream-ready-validation-rejected", {
         path: input.path,
@@ -164,7 +165,7 @@ export class RecordingSessionService {
       return;
     }
 
-    const consumedTicket = await streamOwnershipService.consumePublishTicket(input.path, input.query);
+    const consumedTicket = await streamOwnershipService.consumePublishTicket(input.path, publishTicketQuery);
     if (!consumedTicket.ok) {
       console.warn("[rtmp-ticket] consume-rejected", {
         recordingSessionId,
@@ -1332,6 +1333,18 @@ export class RecordingSessionService {
     } catch (_error) {
       return null;
     }
+  }
+
+  private resolvePublishTicketQuery(query?: string, ticket?: string) {
+    if (query?.trim()) {
+      return query;
+    }
+
+    if (!ticket?.trim()) {
+      return undefined;
+    }
+
+    return new URLSearchParams({ ticket: ticket.trim() }).toString();
   }
 }
 

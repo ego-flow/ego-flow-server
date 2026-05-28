@@ -43,6 +43,7 @@ export const streamConnectionHeartbeatBodySchema = z.object({
 export const streamReadyHookSchema = z.object({
   path: z.string().min(1),
   query: z.string().optional(),
+  ticket: optionalHookString,
   source_id: z.string().min(1),
   source_type: z.string().min(1),
 });
