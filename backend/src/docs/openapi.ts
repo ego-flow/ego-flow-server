@@ -1,3 +1,5 @@
+import { DASHBOARD_SESSION_COOKIE_NAME, HttpAuthScheme } from "../constants/auth/auth-constants";
+
 export const openApiDocument = {
   openapi: "3.1.0",
   info: {
@@ -28,13 +30,13 @@ export const openApiDocument = {
     securitySchemes: {
       bearerAuth: {
         type: "http",
-        scheme: "bearer",
+        scheme: HttpAuthScheme.Bearer.toLowerCase(),
         bearerFormat: "App JWT or Python token",
       },
       dashboardCookie: {
         type: "apiKey",
         in: "cookie",
-        name: "egoflow_session",
+        name: DASHBOARD_SESSION_COOKIE_NAME,
       },
     },
     schemas: {
@@ -1050,7 +1052,7 @@ export const openApiDocument = {
             headers: {
               "Set-Cookie": {
                 schema: { type: "string" },
-                description: "HttpOnly egoflow_session cookie.",
+                description: `HttpOnly ${DASHBOARD_SESSION_COOKIE_NAME} cookie.`,
               },
             },
             content: {

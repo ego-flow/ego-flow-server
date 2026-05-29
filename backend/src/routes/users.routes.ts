@@ -9,6 +9,7 @@ import { authService } from "../services/auth.service";
 
 const router = Router();
 
+// PUT /api/v1/users/me/password
 router.put(
   "/me/password",
   requireDashboardSession,

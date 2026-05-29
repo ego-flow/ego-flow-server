@@ -1,6 +1,7 @@
 import fs from "fs";
 
 import { z } from "zod";
+import { DEFAULT_CONFIG_FILE_NAME } from "../constants/config/config-constants";
 import { normalizeTargetDirectory, resolveConfiguredPath } from "./path-utils";
 
 const configFileSchema = z.object({
@@ -29,7 +30,7 @@ const configFileSchema = z.object({
   SIGNED_FILE_URL_EXPIRES_IN: z.string().default("6h"),
 });
 
-export const getConfigFilePath = () => resolveConfiguredPath(process.env.CONFIG_PATH, "config.json");
+export const getConfigFilePath = () => resolveConfiguredPath(process.env.CONFIG_PATH, DEFAULT_CONFIG_FILE_NAME);
 
 const configFilePath = getConfigFilePath();
 

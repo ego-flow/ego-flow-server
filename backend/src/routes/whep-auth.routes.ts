@@ -15,6 +15,7 @@ const router = Router();
  * - 통과 시 path가 가리키는 stream에 대한 read 권한이 있으면 200.
  * - 권한 부족이나 stream 없음은 모두 404 (존재 숨김).
  */
+// GET /api/v1/whep-auth
 router.get(
   "/",
   requireDashboardOrAppOrPython,

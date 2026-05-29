@@ -14,7 +14,6 @@ export const ErrorCode = {
   NOT_FOUND: "NOT_FOUND",
   CONFLICT: "CONFLICT",
   INTERNAL_ERROR: "INTERNAL_ERROR",
-  UPSTREAM_ERROR: "UPSTREAM_ERROR",
   REGISTRATION_TIMEOUT: "REGISTRATION_TIMEOUT",
   STALE_PUBLISH_CONNECTION: "STALE_PUBLISH_CONNECTION",
   OWNER_LEASE_MISSING: "OWNER_LEASE_MISSING",
@@ -60,11 +59,6 @@ export const Conflict = (
   code: ErrorCode = ErrorCode.CONFLICT,
   details?: unknown,
 ) => new AppError(409, code, message, details);
-
-export const Upstream = (
-  message: string,
-  details?: unknown,
-) => new AppError(502, ErrorCode.UPSTREAM_ERROR, message, details);
 
 export const Internal = (
   message = "Unexpected server error.",

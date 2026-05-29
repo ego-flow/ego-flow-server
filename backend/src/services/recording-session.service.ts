@@ -1,11 +1,27 @@
 import { RecordingSessionStatus, RecordingSessionEndReason, RecordingSegmentStatus, VideoStatus } from "@prisma/client";
 
+import {
+  RECORDING_ACTIVE_TTL_SECONDS,
+  RECORDING_FINALIZE_GRACE_PERIOD_MS,
+  RECORDING_FINALIZE_MAX_WAIT_MS,
+  RECORDING_REGISTRATION_TTL_SECONDS,
+  SEGMENT_MAPPING_TTL_SECONDS,
+  STREAM_ACTIVE_SET_KEY,
+} from "../constants/stream/stream-constants";
 import { BadRequest, Conflict, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { runtimeConfig as env } from "../config/runtime";
 import { processingService } from "./processing.service";
 import { streamOwnershipService } from "./stream-ownership.service";
+import {
+  streamPathKey,
+  streamRecordingKey,
+  streamRepoKey,
+  streamConnectionKey,
+  streamSegmentKey,
+  streamSourceKey,
+} from "../utils/stream-keys";
 import type {
   RecordingSessionLiveCache,
   RecordingFinalizeJobData,
@@ -18,19 +34,6 @@ import type {
   SegmentCreateHookInput,
   SegmentCompleteHookInput,
 } from "../schemas/stream.schema";
-
-const REGISTRATION_TTL_SECONDS = 5 * 60;
-const ACTIVE_TTL_SECONDS = 24 * 60 * 60;
-const FINALIZE_GRACE_PERIOD_MS = 30 * 1000;
-const FINALIZE_MAX_WAIT_MS = 2 * 60 * 1000;
-
-const streamRepoKey = (repositoryId: string) => `stream:repo:${repositoryId}`;
-const streamPathKey = (repoName: string) => `stream:path:${repoName}`;
-const streamSourceKey = (sourceId: string) => `stream:source:${sourceId}`;
-const streamRecordingKey = (recordingSessionId: string) => `stream:recording:${recordingSessionId}`;
-const streamSegmentKey = (segmentPath: string) => `segment:${segmentPath}`;
-export const STREAM_ACTIVE_SET_KEY = "stream:active:sessions";
-const SEGMENT_MAPPING_TTL_SECONDS = 24 * 60 * 60;
 
 /**
  * RecordingSession 라이프사이클 전체를 관리하는 핵심 서비스.
@@ -87,9 +90,9 @@ export class RecordingSessionService {
     const repoName = liveCache.repositoryName;
     await redis
       .multi()
-      .set(streamRecordingKey(session.id), JSON.stringify(liveCache), "EX", REGISTRATION_TTL_SECONDS)
-      .set(streamRepoKey(session.repositoryId), session.id, "EX", REGISTRATION_TTL_SECONDS)
-      .set(streamPathKey(repoName), session.id, "EX", REGISTRATION_TTL_SECONDS)
+      .set(streamRecordingKey(session.id), JSON.stringify(liveCache), "EX", RECORDING_REGISTRATION_TTL_SECONDS)
+      .set(streamRepoKey(session.repositoryId), session.id, "EX", RECORDING_REGISTRATION_TTL_SECONDS)
+      .set(streamPathKey(repoName), session.id, "EX", RECORDING_REGISTRATION_TTL_SECONDS)
       .exec();
 
     console.info("[rtmp-state] pending-created", {
@@ -100,7 +103,7 @@ export class RecordingSessionService {
       userId: session.userId,
       deviceType: session.deviceType,
       streamPath: session.streamPath,
-      registrationTtlSec: REGISTRATION_TTL_SECONDS,
+      registrationTtlSec: RECORDING_REGISTRATION_TTL_SECONDS,
     });
 
     return session;
@@ -252,10 +255,10 @@ export class RecordingSessionService {
 
     const pipeline = redis
       .multi()
-      .set(streamRecordingKey(recordingSessionId), JSON.stringify(liveCache), "EX", ACTIVE_TTL_SECONDS)
-      .set(streamRepoKey(session.repositoryId), recordingSessionId, "EX", ACTIVE_TTL_SECONDS)
-      .set(streamPathKey(repoName), recordingSessionId, "EX", ACTIVE_TTL_SECONDS)
-      .set(streamSourceKey(input.source_id), JSON.stringify(sourceMapping), "EX", ACTIVE_TTL_SECONDS)
+      .set(streamRecordingKey(recordingSessionId), JSON.stringify(liveCache), "EX", RECORDING_ACTIVE_TTL_SECONDS)
+      .set(streamRepoKey(session.repositoryId), recordingSessionId, "EX", RECORDING_ACTIVE_TTL_SECONDS)
+      .set(streamPathKey(repoName), recordingSessionId, "EX", RECORDING_ACTIVE_TTL_SECONDS)
+      .set(streamSourceKey(input.source_id), JSON.stringify(sourceMapping), "EX", RECORDING_ACTIVE_TTL_SECONDS)
       .sadd(STREAM_ACTIVE_SET_KEY, recordingSessionId);
 
     if (previousSourceId && previousSourceId !== input.source_id) {
@@ -289,7 +292,7 @@ export class RecordingSessionService {
         sourceType: input.source_type,
         connectionId: consumedTicket.ticket.connectionId,
         generation: consumedTicket.ticket.generation,
-        activeTtlSec: ACTIVE_TTL_SECONDS,
+        activeTtlSec: RECORDING_ACTIVE_TTL_SECONDS,
       },
     );
   }
@@ -613,7 +616,7 @@ export class RecordingSessionService {
         const cached = JSON.parse(cachedStr) as RecordingSessionLiveCache;
         cached.status = "STOP_REQUESTED";
         cached.stopRequestedAt = new Date().toISOString();
-        await redis.set(streamRecordingKey(recordingSessionId), JSON.stringify(cached), "EX", ACTIVE_TTL_SECONDS);
+        await redis.set(streamRecordingKey(recordingSessionId), JSON.stringify(cached), "EX", RECORDING_ACTIVE_TTL_SECONDS);
       } catch (_error) {
         // Ignore parse failures.
       }
@@ -700,7 +703,7 @@ export class RecordingSessionService {
     const elapsedMs = Date.now() - finalizeReferenceAt.getTime();
 
     if (writingCount > 0) {
-      if (elapsedMs > FINALIZE_MAX_WAIT_MS) {
+      if (elapsedMs > RECORDING_FINALIZE_MAX_WAIT_MS) {
         await this.markSessionFailed(recordingSessionId, session.endReason);
         console.warn("[rtmp-finalize] failed-writing-segments-timeout", {
           recordingSessionId,
@@ -722,7 +725,7 @@ export class RecordingSessionService {
     });
 
     if (completedCount === 0) {
-      if (elapsedMs > FINALIZE_GRACE_PERIOD_MS) {
+      if (elapsedMs > RECORDING_FINALIZE_GRACE_PERIOD_MS) {
         if (
           session.endReason === RecordingSessionEndReason.USER_STOP ||
           session.endReason === RecordingSessionEndReason.GLASSES_STOP
@@ -874,7 +877,7 @@ export class RecordingSessionService {
         }
 
         const age = now - session.createdAt.getTime();
-        if (age > REGISTRATION_TTL_SECONDS * 1000) {
+        if (age > RECORDING_REGISTRATION_TTL_SECONDS * 1000) {
           await prisma.recordingSession.update({
             where: { id: session.id },
             data: {
@@ -889,7 +892,7 @@ export class RecordingSessionService {
             repositoryId: session.repositoryId,
             repositoryName: repoName,
             ageMs: age,
-            registrationTtlSec: REGISTRATION_TTL_SECONDS,
+            registrationTtlSec: RECORDING_REGISTRATION_TTL_SECONDS,
           });
         }
         continue;
@@ -1063,7 +1066,7 @@ export class RecordingSessionService {
     }
 
     const repoName = cache.repositoryName;
-    const ttlSeconds = cache.status === "PENDING" ? REGISTRATION_TTL_SECONDS : ACTIVE_TTL_SECONDS;
+    const ttlSeconds = cache.status === "PENDING" ? RECORDING_REGISTRATION_TTL_SECONDS : RECORDING_ACTIVE_TTL_SECONDS;
     const nextCache: RecordingSessionLiveCache = {
       ...cache,
       publishTicketIssuedAt: new Date().toISOString(),
@@ -1311,7 +1314,7 @@ export class RecordingSessionService {
         continue;
       }
 
-      await redis.del(`conn:${connection.connectionId}`);
+      await redis.del(streamConnectionKey(connection.connectionId));
       console.info("[rtmp-reconcile] orphan-connection-cleanup", {
         recordingSessionId: connection.recordingSessionId,
         repositoryId: connection.repositoryId,

@@ -21,6 +21,7 @@ const router = Router();
  * recording session metadata를 반환한다.
  * 실제 RTMP publish credential은 후속 publish-ticket 발급으로 분리된다.
  */
+// POST /api/v1/streams/register
 router.post(
   "/register",
   requireAppJwt,
@@ -33,6 +34,7 @@ router.post(
   }),
 );
 
+// POST /api/v1/streams/:recordingSessionId/publish-ticket
 router.post(
   "/:recordingSessionId/publish-ticket",
   requireAppJwt,
@@ -49,6 +51,7 @@ router.post(
   }),
 );
 
+// POST /api/v1/streams/:recordingSessionId/connections/:connectionId/heartbeat
 router.post(
   "/:recordingSessionId/connections/:connectionId/heartbeat",
   requireAppJwt,

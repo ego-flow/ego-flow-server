@@ -32,6 +32,7 @@ import { videoService } from "../services/video.service";
 
 const router = Router();
 
+// POST /api/v1/repositories
 router.post(
   "/",
   requireDashboardSession,
@@ -43,6 +44,7 @@ router.post(
   }),
 );
 
+// GET /api/v1/repositories/mine
 router.get(
   "/mine",
   requireDashboardOrApp,
@@ -53,6 +55,7 @@ router.get(
   }),
 );
 
+// GET /api/v1/repositories
 router.get(
   "/",
   requireDashboardSession,
@@ -63,6 +66,7 @@ router.get(
   }),
 );
 
+// GET /api/v1/repositories/resolve
 router.get(
   "/resolve",
   requireDashboardOrAppOrPython,
@@ -95,6 +99,7 @@ router.get(
   }),
 );
 
+// GET /api/v1/repositories/:repoId/manifest
 router.get(
   "/:repoId/manifest",
   requirePythonToken,
@@ -111,6 +116,7 @@ router.get(
   }),
 );
 
+// GET /api/v1/repositories/:repoId
 router.get(
   "/:repoId",
   requireDashboardSession,
@@ -127,6 +133,7 @@ router.get(
   }),
 );
 
+// PATCH /api/v1/repositories/:repoId
 router.patch(
   "/:repoId",
   requireDashboardSession,
@@ -145,6 +152,7 @@ router.patch(
   }),
 );
 
+// DELETE /api/v1/repositories/:repoId
 router.delete(
   "/:repoId",
   requireDashboardSession,
@@ -161,6 +169,7 @@ router.delete(
   }),
 );
 
+// GET /api/v1/repositories/:repoId/members
 router.get(
   "/:repoId/members",
   requireDashboardSession,
@@ -177,6 +186,7 @@ router.get(
   }),
 );
 
+// POST /api/v1/repositories/:repoId/members
 router.post(
   "/:repoId/members",
   requireDashboardSession,
@@ -195,6 +205,7 @@ router.post(
   }),
 );
 
+// PATCH /api/v1/repositories/:repoId/members/:userId
 router.patch(
   "/:repoId/members/:userId",
   requireDashboardSession,
@@ -215,6 +226,7 @@ router.patch(
   }),
 );
 
+// DELETE /api/v1/repositories/:repoId/members/:userId
 router.delete(
   "/:repoId/members/:userId",
   requireDashboardSession,

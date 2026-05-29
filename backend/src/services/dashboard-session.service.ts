@@ -1,18 +1,18 @@
 import crypto from "crypto";
 
+import {
+  DASHBOARD_SESSION_HASH_ALGORITHM,
+  DASHBOARD_SESSION_KEY_PREFIX,
+  DASHBOARD_SESSION_LAST_USED_UPDATE_INTERVAL_MS,
+  DASHBOARD_SESSION_RANDOM_BYTES,
+  DASHBOARD_SESSION_REMEMBERED_TTL_MS,
+  DASHBOARD_SESSION_SHORT_TTL_MS,
+  DASHBOARD_SESSION_TOKEN_PREFIX,
+} from "../constants/auth/auth-constants";
 import { redis } from "../lib/redis";
 import type { AuthenticatedUser } from "../types/auth";
+import { createPrefixedRandomToken, hashValue } from "../utils/crypto";
 import { adminService } from "./admin.service";
-
-export const DASHBOARD_SESSION_COOKIE_NAME = "egoflow_session";
-
-const SESSION_PREFIX = "efs_";
-const SESSION_RANDOM_BYTES = 32;
-const SESSION_HASH_ALGORITHM = "sha256";
-const SHORT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
-const REMEMBERED_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const LAST_USED_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
-const SESSION_KEY_PREFIX = "dashboard:session:";
 
 interface DashboardSessionRecord {
   sessionId: string;
@@ -22,14 +22,15 @@ interface DashboardSessionRecord {
   expiresAt: number;
 }
 
-const createRawSessionToken = () => `${SESSION_PREFIX}${crypto.randomBytes(SESSION_RANDOM_BYTES).toString("hex")}`;
+const createRawSessionToken = () =>
+  createPrefixedRandomToken(DASHBOARD_SESSION_TOKEN_PREFIX, DASHBOARD_SESSION_RANDOM_BYTES);
 
-const hashSessionToken = (rawToken: string) =>
-  crypto.createHash(SESSION_HASH_ALGORITHM).update(rawToken).digest("hex");
+const hashSessionToken = (rawToken: string) => hashValue(rawToken, DASHBOARD_SESSION_HASH_ALGORITHM);
 
-const sessionKey = (rawToken: string) => `${SESSION_KEY_PREFIX}${hashSessionToken(rawToken)}`;
+const sessionKey = (rawToken: string) => `${DASHBOARD_SESSION_KEY_PREFIX}${hashSessionToken(rawToken)}`;
 
-const shouldUpdateLastUsedAt = (lastUsedAt: number) => Date.now() - lastUsedAt >= LAST_USED_UPDATE_INTERVAL_MS;
+const shouldUpdateLastUsedAt = (lastUsedAt: number) =>
+  Date.now() - lastUsedAt >= DASHBOARD_SESSION_LAST_USED_UPDATE_INTERVAL_MS;
 
 const ttlSecondsUntil = (expiresAt: number) => Math.max(1, Math.ceil((expiresAt - Date.now()) / 1000));
 
@@ -66,7 +67,7 @@ export class DashboardSessionService {
   async createSession(userId: string, rememberMe: boolean) {
     const rawToken = createRawSessionToken();
     const now = Date.now();
-    const expiresAt = now + (rememberMe ? REMEMBERED_SESSION_TTL_MS : SHORT_SESSION_TTL_MS);
+    const expiresAt = now + (rememberMe ? DASHBOARD_SESSION_REMEMBERED_TTL_MS : DASHBOARD_SESSION_SHORT_TTL_MS);
     const sessionId = crypto.randomUUID();
     const record: DashboardSessionRecord = {
       sessionId,
@@ -87,7 +88,10 @@ export class DashboardSessionService {
   }
 
   async verifySession(rawToken: string): Promise<({ sessionId: string } & AuthenticatedUser) | null> {
-    if (!rawToken.startsWith(SESSION_PREFIX) || rawToken.length !== SESSION_PREFIX.length + SESSION_RANDOM_BYTES * 2) {
+    if (
+      !rawToken.startsWith(DASHBOARD_SESSION_TOKEN_PREFIX) ||
+      rawToken.length !== DASHBOARD_SESSION_TOKEN_PREFIX.length + DASHBOARD_SESSION_RANDOM_BYTES * 2
+    ) {
       return null;
     }
 
@@ -128,7 +132,7 @@ export class DashboardSessionService {
   }
 
   async revokeSession(rawToken: string) {
-    if (!rawToken.startsWith(SESSION_PREFIX)) {
+    if (!rawToken.startsWith(DASHBOARD_SESSION_TOKEN_PREFIX)) {
       return;
     }
 

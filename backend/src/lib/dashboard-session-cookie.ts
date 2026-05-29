@@ -1,6 +1,6 @@
 import type { CookieOptions, Request, Response } from "express";
 
-import { DASHBOARD_SESSION_COOKIE_NAME } from "../services/dashboard-session.service";
+import { DASHBOARD_SESSION_COOKIE_NAME } from "../constants/auth/auth-constants";
 
 const isSecureRequest = (req: Request) => req.secure || req.headers["x-forwarded-proto"] === "https";
 

@@ -21,11 +21,9 @@ import {
   repoVideoRepositoryParamSchema,
 } from "../schemas/repository-video.schema";
 import { videoService } from "../services/video.service";
+import { isMissingFileError } from "../utils/file-system";
 
 const router = Router({ mergeParams: true });
-
-const isMissingFileError = (error: unknown) =>
-  error instanceof Error && "code" in error && String(error.code) === "ENOENT";
 
 const ensureFileExists = async (filePath: string, missingMessage: string) => {
   try {
@@ -57,6 +55,7 @@ const redirectToSignedDownload = async (
 
 router.use(validate(repoVideoRepositoryParamSchema, "params"));
 
+// GET /api/v1/repositories/:repoId/videos
 router.get(
   "/",
   requireDashboardSession,
@@ -71,6 +70,7 @@ router.get(
   }),
 );
 
+// GET /api/v1/repositories/:repoId/videos/:videoId
 router.get(
   "/:videoId",
   requireDashboardSession,
@@ -87,6 +87,7 @@ router.get(
   }),
 );
 
+// GET /api/v1/repositories/:repoId/videos/:videoId/status
 router.get(
   "/:videoId/status",
   requireDashboardSession,
@@ -99,6 +100,7 @@ router.get(
   }),
 );
 
+// DELETE /api/v1/repositories/:repoId/videos/:videoId
 router.delete(
   "/:videoId",
   requireDashboardSession,
@@ -111,6 +113,7 @@ router.delete(
   }),
 );
 
+// HEAD /api/v1/repositories/:repoId/videos/:videoId/download
 router.head(
   "/:videoId/download",
   requireDashboardOrPython,
@@ -123,6 +126,7 @@ router.head(
   }),
 );
 
+// GET /api/v1/repositories/:repoId/videos/:videoId/download
 router.get(
   "/:videoId/download",
   requireDashboardOrPython,

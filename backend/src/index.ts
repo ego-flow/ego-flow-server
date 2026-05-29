@@ -39,6 +39,7 @@ app.use(
 app.use(morgan("dev"));
 app.use(express.json());
 
+// GET /api/v1/openapi.json
 app.get("/api/v1/openapi.json", (_req, res) => {
   res.status(200).json(openApiDocument);
 });
@@ -59,10 +60,12 @@ app.use(
   }),
 );
 
+// GET /api/v1/health
 app.get("/api/v1/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
+// GET /api/v1/info
 app.get("/api/v1/info", (_req, res) => {
   res.status(200).json(getServerInfo());
 });

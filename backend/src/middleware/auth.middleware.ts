@@ -1,47 +1,15 @@
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 
+import { DASHBOARD_SESSION_COOKIE_NAME, PYTHON_TOKEN_PREFIX } from "../constants/auth/auth-constants";
 import { Unauthorized } from "../lib/errors";
 import { shouldRefreshToken, signAccessToken, verifyAccessToken } from "../lib/jwt";
 import { apiTokenService } from "../services/api-token.service";
 import { adminService } from "../services/admin.service";
-import {
-  DASHBOARD_SESSION_COOKIE_NAME,
-  dashboardSessionService,
-} from "../services/dashboard-session.service";
-import type { AuthContext, AuthCredentialKind, AuthenticatedUser } from "../types/auth";
-
-const PYTHON_TOKEN_PREFIX = "ef_";
-
-const extractBearerToken = (authorizationHeader?: string): string | null => {
-  if (!authorizationHeader) {
-    return null;
-  }
-  const [scheme, token] = authorizationHeader.split(" ");
-  if (scheme !== "Bearer" || !token) {
-    return null;
-  }
-  return token;
-};
-
-const extractCookie = (cookieHeader: string | undefined, name: string): string | null => {
-  if (!cookieHeader) {
-    return null;
-  }
-
-  for (const part of cookieHeader.split(";")) {
-    const [rawName, ...rawValue] = part.trim().split("=");
-    if (rawName === name && rawValue.length > 0) {
-      try {
-        return decodeURIComponent(rawValue.join("="));
-      } catch {
-        return null;
-      }
-    }
-  }
-
-  return null;
-};
+import { dashboardSessionService } from "../services/dashboard-session.service";
+import { AuthCredentialKind, type AuthContext, type AuthenticatedUser } from "../types/auth";
+import { extractBearerToken } from "../utils/http-auth";
+import { extractCookie } from "../utils/http-cookie";
 
 const setAuthContext = (req: Request, context: AuthContext) => {
   req.auth = context;
@@ -64,7 +32,7 @@ const authenticateDashboardSession = async (req: Request): Promise<AuthContext |
   }
 
   return {
-    kind: "dashboard",
+    kind: AuthCredentialKind.Dashboard,
     credentialId: session.sessionId,
     rawCredential: sessionToken,
     userId: session.userId,
@@ -90,7 +58,7 @@ const authenticatePythonToken = async (req: Request): Promise<AuthContext | null
   }
 
   return {
-    kind: "python",
+    kind: AuthCredentialKind.Python,
     rawCredential: token,
     ...authenticatedUser,
   };
@@ -115,7 +83,7 @@ const authenticateAppJwt = async (req: Request, res: Response): Promise<AuthCont
     }
 
     return {
-      kind: "app",
+      kind: AuthCredentialKind.App,
       rawCredential: token,
       ...authenticatedUser,
     };
@@ -132,10 +100,10 @@ const authenticateByKind = async (
   res: Response,
   kind: AuthCredentialKind,
 ): Promise<AuthContext | null> => {
-  if (kind === "dashboard") {
+  if (kind === AuthCredentialKind.Dashboard) {
     return authenticateDashboardSession(req);
   }
-  if (kind === "app") {
+  if (kind === AuthCredentialKind.App) {
     return authenticateAppJwt(req, res);
   }
   return authenticatePythonToken(req);
@@ -159,9 +127,13 @@ export const requireCredential =
     }
   };
 
-export const requireDashboardSession = requireCredential("dashboard");
-export const requireAppJwt = requireCredential("app");
-export const requirePythonToken = requireCredential("python");
-export const requireDashboardOrApp = requireCredential("dashboard", "app");
-export const requireDashboardOrPython = requireCredential("dashboard", "python");
-export const requireDashboardOrAppOrPython = requireCredential("dashboard", "app", "python");
+export const requireDashboardSession = requireCredential(AuthCredentialKind.Dashboard);
+export const requireAppJwt = requireCredential(AuthCredentialKind.App);
+export const requirePythonToken = requireCredential(AuthCredentialKind.Python);
+export const requireDashboardOrApp = requireCredential(AuthCredentialKind.Dashboard, AuthCredentialKind.App);
+export const requireDashboardOrPython = requireCredential(AuthCredentialKind.Dashboard, AuthCredentialKind.Python);
+export const requireDashboardOrAppOrPython = requireCredential(
+  AuthCredentialKind.Dashboard,
+  AuthCredentialKind.App,
+  AuthCredentialKind.Python,
+);

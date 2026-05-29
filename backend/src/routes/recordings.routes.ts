@@ -18,6 +18,7 @@ const router = Router();
  * reason은 "USER_STOP" 또는 "GLASSES_STOP".
  * 이후 앱이 RTMP 연결을 끊으면 MediaMTX stream-not-ready hook이 FINALIZING을 트리거한다.
  */
+// POST /api/v1/recordings/:recordingSessionId/stop
 router.post(
   "/:recordingSessionId/stop",
   requireAppJwt,
@@ -48,6 +49,7 @@ router.post(
  * 특정 RecordingSession의 현재 상태, segment 수, video ID 등을 반환한다.
  * repository read 권한이 필요하다.
  */
+// GET /api/v1/recordings/:recordingSessionId
 router.get(
   "/:recordingSessionId",
   requireDashboardOrApp,

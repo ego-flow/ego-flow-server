@@ -3,10 +3,9 @@ import path from "path";
 import jwt from "jsonwebtoken";
 import type { SignOptions } from "jsonwebtoken";
 
+import { SIGNED_FILE_URL_AUDIENCE } from "../constants/storage/signed-file-url-constants";
 import { runtimeConfig as env } from "../config/runtime";
 import { toStorageRelativePath } from "./storage";
-
-const SIGNED_FILE_URL_AUDIENCE = "egoflow:file";
 
 type SignedFileUrlPayload = {
   kind: "file";

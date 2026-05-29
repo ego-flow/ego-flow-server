@@ -10,12 +10,14 @@ import { getTargetDirectory } from "../lib/storage";
 import type {
   CreateRepositoryInput,
   CreateRepositoryMemberInput,
-  RepositoryResolveQueryInput,
   UpdateRepositoryInput,
   UpdateRepositoryMemberInput,
 } from "../schemas/repository.schema";
 import type { AppUserRole } from "../types/auth";
 import type { AppRepoRole, RepositoryAccessContext, RepositoryRecord } from "../types/repository";
+import { movePath, pathExists } from "../utils/file-system";
+import { remapPathWithinDirectory } from "../utils/path-mapping";
+import { streamPathKey, streamRepoKey } from "../utils/stream-keys";
 import { refreshRepositoryContributors } from "./repository-contributors.service";
 
 const REPO_ROLE_RANK: Record<AppRepoRole, number> = {
@@ -80,49 +82,8 @@ const normalizeDescription = (description: string | null | undefined): string | 
   return trimmed ? trimmed : null;
 };
 
-const pathExists = async (filePath: string): Promise<boolean> => {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const movePath = async (sourcePath: string, destinationPath: string) => {
-  try {
-    await fs.rename(sourcePath, destinationPath);
-  } catch (error) {
-    const code = error instanceof Error && "code" in error ? String(error.code) : null;
-    if (code === "EXDEV") {
-      await fs.cp(sourcePath, destinationPath, { recursive: true, force: false });
-      await fs.rm(sourcePath, { recursive: true, force: true });
-      return;
-    }
-
-    throw error;
-  }
-};
-
-const remapManagedPath = (previousPath: string, nextPath: string, filePath: string | null): string | null => {
-  if (!filePath) {
-    return null;
-  }
-
-  const resolvedFilePath = path.resolve(filePath);
-  const relative = path.relative(previousPath, resolvedFilePath);
-  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
-    return filePath;
-  }
-
-  return path.join(nextPath, relative);
-};
-
 const isConflictError = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
-
-const streamSessionKey = (repositoryId: string) => `stream:repo:${repositoryId}`;
-const streamPathKey = (repoName: string) => `stream:path:${repoName}`;
 
 export class RepositoryService {
   async getRepositoryAccess(
@@ -211,30 +172,6 @@ export class RepositoryService {
     }
 
     return access;
-  }
-
-  async assertRepositoryAccessByOwnerAndName(
-    userId: string,
-    userRole: AppUserRole,
-    ownerId: string,
-    repoName: string,
-    minRole: AppRepoRole,
-  ): Promise<RepositoryAccessContext> {
-    const repository = await prisma.repository.findUnique({
-      where: {
-        ownerId_name: {
-          ownerId,
-          name: repoName,
-        },
-      },
-      select: { id: true },
-    });
-
-    if (!repository) {
-      throw NotFound("Repository not found.");
-    }
-
-    return this.assertRepositoryAccess(userId, userRole, repository.id, minRole);
   }
 
   async listAccessibleRepositories(userId: string, userRole: AppUserRole) {
@@ -734,7 +671,7 @@ export class RepositoryService {
 
   private async ensureRepositoryIsIdle(repositoryId: string, repositoryName: string) {
     const [sessionById, sessionByPath] = await Promise.all([
-      redis.get(streamSessionKey(repositoryId)),
+      redis.get(streamRepoKey(repositoryId)),
       redis.get(streamPathKey(repositoryName)),
     ]);
 
@@ -772,9 +709,9 @@ export class RepositoryService {
         prisma.video.update({
           where: { id: video.id },
           data: {
-            vlmVideoPath: remapManagedPath(previousDirectory, nextDirectory, video.vlmVideoPath),
-            dashboardVideoPath: remapManagedPath(previousDirectory, nextDirectory, video.dashboardVideoPath),
-            thumbnailPath: remapManagedPath(previousDirectory, nextDirectory, video.thumbnailPath),
+            vlmVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.vlmVideoPath),
+            dashboardVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.dashboardVideoPath),
+            thumbnailPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.thumbnailPath),
           },
         }),
       ),

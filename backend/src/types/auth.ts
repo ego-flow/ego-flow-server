@@ -1,3 +1,7 @@
+import { AuthCredentialKind } from "../constants/auth/auth-constants";
+
+export { AuthCredentialKind } from "../constants/auth/auth-constants";
+
 export type AppUserRole = "admin" | "user";
 
 export interface AuthTokenPayload {
@@ -12,8 +16,6 @@ export interface AuthenticatedUser {
   role: AppUserRole;
   displayName: string;
 }
-
-export type AuthCredentialKind = "dashboard" | "app" | "python";
 
 export interface AuthContext extends AuthenticatedUser {
   kind: AuthCredentialKind;

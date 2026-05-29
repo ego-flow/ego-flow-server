@@ -16,6 +16,7 @@ const router = Router();
  * Caddy `forward_auth` -> `/api/v1/hls-auth`가 인증/권한 게이트를 담당한다.
  * dashboard Live 페이지와 Python package가 모두 사용하는 canonical list endpoint.
  */
+// GET /api/v1/live-streams
 router.get(
   "/",
   requireDashboardOrAppOrPython,
@@ -31,6 +32,7 @@ router.get(
  * [Live stream 상세]
  * 단일 stream의 상세 metadata + playback_ready(MediaMTX path 활성 여부)를 반환한다.
  */
+// GET /api/v1/live-streams/:streamId
 router.get(
   "/:streamId",
   requireDashboardOrAppOrPython,

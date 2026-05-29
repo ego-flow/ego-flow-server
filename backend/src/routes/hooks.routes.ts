@@ -18,6 +18,7 @@ const router = Router();
  * RecordingSession을 PENDING → STREAMING으로 전환하고,
  * sourceId/sourceType/readyAt을 기록하며 Redis live pointer를 갱신한다.
  */
+// POST /api/v1/hooks/stream-ready
 router.post(
   "/stream-ready",
   asyncHandler(async (req, res) => {
@@ -37,6 +38,7 @@ router.post(
  * authoritative `stream:source:{sourceId}` mapping으로 connection/generation을 복원하고,
  * generation match release가 성공한 경우에만 해당 세션을 FINALIZING으로 전환한다.
  */
+// POST /api/v1/hooks/stream-not-ready
 router.post(
   "/stream-not-ready",
   asyncHandler(async (req, res) => {
@@ -56,6 +58,7 @@ router.post(
  * authoritative `source_id`로 세션을 찾고 segment ownership mapping을 저장한 뒤
  * RecordingSegment를 WRITING 상태로 upsert한다.
  */
+// POST /api/v1/hooks/recording-segment-create
 router.post(
   "/recording-segment-create",
   asyncHandler(async (req, res) => {
@@ -75,6 +78,7 @@ router.post(
  * stored segment ownership mapping만 사용해 RecordingSegment를 COMPLETED 상태로 전환하고, duration을 기록한다.
  * 세션이 이미 FINALIZING이면 finalize enqueue를 재시도한다.
  */
+// POST /api/v1/hooks/recording-segment-complete
 router.post(
   "/recording-segment-complete",
   asyncHandler(async (req, res) => {

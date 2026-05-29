@@ -15,6 +15,7 @@ const router = Router();
 
 router.use(requireDashboardSession, requireRole("admin"));
 
+// POST /api/v1/admin/users
 router.post(
   "/users",
   validate(createAdminUserSchema),
@@ -24,6 +25,7 @@ router.post(
   }),
 );
 
+// GET /api/v1/admin/users
 router.get(
   "/users",
   asyncHandler(async (_req, res) => {
@@ -32,6 +34,7 @@ router.get(
   }),
 );
 
+// GET /api/v1/admin/api-tokens
 router.get(
   "/api-tokens",
   validate(adminApiTokenListQuerySchema, "query"),
@@ -48,6 +51,7 @@ router.get(
   }),
 );
 
+// DELETE /api/v1/admin/users/:userId
 router.delete(
   "/users/:userId",
   validate(adminUserIdParamSchema, "params"),
@@ -57,6 +61,7 @@ router.delete(
   }),
 );
 
+// GET /api/v1/admin/users/:userId/delete-readiness
 router.get(
   "/users/:userId/delete-readiness",
   validate(adminUserIdParamSchema, "params"),
@@ -66,6 +71,7 @@ router.get(
   }),
 );
 
+// DELETE /api/v1/admin/users/:userId/permanent
 router.delete(
   "/users/:userId/permanent",
   validate(adminUserIdParamSchema, "params"),
@@ -75,6 +81,7 @@ router.delete(
   }),
 );
 
+// PUT /api/v1/admin/users/:userId/reset-password
 router.put(
   "/users/:userId/reset-password",
   validate(adminUserIdParamSchema, "params"),
@@ -85,6 +92,7 @@ router.put(
   }),
 );
 
+// GET /api/v1/admin/settings
 router.get(
   "/settings",
   asyncHandler(async (_req, res) => {

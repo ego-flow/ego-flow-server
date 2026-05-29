@@ -1,54 +1,17 @@
 import fs from "fs/promises";
 import path from "path";
 
+import { TARGET_DIRECTORY_SETTING_KEY } from "../constants/storage/storage-constants";
 import { runtimeConfig as env } from "../config/runtime";
+import { movePath, pathExists } from "../utils/file-system";
+import { remapPathWithinDirectory } from "../utils/path-mapping";
 import { prisma } from "./prisma";
 
-const TARGET_DIRECTORY_SETTING_KEY = "target_directory";
-
 let activeTargetDirectory = path.resolve(env.TARGET_DIRECTORY);
-
-const pathExists = async (filePath: string): Promise<boolean> => {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 const isNestedPath = (parentPath: string, childPath: string): boolean => {
   const relative = path.relative(parentPath, childPath);
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative);
-};
-
-const remapStoredPath = (previousDirectory: string, nextDirectory: string, filePath: string | null): string | null => {
-  if (!filePath) {
-    return null;
-  }
-
-  const resolvedPath = path.resolve(filePath);
-  const relative = path.relative(previousDirectory, resolvedPath);
-  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
-    return filePath;
-  }
-
-  return path.join(nextDirectory, relative);
-};
-
-const movePath = async (sourcePath: string, destinationPath: string) => {
-  try {
-    await fs.rename(sourcePath, destinationPath);
-  } catch (error) {
-    const code = error instanceof Error && "code" in error ? String(error.code) : null;
-    if (code === "EXDEV") {
-      await fs.cp(sourcePath, destinationPath, { recursive: true, force: false });
-      await fs.rm(sourcePath, { recursive: true, force: true });
-      return;
-    }
-
-    throw error;
-  }
 };
 
 const migrateDirectoryContents = async (previousDirectory: string, nextDirectory: string) => {
@@ -103,9 +66,9 @@ const rewriteManagedVideoPaths = async (previousDirectory: string, nextDirectory
       prisma.video.update({
         where: { id: video.id },
         data: {
-          vlmVideoPath: remapStoredPath(previousDirectory, nextDirectory, video.vlmVideoPath),
-          dashboardVideoPath: remapStoredPath(previousDirectory, nextDirectory, video.dashboardVideoPath),
-          thumbnailPath: remapStoredPath(previousDirectory, nextDirectory, video.thumbnailPath),
+          vlmVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.vlmVideoPath),
+          dashboardVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.dashboardVideoPath),
+          thumbnailPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.thumbnailPath),
         },
       }),
     ),
@@ -148,16 +111,6 @@ export const initializeTargetDirectory = async (): Promise<string> => {
 };
 
 export const getTargetDirectory = (): string => activeTargetDirectory;
-
-export const toFileUrl = (targetDirectory: string, filePath: string | null): string | null => {
-  const relative = toStorageRelativePath(targetDirectory, filePath);
-  if (!relative) {
-    return null;
-  }
-
-  const encoded = relative.split(path.sep).map(encodeURIComponent).join("/");
-  return `/files/${encoded}`;
-};
 
 export const toStorageRelativePath = (targetDirectory: string, filePath: string | null): string | null => {
   if (!filePath) {

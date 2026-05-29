@@ -4,6 +4,7 @@ import { UserRole } from "@prisma/client";
 import { getConfigFilePath } from "../config/config.file";
 import { getDotenvPath } from "../config/env";
 import { runtimeConfig } from "../config/runtime";
+import { SECRET_EMPTY_PLACEHOLDER, SECRET_PLACEHOLDER } from "../constants/admin/admin-constants";
 import { BadRequest, Conflict, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { getTargetDirectory } from "../lib/storage";
@@ -11,9 +12,6 @@ import type { CreateAdminUserInput, ResetUserPasswordInput } from "../schemas/ad
 import type { AuthenticatedUser } from "../types/auth";
 
 type ConfigValue = string | number | boolean | null;
-
-const SECRET_PLACEHOLDER = "********";
-const SECRET_EMPTY_PLACEHOLDER = "(not set)";
 
 const maskConnectionUrl = (url: string | undefined): string => {
   if (!url) {

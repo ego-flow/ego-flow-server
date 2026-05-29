@@ -1,7 +1,7 @@
 import os from "os";
 import path from "path";
 
-const DEFAULT_CONFIG_FILE_NAME = "config.json";
+import { DEFAULT_CONFIG_FILE_NAME } from "../constants/config/config-constants";
 
 const getProjectRootDir = () => path.resolve(__dirname, "../../..");
 

@@ -1,26 +1,27 @@
-import crypto from "crypto";
 import { UserRole } from "@prisma/client";
 
+import {
+  PYTHON_TOKEN_HASH_ALGORITHM,
+  PYTHON_TOKEN_LAST_USED_UPDATE_INTERVAL_MS,
+  PYTHON_TOKEN_PREFIX,
+  PYTHON_TOKEN_RANDOM_BYTES,
+} from "../constants/auth/auth-constants";
 import { Forbidden, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import type { CreateApiTokenInput } from "../schemas/api-token.schema";
 import type { AppUserRole } from "../types/auth";
-
-const TOKEN_PREFIX = "ef_";
-const TOKEN_RANDOM_BYTES = 20;
-const TOKEN_HASH_ALGORITHM = "sha256";
-const LAST_USED_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
+import { createPrefixedRandomToken, hashValue } from "../utils/crypto";
 
 const toAppUserRole = (role: UserRole): AppUserRole => (role === UserRole.admin ? "admin" : "user");
 
 const toIsoString = (value: Date | null) => value?.toISOString() ?? null;
 
-const createRawToken = () => `${TOKEN_PREFIX}${crypto.randomBytes(TOKEN_RANDOM_BYTES).toString("hex")}`;
+const createRawToken = () => createPrefixedRandomToken(PYTHON_TOKEN_PREFIX, PYTHON_TOKEN_RANDOM_BYTES);
 
-const hashToken = (rawToken: string) => crypto.createHash(TOKEN_HASH_ALGORITHM).update(rawToken).digest("hex");
+const hashToken = (rawToken: string) => hashValue(rawToken, PYTHON_TOKEN_HASH_ALGORITHM);
 
 const shouldUpdateLastUsedAt = (lastUsedAt: Date | null) =>
-  !lastUsedAt || Date.now() - lastUsedAt.getTime() >= LAST_USED_UPDATE_INTERVAL_MS;
+  !lastUsedAt || Date.now() - lastUsedAt.getTime() >= PYTHON_TOKEN_LAST_USED_UPDATE_INTERVAL_MS;
 
 export class ApiTokenService {
   async issueToken(userId: string, input: CreateApiTokenInput) {
@@ -170,7 +171,10 @@ export class ApiTokenService {
   }
 
   async verifyPythonToken(rawToken: string): Promise<{ userId: string; role: AppUserRole } | null> {
-    if (!rawToken.startsWith(TOKEN_PREFIX) || rawToken.length !== TOKEN_PREFIX.length + TOKEN_RANDOM_BYTES * 2) {
+    if (
+      !rawToken.startsWith(PYTHON_TOKEN_PREFIX) ||
+      rawToken.length !== PYTHON_TOKEN_PREFIX.length + PYTHON_TOKEN_RANDOM_BYTES * 2
+    ) {
       return null;
     }
 

@@ -1,5 +1,10 @@
 import { RecordingSessionEndReason, RecordingSessionStatus } from "@prisma/client";
 
+import {
+  FIRST_PUBLISH_DEADLINE_MS,
+  STREAM_ACTIVE_SET_KEY,
+  STREAM_RECONCILE_INTERVAL_MS,
+} from "../constants/stream/stream-constants";
 import { Conflict, ErrorCode, Forbidden, NotFound } from "../lib/errors";
 import { redis } from "../lib/redis";
 import { getTargetDirectory } from "../lib/storage";
@@ -9,15 +14,9 @@ import type { AppUserRole } from "../types/auth";
 import type { StreamRegisterInput } from "../schemas/stream.schema";
 import type { RecordingSessionLiveCache } from "../types/stream";
 import { repositoryService } from "./repository.service";
-import { recordingSessionService, STREAM_ACTIVE_SET_KEY } from "./recording-session.service";
+import { recordingSessionService } from "./recording-session.service";
 import { streamOwnershipService } from "./stream-ownership.service";
-
-const RECONCILE_INTERVAL_MS = 5 * 1000;
-const FIRST_PUBLISH_DEADLINE_MS = 5 * 60 * 1000;
-
-const streamRepoKey = (repositoryId: string) => `stream:repo:${repositoryId}`;
-const streamPathKey = (repoName: string) => `stream:path:${repoName}`;
-const streamRecordingKey = (recordingSessionId: string) => `stream:recording:${recordingSessionId}`;
+import { streamPathKey, streamRecordingKey, streamRepoKey, streamSourceKey } from "../utils/stream-keys";
 
 /**
  * 스트리밍 세션의 등록, 활성 조회, RTMP 인증 보조, reconcile 루프를 관리하는 서비스.
@@ -460,7 +459,7 @@ export class StreamService {
           reason: message,
         });
       });
-    }, RECONCILE_INTERVAL_MS);
+    }, STREAM_RECONCILE_INTERVAL_MS);
 
     this.reconcileTimer.unref();
   }
@@ -612,7 +611,7 @@ export class StreamService {
           await redis.del(streamRecordingKey(existingSession.id));
           await redis.srem(STREAM_ACTIVE_SET_KEY, existingSession.id);
           if (existingSession.sourceId) {
-            await redis.del(`stream:source:${existingSession.sourceId}`);
+            await redis.del(streamSourceKey(existingSession.sourceId));
           }
           await recordingSessionService.tryEnqueueFinalize(existingSession.id);
           return;

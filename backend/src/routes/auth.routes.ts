@@ -1,5 +1,6 @@
 import { Router } from "express";
 
+import { AuthCredentialKind } from "../constants/auth/auth-constants";
 import { asyncHandler } from "../lib/async-handler";
 import { clearDashboardSessionCookie, setDashboardSessionCookie } from "../lib/dashboard-session-cookie";
 import { getAuthUser } from "../lib/request-context";
@@ -14,6 +15,7 @@ import { dashboardSessionService } from "../services/dashboard-session.service";
 
 const router = Router();
 
+// POST /api/v1/auth/login
 router.post(
   "/login",
   validate(loginSchema),
@@ -23,6 +25,7 @@ router.post(
   }),
 );
 
+// POST /api/v1/auth/app/login
 router.post(
   "/app/login",
   validate(loginSchema),
@@ -32,6 +35,7 @@ router.post(
   }),
 );
 
+// POST /api/v1/auth/dashboard/login
 router.post(
   "/dashboard/login",
   validate(dashboardLoginSchema),
@@ -45,11 +49,12 @@ router.post(
   }),
 );
 
+// POST /api/v1/auth/dashboard/logout
 router.post(
   "/dashboard/logout",
   requireDashboardSession,
   asyncHandler(async (req, res) => {
-    if (req.auth?.kind === "dashboard" && req.auth.rawCredential) {
+    if (req.auth?.kind === AuthCredentialKind.Dashboard && req.auth.rawCredential) {
       await dashboardSessionService.revokeSession(req.auth.rawCredential);
     }
     clearDashboardSessionCookie(req, res);
@@ -57,6 +62,7 @@ router.post(
   }),
 );
 
+// GET /api/v1/auth/dashboard/session
 router.get(
   "/dashboard/session",
   requireDashboardSession,
@@ -72,6 +78,7 @@ router.get(
   }),
 );
 
+// POST /api/v1/auth/tokens
 router.post(
   "/tokens",
   requireDashboardSession,
@@ -83,6 +90,7 @@ router.post(
   }),
 );
 
+// GET /api/v1/auth/tokens
 router.get(
   "/tokens",
   requireDashboardSession,
@@ -93,6 +101,7 @@ router.get(
   }),
 );
 
+// GET /api/v1/auth/validate
 router.get(
   "/validate",
   requireDashboardOrAppOrPython,
@@ -111,6 +120,7 @@ router.get(
   }),
 );
 
+// DELETE /api/v1/auth/tokens/:tokenId
 router.delete(
   "/tokens/:tokenId",
   requireDashboardSession,
@@ -134,6 +144,7 @@ router.delete(
  * MediaMTX는 단순 status code(200/401)만 본다. 의도적으로 errorMiddleware를 거치지 않고
  * 빈 응답을 돌려준다.
  */
+// POST /api/v1/auth/rtmp
 router.post(
   "/rtmp",
   asyncHandler(async (req, res) => {
