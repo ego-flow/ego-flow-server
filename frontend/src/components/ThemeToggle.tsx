@@ -1,81 +1,88 @@
-import { useEffect, useState } from 'react'
-import { Moon, Sun } from 'lucide-react'
-import { Button } from '#/components/ui/button'
-
-type ThemeMode = 'light' | 'dark' | 'auto'
+import { Moon, Sun } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Button } from "#/components/ui/button";
+import { THEME_STORAGE_KEY } from "#/constants/storage/storage-constants";
+import {
+	THEME_COLOR_SCHEME_QUERY,
+	ThemeMode,
+} from "#/constants/theme/theme-constants";
+import { isThemeMode, resolveThemeMode } from "#/utils/theme";
 
 function getInitialMode(): ThemeMode {
-  if (typeof window === 'undefined') {
-    return 'auto'
-  }
+	if (typeof window === "undefined") {
+		return ThemeMode.Auto;
+	}
 
-  const stored = window.localStorage.getItem('theme')
-  if (stored === 'light' || stored === 'dark' || stored === 'auto') {
-    return stored
-  }
+	const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+	if (isThemeMode(stored)) {
+		return stored;
+	}
 
-  return 'auto'
+	return ThemeMode.Auto;
 }
 
 function applyThemeMode(mode: ThemeMode) {
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-  const resolved = mode === 'auto' ? (prefersDark ? 'dark' : 'light') : mode
+	const resolved = resolveThemeMode(mode);
 
-  document.documentElement.classList.remove('light', 'dark')
-  document.documentElement.classList.add(resolved)
+	document.documentElement.classList.remove(ThemeMode.Light, ThemeMode.Dark);
+	document.documentElement.classList.add(resolved);
 
-  if (mode === 'auto') {
-    document.documentElement.removeAttribute('data-theme')
-  } else {
-    document.documentElement.setAttribute('data-theme', mode)
-  }
+	if (mode === ThemeMode.Auto) {
+		document.documentElement.removeAttribute("data-theme");
+	} else {
+		document.documentElement.setAttribute("data-theme", mode);
+	}
 
-  document.documentElement.style.colorScheme = resolved
+	document.documentElement.style.colorScheme = resolved;
 }
 
 export default function ThemeToggle() {
-  const [mode, setMode] = useState<ThemeMode>('auto')
+	const [mode, setMode] = useState<ThemeMode>(ThemeMode.Auto);
 
-  useEffect(() => {
-    const initialMode = getInitialMode()
-    setMode(initialMode)
-    applyThemeMode(initialMode)
-  }, [])
+	useEffect(() => {
+		const initialMode = getInitialMode();
+		setMode(initialMode);
+		applyThemeMode(initialMode);
+	}, []);
 
-  useEffect(() => {
-    if (mode !== 'auto') {
-      return
-    }
+	useEffect(() => {
+		if (mode !== ThemeMode.Auto) {
+			return;
+		}
 
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const onChange = () => applyThemeMode('auto')
+		const media = window.matchMedia(THEME_COLOR_SCHEME_QUERY);
+		const onChange = () => applyThemeMode(ThemeMode.Auto);
 
-    media.addEventListener('change', onChange)
-    return () => {
-      media.removeEventListener('change', onChange)
-    }
-  }, [mode])
+		media.addEventListener("change", onChange);
+		return () => {
+			media.removeEventListener("change", onChange);
+		};
+	}, [mode]);
 
-  function toggleMode() {
-    const nextMode: ThemeMode = mode === 'dark' ? 'light' : 'dark'
-    setMode(nextMode)
-    applyThemeMode(nextMode)
-    window.localStorage.setItem('theme', nextMode)
-  }
+	function toggleMode() {
+		const nextMode = mode === ThemeMode.Dark ? ThemeMode.Light : ThemeMode.Dark;
+		setMode(nextMode);
+		applyThemeMode(nextMode);
+		window.localStorage.setItem(THEME_STORAGE_KEY, nextMode);
+	}
 
-  const isDarkMode = mode === 'dark'
-  const label = isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'
+	const isDarkMode = mode === ThemeMode.Dark;
+	const label = isDarkMode ? "Switch to light mode" : "Switch to dark mode";
 
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="icon"
-      onClick={toggleMode}
-      aria-label={label}
-      title={label}
-    >
-      {isDarkMode ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
-    </Button>
-  )
+	return (
+		<Button
+			type="button"
+			variant="outline"
+			size="icon"
+			onClick={toggleMode}
+			aria-label={label}
+			title={label}
+		>
+			{isDarkMode ? (
+				<Sun size={16} aria-hidden="true" />
+			) : (
+				<Moon size={16} aria-hidden="true" />
+			)}
+		</Button>
+	);
 }

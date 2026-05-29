@@ -16,7 +16,9 @@ import { requestAdminTokens, requestRevokeToken } from "#/api/tokens";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
+import { UserRole } from "#/constants/auth/auth-constants";
 import { formatDateTime } from "#/lib/format";
+import { userRoleClassName } from "#/utils/class-names";
 
 export const Route = createFileRoute("/admin/users")({
 	component: AdminUsersPage,
@@ -346,7 +348,9 @@ function AdminUsersPage() {
 																<h2 className="text-xl font-semibold text-[var(--sea-ink)]">
 																	{user.displayName}
 																</h2>
-																<span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--sea-ink-soft)]">
+																<span
+																	className={`rounded-full px-2.5 py-1 text-xs font-semibold ${userRoleClassName(user.role)}`}
+																>
 																	{user.role}
 																</span>
 																<span
@@ -434,7 +438,7 @@ function AdminUsersPage() {
 																		variant="destructive"
 																		disabled={
 																			deactivateUserMutation.isPending ||
-																			user.role === "admin"
+																			user.role === UserRole.Admin
 																		}
 																		onClick={() => {
 																			if (
@@ -457,7 +461,7 @@ function AdminUsersPage() {
 																	variant="destructive"
 																	disabled={
 																		permanentDeleteMutation.isPending ||
-																		user.role === "admin"
+																		user.role === UserRole.Admin
 																	}
 																	onClick={() => openDeleteDialog(user)}
 																>

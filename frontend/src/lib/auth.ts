@@ -1,86 +1,98 @@
-import { apiClient } from '#/api/client'
-import type { AuthUser } from '#/lib/auth-session'
+import { apiClient } from "#/api/client";
+import { ApiEndpoint } from "#/constants/api/api-constants";
+import { UserRole } from "#/constants/auth/auth-constants";
+import type { AuthUser } from "#/lib/auth-session";
 
 export interface LoginRequestInput {
-  id: string
-  password: string
-  rememberMe: boolean
+	id: string;
+	password: string;
+	rememberMe: boolean;
 }
 
 interface AuthUserApiRecord {
-  id?: unknown
-  role?: unknown
-  displayName?: unknown
-  display_name?: unknown
+	id?: unknown;
+	role?: unknown;
+	displayName?: unknown;
+	display_name?: unknown;
 }
 
 interface AuthResponseApiRecord {
-  user?: AuthUserApiRecord | null
+	user?: AuthUserApiRecord | null;
 }
 
 interface ChangeMyPasswordResponse {
-  message: string
+	message: string;
 }
 
 export async function requestLogin({
-  id,
-  password,
-  rememberMe,
+	id,
+	password,
+	rememberMe,
 }: LoginRequestInput) {
-  const response = await apiClient.post<AuthResponseApiRecord>('/auth/dashboard/login', {
-    id,
-    password,
-    remember_me: rememberMe,
-  })
+	const response = await apiClient.post<AuthResponseApiRecord>(
+		ApiEndpoint.AuthDashboardLogin,
+		{
+			id,
+			password,
+			remember_me: rememberMe,
+		},
+	);
 
-  return normalizeAuthResponse(response.data)
+	return normalizeAuthResponse(response.data);
 }
 
 export async function requestLogout(): Promise<void> {
-  await apiClient.post('/auth/dashboard/logout')
+	await apiClient.post(ApiEndpoint.AuthDashboardLogout);
 }
 
 export async function requestCurrentSession() {
-  const response = await apiClient.get<AuthResponseApiRecord>('/auth/dashboard/session')
-  return normalizeAuthResponse(response.data)
+	const response = await apiClient.get<AuthResponseApiRecord>(
+		ApiEndpoint.AuthDashboardSession,
+	);
+	return normalizeAuthResponse(response.data);
 }
 
 export async function requestChangeMyPassword(input: {
-  currentPassword: string
-  newPassword: string
+	currentPassword: string;
+	newPassword: string;
 }) {
-  const response = await apiClient.put<ChangeMyPasswordResponse>(
-    '/users/me/password',
-    input,
-  )
+	const response = await apiClient.put<ChangeMyPasswordResponse>(
+		ApiEndpoint.UsersMePassword,
+		input,
+	);
 
-  return response.data
+	return response.data;
 }
 
 function normalizeAuthResponse(response: AuthResponseApiRecord) {
-  const user = normalizeAuthUser(response.user)
+	const user = normalizeAuthUser(response.user);
 
-  if (!user) {
-    throw new Error('Invalid authentication response.')
-  }
+	if (!user) {
+		throw new Error("Invalid authentication response.");
+	}
 
-  return { user }
+	return { user };
 }
 
-function normalizeAuthUser(user: AuthUserApiRecord | null | undefined): AuthUser | null {
-  if (!user || typeof user.id !== 'string') {
-    return null
-  }
+function normalizeAuthUser(
+	user: AuthUserApiRecord | null | undefined,
+): AuthUser | null {
+	if (!user || typeof user.id !== "string") {
+		return null;
+	}
 
-  if (user.role !== 'admin' && user.role !== 'user') {
-    return null
-  }
+	if (user.role !== UserRole.Admin && user.role !== UserRole.User) {
+		return null;
+	}
 
-  const displayName = user.displayName ?? user.display_name
+	const displayName = user.displayName ?? user.display_name;
 
-  return {
-    id: user.id,
-    role: user.role,
-    displayName: typeof displayName === 'string' && displayName.trim() ? displayName : user.id,
-  }
+	return {
+		id: user.id,
+		role: user.role,
+		displayName:
+			typeof displayName === "string" && displayName.trim()
+				? displayName
+				: user.id,
+	};
 }

@@ -1,21 +1,30 @@
-import type { SortOrder, VideoSortBy, VideoStatus } from '#/api/videos'
+import {
+	DEFAULT_VIDEO_LIMIT,
+	DEFAULT_VIDEO_PAGE,
+	DEFAULT_VIDEO_SORT_BY,
+	DEFAULT_VIDEO_SORT_ORDER,
+	type SortOrder,
+	type VideoSortBy,
+	type VideoStatus,
+	VideoStatusFilter,
+} from "#/constants/video/video-constants";
 
 export const defaultRepositoriesSearch = {
-  repositoryId: '',
-}
+	repositoryId: "",
+};
 
 export const defaultRepositoryVideosSearch: {
-  page: number
-  limit: number
-  status: VideoStatus | 'ALL'
-  sortBy: VideoSortBy
-  sortOrder: SortOrder
-  contributorUserId: string
+	page: number;
+	limit: number;
+	status: VideoStatus | VideoStatusFilter;
+	sortBy: VideoSortBy;
+	sortOrder: SortOrder;
+	contributorUserId: string;
 } = {
-  page: 1,
-  limit: 20,
-  status: 'ALL',
-  sortBy: 'recorded_at',
-  sortOrder: 'desc',
-  contributorUserId: '',
-}
+	page: DEFAULT_VIDEO_PAGE,
+	limit: DEFAULT_VIDEO_LIMIT,
+	status: VideoStatusFilter.All,
+	sortBy: DEFAULT_VIDEO_SORT_BY,
+	sortOrder: DEFAULT_VIDEO_SORT_ORDER,
+	contributorUserId: "",
+};

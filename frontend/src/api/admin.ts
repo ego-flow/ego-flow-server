@@ -1,5 +1,12 @@
 import { apiClient } from "#/api/client";
+import { ApiEndpoint } from "#/constants/api/api-constants";
 import type { UserRole } from "#/lib/auth-session";
+import {
+	adminUserDeleteReadinessPath,
+	adminUserPath,
+	adminUserPermanentDeletePath,
+	adminUserResetPasswordPath,
+} from "#/utils/api-paths";
 
 export interface AdminUser {
 	id: string;
@@ -51,7 +58,7 @@ export async function requestAdminUsers() {
 			createdAt: string;
 			is_active: boolean;
 		}>;
-	}>("/admin/users");
+	}>(ApiEndpoint.AdminUsers);
 
 	return response.data.users.map((user) => ({
 		id: user.id,
@@ -67,7 +74,7 @@ export async function requestCreateUser(input: {
 	password: string;
 	displayName: string;
 }) {
-	const response = await apiClient.post("/admin/users", {
+	const response = await apiClient.post(ApiEndpoint.AdminUsers, {
 		id: input.id,
 		password: input.password,
 		displayName: input.displayName.trim() || undefined,
@@ -80,20 +87,15 @@ export async function requestResetUserPassword(
 	userId: string,
 	newPassword: string,
 ) {
-	const response = await apiClient.put(
-		`/admin/users/${encodeURIComponent(userId)}/reset-password`,
-		{
-			newPassword,
-		},
-	);
+	const response = await apiClient.put(adminUserResetPasswordPath(userId), {
+		newPassword,
+	});
 
 	return response.data;
 }
 
 export async function requestDeactivateUser(userId: string) {
-	const response = await apiClient.delete(
-		`/admin/users/${encodeURIComponent(userId)}`,
-	);
+	const response = await apiClient.delete(adminUserPath(userId));
 	return response.data;
 }
 
@@ -107,7 +109,7 @@ export async function requestUserDeleteReadiness(userId: string) {
 			repository_membership_count: number;
 			recording_session_count: number;
 		};
-	}>(`/admin/users/${encodeURIComponent(userId)}/delete-readiness`);
+	}>(adminUserDeleteReadinessPath(userId));
 
 	return {
 		userId: response.data.user_id,
@@ -123,9 +125,7 @@ export async function requestUserDeleteReadiness(userId: string) {
 }
 
 export async function requestPermanentDeleteUser(userId: string) {
-	const response = await apiClient.delete(
-		`/admin/users/${encodeURIComponent(userId)}/permanent`,
-	);
+	const response = await apiClient.delete(adminUserPermanentDeletePath(userId));
 	return response.data;
 }
 
@@ -146,7 +146,7 @@ export async function requestAdminSettings() {
 				}>;
 			}>;
 		};
-	}>("/admin/settings");
+	}>(ApiEndpoint.AdminSettings);
 
 	return {
 		targetDirectory: response.data.settings.target_directory,

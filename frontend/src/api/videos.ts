@@ -1,284 +1,321 @@
-import type { QueryClient } from '@tanstack/react-query'
+import { apiClient, resolveBackendUrl } from "#/api/client";
+import {
+	CONTENT_DISPOSITION_ENCODED_FILENAME_PATTERN,
+	CONTENT_DISPOSITION_PLAIN_FILENAME_PATTERN,
+	CONTENT_TYPE_EXTENSION_MAP,
+	DEFAULT_VIDEO_EXTENSION,
+	DEFAULT_VIDEO_FILENAME_BASE,
+	DEFAULT_VIDEO_LIMIT,
+	DEFAULT_VIDEO_PAGE,
+	DEFAULT_VIDEO_SORT_BY,
+	DEFAULT_VIDEO_SORT_ORDER,
+	FILENAME_EXTENSION_PATTERN,
+	type SortOrder,
+	TRIM_DASH_PATTERN,
+	UNSAFE_FILENAME_CHARS_PATTERN,
+	type VideoSortBy,
+	type VideoStatus,
+	VideoStatusFilter,
+} from "#/constants/video/video-constants";
+import {
+	repositoryVideoDownloadPath,
+	repositoryVideoPath,
+	repositoryVideoStatusPath,
+	repositoryVideosPath,
+} from "#/utils/api-paths";
 
-import { apiClient, resolveBackendUrl } from '#/api/client'
-
-export type VideoStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
-export type VideoSortBy = 'recorded_at' | 'duration_sec' | 'size_bytes'
-export type SortOrder = 'asc' | 'desc'
+export {
+	SortOrder,
+	VideoSortBy,
+	VideoStatus,
+	VideoStatusFilter,
+} from "#/constants/video/video-constants";
 
 export interface VideoListFilters {
-  page?: number
-  limit?: number
-  status?: VideoStatus | 'ALL'
-  sortBy?: VideoSortBy
-  sortOrder?: SortOrder
-  contributorUserId?: string
+	page?: number;
+	limit?: number;
+	status?: VideoStatus | VideoStatusFilter;
+	sortBy?: VideoSortBy;
+	sortOrder?: SortOrder;
+	contributorUserId?: string;
 }
 
 interface RepositoryVideoApiRecord {
-  id: string
-  repository_id: string
-  repository_name: string
-  owner_id: string
-  status: VideoStatus
-  duration_sec: number | null
-  resolution_width: number | null
-  resolution_height: number | null
-  fps: number | null
-  codec: string | null
-  recorded_at: string | null
-  size_bytes: number | null
-  contributor_user_id: string | null
-  contributor_display_name: string | null
-  thumbnail_url: string | null
-  dashboard_video_url?: string | null
-  scene_summary: string | null
-  clip_segments: unknown
-  created_at: string
+	id: string;
+	repository_id: string;
+	repository_name: string;
+	owner_id: string;
+	status: VideoStatus;
+	duration_sec: number | null;
+	resolution_width: number | null;
+	resolution_height: number | null;
+	fps: number | null;
+	codec: string | null;
+	recorded_at: string | null;
+	size_bytes: number | null;
+	contributor_user_id: string | null;
+	contributor_display_name: string | null;
+	thumbnail_url: string | null;
+	dashboard_video_url?: string | null;
+	scene_summary: string | null;
+	clip_segments: unknown;
+	created_at: string;
 }
 
 interface VideoListApiResponse {
-  total: number
-  page: number
-  limit: number
-  data: RepositoryVideoApiRecord[]
-  contributors: Array<{
-    user_id: string
-    display_name: string
-    video_count: number
-    latest_recorded_at: string | null
-  }>
+	total: number;
+	page: number;
+	limit: number;
+	data: RepositoryVideoApiRecord[];
+	contributors: Array<{
+		user_id: string;
+		display_name: string;
+		video_count: number;
+		latest_recorded_at: string | null;
+	}>;
 }
 
 export interface VideoContributor {
-  userId: string
-  displayName: string
-  videoCount: number
-  latestRecordedAt: string | null
+	userId: string;
+	displayName: string;
+	videoCount: number;
+	latestRecordedAt: string | null;
 }
 
 export interface VideoRecord {
-  id: string
-  repositoryId: string
-  repositoryName: string
-  ownerId: string
-  status: VideoStatus
-  durationSec: number | null
-  resolutionWidth: number | null
-  resolutionHeight: number | null
-  fps: number | null
-  codec: string | null
-  recordedAt: string | null
-  sizeBytes: number | null
-  contributorUserId: string | null
-  contributorDisplayName: string | null
-  thumbnailUrl: string | null
-  dashboardVideoUrl: string | null
-  sceneSummary: string | null
-  clipSegments: unknown
-  createdAt: string
+	id: string;
+	repositoryId: string;
+	repositoryName: string;
+	ownerId: string;
+	status: VideoStatus;
+	durationSec: number | null;
+	resolutionWidth: number | null;
+	resolutionHeight: number | null;
+	fps: number | null;
+	codec: string | null;
+	recordedAt: string | null;
+	sizeBytes: number | null;
+	contributorUserId: string | null;
+	contributorDisplayName: string | null;
+	thumbnailUrl: string | null;
+	dashboardVideoUrl: string | null;
+	sceneSummary: string | null;
+	clipSegments: unknown;
+	createdAt: string;
 }
 
 export interface VideoListResponse {
-  total: number
-  page: number
-  limit: number
-  contributors: VideoContributor[]
-  data: VideoRecord[]
+	total: number;
+	page: number;
+	limit: number;
+	contributors: VideoContributor[];
+	data: VideoRecord[];
 }
 
 export interface VideoStatusResponse {
-  id: string
-  repositoryId: string
-  status: VideoStatus
-  progress: number
-  errorMessage: string | null
-  processingStartedAt: string | null
-  processingCompletedAt: string | null
+	id: string;
+	repositoryId: string;
+	status: VideoStatus;
+	progress: number;
+	errorMessage: string | null;
+	processingStartedAt: string | null;
+	processingCompletedAt: string | null;
 }
 
 export interface VideoDownloadResponse {
-  blob: Blob
-  fileName: string
-}
-
-const CONTENT_TYPE_EXTENSION_MAP: Record<string, string> = {
-  'video/mp4': 'mp4',
-  'video/webm': 'webm',
-  'video/quicktime': 'mov',
-  'video/x-matroska': 'mkv',
+	blob: Blob;
+	fileName: string;
 }
 
 function sanitizeFilenamePart(value: string | null | undefined) {
-  const sanitized = (value ?? '')
-    .trim()
-    .replace(/[^a-zA-Z0-9._-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+	const sanitized = (value ?? "")
+		.trim()
+		.replace(UNSAFE_FILENAME_CHARS_PATTERN, "-")
+		.replace(TRIM_DASH_PATTERN, "");
 
-  return sanitized || 'video'
+	return sanitized || DEFAULT_VIDEO_FILENAME_BASE;
 }
 
 function inferExtension(contentType: string | null | undefined) {
-  const normalized = contentType?.split(';', 1)[0]?.trim().toLowerCase() ?? ''
-  return CONTENT_TYPE_EXTENSION_MAP[normalized] ?? 'mp4'
+	const normalized = contentType?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+	return CONTENT_TYPE_EXTENSION_MAP[normalized] ?? DEFAULT_VIDEO_EXTENSION;
 }
 
 function ensureFilenameExtension(fileName: string, extension: string) {
-  return /\.[a-zA-Z0-9]+$/.test(fileName) ? fileName : `${fileName}.${extension}`
+	return FILENAME_EXTENSION_PATTERN.test(fileName)
+		? fileName
+		: `${fileName}.${extension}`;
 }
 
 function getFilenameFromContentDisposition(header: string | null | undefined) {
-  if (!header) {
-    return null
-  }
+	if (!header) {
+		return null;
+	}
 
-  const encodedMatch = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)
-  if (encodedMatch?.[1]) {
-    try {
-      return decodeURIComponent(encodedMatch[1].trim().replace(/^"|"$/g, ''))
-    } catch {
-      return encodedMatch[1].trim().replace(/^"|"$/g, '')
-    }
-  }
+	const encodedMatch = header.match(
+		CONTENT_DISPOSITION_ENCODED_FILENAME_PATTERN,
+	);
+	if (encodedMatch?.[1]) {
+		try {
+			return decodeURIComponent(encodedMatch[1].trim().replace(/^"|"$/g, ""));
+		} catch {
+			return encodedMatch[1].trim().replace(/^"|"$/g, "");
+		}
+	}
 
-  const plainMatch = header.match(/filename\s*=\s*("?)([^";]+)\1/i)
-  return plainMatch?.[2]?.trim() || null
+	const plainMatch = header.match(CONTENT_DISPOSITION_PLAIN_FILENAME_PATTERN);
+	return plainMatch?.[2]?.trim() || null;
 }
 
 function getFilenameFromResponseUrl(request: unknown) {
-  const responseUrl =
-    typeof request === 'object' && request && 'responseURL' in request
-      ? request.responseURL
-      : null
+	const responseUrl =
+		typeof request === "object" && request && "responseURL" in request
+			? request.responseURL
+			: null;
 
-  if (typeof responseUrl !== 'string' || !responseUrl) {
-    return null
-  }
+	if (typeof responseUrl !== "string" || !responseUrl) {
+		return null;
+	}
 
-  try {
-    const pathname = new URL(responseUrl).pathname
-    const lastSegment = pathname.split('/').filter(Boolean).pop()
-    return lastSegment ? decodeURIComponent(lastSegment) : null
-  } catch {
-    return null
-  }
+	try {
+		const pathname = new URL(responseUrl).pathname;
+		const lastSegment = pathname.split("/").filter(Boolean).pop();
+		return lastSegment ? decodeURIComponent(lastSegment) : null;
+	} catch {
+		return null;
+	}
 }
 
 function normalizeVideo(video: RepositoryVideoApiRecord): VideoRecord {
-  return {
-    id: video.id,
-    repositoryId: video.repository_id,
-    repositoryName: video.repository_name,
-    ownerId: video.owner_id,
-    status: video.status,
-    durationSec: video.duration_sec,
-    resolutionWidth: video.resolution_width,
-    resolutionHeight: video.resolution_height,
-    fps: video.fps,
-    codec: video.codec,
-    recordedAt: video.recorded_at,
-    sizeBytes: video.size_bytes,
-    contributorUserId: video.contributor_user_id,
-    contributorDisplayName: video.contributor_display_name,
-    thumbnailUrl: resolveBackendUrl(video.thumbnail_url),
-    dashboardVideoUrl: resolveBackendUrl(video.dashboard_video_url ?? null),
-    sceneSummary: video.scene_summary,
-    clipSegments: video.clip_segments,
-    createdAt: video.created_at,
-  }
+	return {
+		id: video.id,
+		repositoryId: video.repository_id,
+		repositoryName: video.repository_name,
+		ownerId: video.owner_id,
+		status: video.status,
+		durationSec: video.duration_sec,
+		resolutionWidth: video.resolution_width,
+		resolutionHeight: video.resolution_height,
+		fps: video.fps,
+		codec: video.codec,
+		recordedAt: video.recorded_at,
+		sizeBytes: video.size_bytes,
+		contributorUserId: video.contributor_user_id,
+		contributorDisplayName: video.contributor_display_name,
+		thumbnailUrl: resolveBackendUrl(video.thumbnail_url),
+		dashboardVideoUrl: resolveBackendUrl(video.dashboard_video_url ?? null),
+		sceneSummary: video.scene_summary,
+		clipSegments: video.clip_segments,
+		createdAt: video.created_at,
+	};
 }
 
-export async function requestVideos(repositoryId: string, filters: VideoListFilters) {
-  const response = await apiClient.get<VideoListApiResponse>(
-    `/repositories/${repositoryId}/videos`,
-    {
-      params: {
-        page: filters.page ?? 1,
-        limit: filters.limit ?? 20,
-        status:
-          filters.status && filters.status !== 'ALL' ? filters.status : undefined,
-        sort_by: filters.sortBy ?? 'recorded_at',
-        sort_order: filters.sortOrder ?? 'desc',
-        contributor_user_id: filters.contributorUserId?.trim() || undefined,
-      },
-    },
-  )
+export async function requestVideos(
+	repositoryId: string,
+	filters: VideoListFilters,
+) {
+	const response = await apiClient.get<VideoListApiResponse>(
+		repositoryVideosPath(repositoryId),
+		{
+			params: {
+				page: filters.page ?? DEFAULT_VIDEO_PAGE,
+				limit: filters.limit ?? DEFAULT_VIDEO_LIMIT,
+				status:
+					filters.status && filters.status !== VideoStatusFilter.All
+						? filters.status
+						: undefined,
+				sort_by: filters.sortBy ?? DEFAULT_VIDEO_SORT_BY,
+				sort_order: filters.sortOrder ?? DEFAULT_VIDEO_SORT_ORDER,
+				contributor_user_id: filters.contributorUserId?.trim() || undefined,
+			},
+		},
+	);
 
-  return {
-    total: response.data.total,
-    page: response.data.page,
-    limit: response.data.limit,
-    contributors: response.data.contributors.map((contributor) => ({
-      userId: contributor.user_id,
-      displayName: contributor.display_name,
-      videoCount: contributor.video_count,
-      latestRecordedAt: contributor.latest_recorded_at,
-    })),
-    data: response.data.data.map(normalizeVideo),
-  } satisfies VideoListResponse
+	return {
+		total: response.data.total,
+		page: response.data.page,
+		limit: response.data.limit,
+		contributors: response.data.contributors.map((contributor) => ({
+			userId: contributor.user_id,
+			displayName: contributor.display_name,
+			videoCount: contributor.video_count,
+			latestRecordedAt: contributor.latest_recorded_at,
+		})),
+		data: response.data.data.map(normalizeVideo),
+	} satisfies VideoListResponse;
 }
 
-export async function requestVideoStatus(repositoryId: string, videoId: string) {
-  const response = await apiClient.get<{
-    id: string
-    repository_id: string
-    status: VideoStatus
-    progress: number
-    error_message: string | null
-    processing_started_at: string | null
-    processing_completed_at: string | null
-  }>(`/repositories/${repositoryId}/videos/${videoId}/status`)
+export async function requestVideoStatus(
+	repositoryId: string,
+	videoId: string,
+) {
+	const response = await apiClient.get<{
+		id: string;
+		repository_id: string;
+		status: VideoStatus;
+		progress: number;
+		error_message: string | null;
+		processing_started_at: string | null;
+		processing_completed_at: string | null;
+	}>(repositoryVideoStatusPath(repositoryId, videoId));
 
-  return {
-    id: response.data.id,
-    repositoryId: response.data.repository_id,
-    status: response.data.status,
-    progress: response.data.progress,
-    errorMessage: response.data.error_message,
-    processingStartedAt: response.data.processing_started_at,
-    processingCompletedAt: response.data.processing_completed_at,
-  } satisfies VideoStatusResponse
+	return {
+		id: response.data.id,
+		repositoryId: response.data.repository_id,
+		status: response.data.status,
+		progress: response.data.progress,
+		errorMessage: response.data.error_message,
+		processingStartedAt: response.data.processing_started_at,
+		processingCompletedAt: response.data.processing_completed_at,
+	} satisfies VideoStatusResponse;
 }
 
-export async function requestVideoDetail(repositoryId: string, videoId: string) {
-  const response = await apiClient.get<RepositoryVideoApiRecord>(
-    `/repositories/${repositoryId}/videos/${videoId}`,
-  )
-  return normalizeVideo(response.data)
+export async function requestVideoDetail(
+	repositoryId: string,
+	videoId: string,
+) {
+	const response = await apiClient.get<RepositoryVideoApiRecord>(
+		repositoryVideoPath(repositoryId, videoId),
+	);
+	return normalizeVideo(response.data);
 }
 
-export async function requestDeleteVideo(repositoryId: string, videoId: string) {
-  const response = await apiClient.delete<{ id: string; deleted: boolean }>(
-    `/repositories/${repositoryId}/videos/${videoId}`,
-  )
+export async function requestDeleteVideo(
+	repositoryId: string,
+	videoId: string,
+) {
+	const response = await apiClient.delete<{ id: string; deleted: boolean }>(
+		repositoryVideoPath(repositoryId, videoId),
+	);
 
-  return response.data
+	return response.data;
 }
 
 export async function requestVideoDownload(
-  repositoryId: string,
-  videoId: string,
-  repositoryName?: string | null,
+	repositoryId: string,
+	videoId: string,
+	repositoryName?: string | null,
 ) {
-  const response = await apiClient.get<Blob>(`/repositories/${repositoryId}/videos/${videoId}/download`, {
-    responseType: 'blob',
-  })
+	const response = await apiClient.get<Blob>(
+		repositoryVideoDownloadPath(repositoryId, videoId),
+		{
+			responseType: "blob",
+		},
+	);
 
-  const extension = inferExtension(response.headers['content-type'])
-  const fallbackFileName = `${sanitizeFilenamePart(repositoryName)}-${videoId}.${extension}`
-  const fileName = ensureFilenameExtension(
-    getFilenameFromContentDisposition(response.headers['content-disposition']) ??
-      getFilenameFromResponseUrl(response.request) ??
-      fallbackFileName,
-    extension,
-  )
+	const extension = inferExtension(response.headers["content-type"]);
+	const fallbackFileName = `${sanitizeFilenamePart(repositoryName)}-${videoId}.${extension}`;
+	const fileName = ensureFilenameExtension(
+		getFilenameFromContentDisposition(
+			response.headers["content-disposition"],
+		) ??
+			getFilenameFromResponseUrl(response.request) ??
+			fallbackFileName,
+		extension,
+	);
 
-  return {
-    blob: response.data,
-    fileName,
-  } satisfies VideoDownloadResponse
-}
-
-export function primeVideoDetailCache(queryClient: QueryClient, video: VideoRecord) {
-  queryClient.setQueryData(['video-detail', video.repositoryId, video.id], video)
+	return {
+		blob: response.data,
+		fileName,
+	} satisfies VideoDownloadResponse;
 }
