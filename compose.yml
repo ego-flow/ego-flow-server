@@ -55,7 +55,7 @@ services:
       - "${TARGET_DIRECTORY}/raw:/data/raw"
       - "${TARGET_DIRECTORY}/datasets:${TARGET_DIRECTORY}/datasets"
     command: >
-      sh -c "npm run prisma:migrate:deploy &&
+      sh -c "npm run prisma:push &&
       npm run db:seed:prod &&
       npm run start"
     healthcheck:
