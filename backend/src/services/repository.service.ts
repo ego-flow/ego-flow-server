@@ -498,7 +498,7 @@ export class RepositoryService {
         const memberUser = userMap.get(membership.userId);
         return {
           user_id: membership.userId,
-          display_name: memberUser?.displayName ?? null,
+          display_name: memberUser?.displayName ?? membership.userId,
           is_active: memberUser?.isActive ?? false,
           role: toAppRepoRole(membership.role),
           is_owner: membership.userId === access.repository.ownerId,

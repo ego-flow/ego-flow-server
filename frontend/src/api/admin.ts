@@ -4,7 +4,7 @@ import type { UserRole } from "#/lib/auth-session";
 export interface AdminUser {
 	id: string;
 	role: UserRole;
-	displayName: string | null;
+	displayName: string;
 	createdAt: string;
 	isActive: boolean;
 }
@@ -47,7 +47,7 @@ export async function requestAdminUsers() {
 		users: Array<{
 			id: string;
 			role: UserRole;
-			displayName: string | null;
+			displayName: string;
 			createdAt: string;
 			is_active: boolean;
 		}>;
@@ -70,7 +70,7 @@ export async function requestCreateUser(input: {
 	const response = await apiClient.post("/admin/users", {
 		id: input.id,
 		password: input.password,
-		displayName: input.displayName || undefined,
+		displayName: input.displayName.trim() || undefined,
 	});
 
 	return response.data;

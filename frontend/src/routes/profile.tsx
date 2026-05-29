@@ -96,7 +96,7 @@ function ProfilePage() {
       <section className="island-shell mx-auto max-w-2xl rounded-2xl p-6 shadow-xl sm:p-8">
         <p className="island-kicker mb-2">Profile</p>
         <h1 className="display-title text-3xl font-bold text-[var(--sea-ink)] sm:text-4xl">
-          {session?.user.displayName || session?.user.id}
+          {session?.user.displayName}
         </h1>
         <div className="mt-6 grid gap-3 text-sm text-[var(--sea-ink-soft)] sm:text-base">
           <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">

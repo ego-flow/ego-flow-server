@@ -279,7 +279,7 @@ function RepositorySettingsPage() {
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="text-lg font-semibold text-[var(--sea-ink)]">
-                              {member.displayName || member.userId}
+                              {member.displayName}
                             </h3>
                             <span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1 text-xs text-[var(--sea-ink-soft)]">
                               {member.role}

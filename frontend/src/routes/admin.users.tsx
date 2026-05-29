@@ -344,7 +344,7 @@ function AdminUsersPage() {
 														<div>
 															<div className="flex flex-wrap items-center gap-2">
 																<h2 className="text-xl font-semibold text-[var(--sea-ink)]">
-																	{user.displayName || user.id}
+																	{user.displayName}
 																</h2>
 																<span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--sea-ink-soft)]">
 																	{user.role}
@@ -522,7 +522,7 @@ function AdminUsersPage() {
 									Permanent delete
 								</p>
 								<h2 className="mt-2 text-2xl font-semibold text-[var(--sea-ink)]">
-									{deleteDialogUser.displayName || deleteDialogUser.id}
+									{deleteDialogUser.displayName}
 								</h2>
 								<p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
 									Permanent deletion is only allowed after every remaining user

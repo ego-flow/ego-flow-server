@@ -14,7 +14,7 @@ type UserRecord = {
   id: string;
   role: UserRole;
   isActive: boolean;
-  displayName: string | null;
+  displayName: string;
 };
 
 type ApiTokenRecord = {

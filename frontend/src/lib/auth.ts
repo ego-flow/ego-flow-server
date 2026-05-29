@@ -81,6 +81,6 @@ function normalizeAuthUser(user: AuthUserApiRecord | null | undefined): AuthUser
   return {
     id: user.id,
     role: user.role,
-    displayName: typeof displayName === 'string' ? displayName : null,
+    displayName: typeof displayName === 'string' && displayName.trim() ? displayName : user.id,
   }
 }

@@ -3,7 +3,7 @@ export type UserRole = 'admin' | 'user'
 export interface AuthUser {
   id: string
   role: UserRole
-  displayName: string | null
+  displayName: string
 }
 
 export interface AuthSession {

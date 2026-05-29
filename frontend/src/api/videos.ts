@@ -44,7 +44,7 @@ interface VideoListApiResponse {
   data: RepositoryVideoApiRecord[]
   contributors: Array<{
     user_id: string
-    display_name: string | null
+    display_name: string
     video_count: number
     latest_recorded_at: string | null
   }>
@@ -52,7 +52,7 @@ interface VideoListApiResponse {
 
 export interface VideoContributor {
   userId: string
-  displayName: string | null
+  displayName: string
   videoCount: number
   latestRecordedAt: string | null
 }

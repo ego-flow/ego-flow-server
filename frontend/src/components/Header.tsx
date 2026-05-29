@@ -52,7 +52,7 @@ export default function Header() {
 
   const user = session?.user ?? null
   const isAdmin = user?.role === 'admin'
-  const identityLabel = user?.displayName || user?.id
+  const identityLabel = user?.displayName
   const repositoryTitle = currentRepositoryId ? repositoryQuery.data?.name ?? 'Repository' : null
   const repositoriesActive = isPathActive(pathname, '/repositories')
   const liveActive = isPathActive(pathname, '/live')

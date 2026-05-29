@@ -10,7 +10,7 @@ export interface AuthTokenPayload {
 export interface AuthenticatedUser {
   userId: string;
   role: AppUserRole;
-  displayName: string | null;
+  displayName: string;
 }
 
 export type AuthCredentialKind = "dashboard" | "app" | "python";

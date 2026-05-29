@@ -37,10 +37,15 @@ const maskSecretPresence = (value: string | undefined): string =>
 
 const toUserRole = (role: UserRole): "admin" | "user" => (role === UserRole.admin ? "admin" : "user");
 
+const resolveDisplayName = (userId: string, displayName: string | undefined) => {
+  const normalized = displayName?.trim();
+  return normalized || userId;
+};
+
 const toUserResponse = (user: {
   id: string;
   role: UserRole;
-  displayName: string | null;
+  displayName: string;
   createdAt: Date;
   isActive: boolean;
 }) => ({
@@ -225,13 +230,14 @@ export class AdminService {
     }
 
     const passwordHash = await bcrypt.hash(input.password, 10);
+    const displayName = resolveDisplayName(input.id, input.displayName);
     const user = await prisma.user.create({
       data: {
         id: input.id,
         passwordHash,
         role: UserRole.user,
         isActive: true,
-        displayName: input.displayName ?? null,
+        displayName,
       },
       select: {
         id: true,

@@ -38,7 +38,7 @@ type RepositoryVideoRecord = {
 
 type RepositoryContributor = {
   userId: string;
-  displayName: string | null;
+  displayName: string;
   videoCount: number;
   latestRecordedAt: Date | null;
 };
@@ -113,7 +113,7 @@ const toRepoVideoResponse = (
   targetDirectory: string,
   video: RepositoryVideoRecord,
   repository: VideoRepositoryContext,
-  displayNamesByUserId: Map<string, string | null>,
+  displayNamesByUserId: Map<string, string>,
   options?: { includeDashboardVideoUrl?: boolean },
 ) => {
   return {
@@ -130,7 +130,7 @@ const toRepoVideoResponse = (
     recorded_at: video.recordedAt ? video.recordedAt.toISOString() : null,
     size_bytes: toSizeBytes(video.sizeBytes ?? video.vlmSizeBytes),
     contributor_user_id: video.recorder,
-    contributor_display_name: video.recorder ? displayNamesByUserId.get(video.recorder) ?? null : null,
+    contributor_display_name: video.recorder ? displayNamesByUserId.get(video.recorder) ?? video.recorder : null,
     thumbnail_url: video.thumbnailPath ? toRepositoryThumbnailUrl(targetDirectory, video) : null,
     ...(options?.includeDashboardVideoUrl
       ? { dashboard_video_url: toSignedFileUrl(targetDirectory, video.dashboardVideoPath) }
@@ -237,10 +237,10 @@ export class VideoService {
     );
   }
 
-  private async getUserDisplayNames(userIds: string[]) {
+  private async getUserDisplayNames(userIds: string[]): Promise<Map<string, string>> {
     const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
     if (uniqueUserIds.length === 0) {
-      return new Map<string, string | null>();
+      return new Map<string, string>();
     }
 
     const users = await prisma.user.findMany({
@@ -315,7 +315,7 @@ export class VideoService {
     return Array.from(contributorsByUserId.values())
       .map((contributor) => ({
         ...contributor,
-        displayName: displayNamesByUserId.get(contributor.userId) ?? null,
+        displayName: displayNamesByUserId.get(contributor.userId) ?? contributor.userId,
       }))
       .sort((left, right) => right.videoCount - left.videoCount || left.userId.localeCompare(right.userId));
   }

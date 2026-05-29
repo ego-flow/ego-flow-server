@@ -70,6 +70,29 @@ test("createUser returns 409 when the id already exists before create", async ()
   );
 });
 
+test("createUser defaults a blank displayName to the user id", async () => {
+  let createdDisplayName: string | null = null;
+  fakePrisma.user.create = async ({ data }: { data: { displayName: string } }) => {
+    createdDisplayName = data.displayName;
+    return {
+      id: "alice",
+      role: UserRole.user,
+      displayName: data.displayName,
+      createdAt: new Date("2026-04-25T00:00:00.000Z"),
+      isActive: true,
+    };
+  };
+
+  const response = await service.createUser({
+    id: "alice",
+    password: "changeme123",
+    displayName: "",
+  });
+
+  assert.equal(createdDisplayName, "alice");
+  assert.equal(response.user.displayName, "alice");
+});
+
 test("createUser lets Prisma unique-constraint races surface to the error middleware", async () => {
   fakePrisma.user.create = async () => {
     throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed on the fields: (`id`)", {

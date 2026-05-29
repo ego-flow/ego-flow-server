@@ -20,7 +20,7 @@ export interface AdminApiToken {
   id: string
   userId: string
   userRole: UserRole
-  displayName: string | null
+  displayName: string
   name: string
   lastUsedAt: string | null
   createdAt: string
@@ -78,7 +78,7 @@ export async function requestAdminTokens() {
       id: string
       user_id: string
       user_role: UserRole
-      display_name: string | null
+      display_name: string
       name: string
       last_used_at: string | null
       created_at: string

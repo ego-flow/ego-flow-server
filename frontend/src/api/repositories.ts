@@ -17,7 +17,7 @@ export interface RepositoryRecord {
 
 export interface RepositoryMember {
   userId: string
-  displayName: string | null
+  displayName: string
   isActive: boolean
   role: RepositoryRole
   isOwner: boolean
@@ -122,7 +122,7 @@ export async function requestRepositoryMembers(repoId: string) {
   const response = await apiClient.get<{
     members: Array<{
       user_id: string
-      display_name: string | null
+      display_name: string
       is_active: boolean
       role: RepositoryRole
       is_owner: boolean

@@ -63,7 +63,7 @@ export const openApiDocument = {
         properties: {
           id: { type: "string", example: "admin" },
           role: { type: "string", enum: ["admin", "user"] },
-          displayName: { type: ["string", "null"], example: "Administrator" },
+          displayName: { type: "string", example: "Administrator" },
         },
       },
       LoginResponse: {
@@ -107,7 +107,7 @@ export const openApiDocument = {
             properties: {
               id: { type: "string", example: "alice" },
               role: { type: "string", enum: ["admin", "user"] },
-              display_name: { type: ["string", "null"], example: "Alice Kim" },
+              display_name: { type: "string", example: "Alice Kim" },
             },
           },
         },
@@ -222,7 +222,7 @@ export const openApiDocument = {
         required: ["user_id", "display_name", "is_active", "role", "is_owner", "created_at"],
         properties: {
           user_id: { type: "string", example: "bob" },
-          display_name: { type: ["string", "null"], example: "Bob" },
+          display_name: { type: "string", example: "Bob" },
           is_active: { type: "boolean" },
           role: { type: "string", enum: ["read", "maintain", "admin"] },
           is_owner: { type: "boolean" },
@@ -535,7 +535,7 @@ export const openApiDocument = {
               required: ["user_id", "display_name", "video_count", "latest_recorded_at"],
               properties: {
                 user_id: { type: "string", example: "alice" },
-                display_name: { type: ["string", "null"], example: "Alice Kim" },
+                display_name: { type: "string", example: "Alice Kim" },
                 video_count: { type: "integer", minimum: 0 },
                 latest_recorded_at: { type: ["string", "null"], format: "date-time" },
               },
@@ -629,7 +629,7 @@ export const openApiDocument = {
         properties: {
           id: { type: "string" },
           role: { type: "string", enum: ["admin", "user"] },
-          displayName: { type: ["string", "null"] },
+          displayName: { type: "string" },
           createdAt: { type: "string", format: "date-time" },
           is_active: { type: "boolean" },
         },
@@ -640,7 +640,7 @@ export const openApiDocument = {
         properties: {
           id: { type: "string", pattern: "^[a-z0-9_]+$", maxLength: 64 },
           password: { type: "string" },
-          displayName: { type: "string", minLength: 1, maxLength: 255 },
+          displayName: { type: "string", maxLength: 255 },
         },
       },
       UsersResponse: {
@@ -744,7 +744,7 @@ export const openApiDocument = {
           id: { type: "string", format: "uuid" },
           user_id: { type: "string", example: "alice" },
           user_role: { type: "string", enum: ["admin", "user"] },
-          display_name: { type: ["string", "null"] },
+          display_name: { type: "string" },
           name: { type: "string" },
           last_used_at: { type: ["string", "null"], format: "date-time" },
           created_at: { type: "string", format: "date-time" },

@@ -71,7 +71,7 @@ type VideoRow = {
 };
 
 const videos = new Map<string, VideoRow>();
-const users = new Map<string, { id: string; displayName: string | null }>();
+const users = new Map<string, { id: string; displayName: string }>();
 
 const pickFields = (video: VideoRow, select?: Record<string, unknown>) => {
   if (!select) {
