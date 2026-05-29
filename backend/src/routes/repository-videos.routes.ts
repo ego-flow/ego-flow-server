@@ -1,6 +1,4 @@
-import fs from "node:fs";
 import fsp from "node:fs/promises";
-import { pipeline } from "node:stream/promises";
 
 import type { Response } from "express";
 import { Router } from "express";
@@ -134,32 +132,6 @@ router.get(
     const params = req.params as RepoVideoParamsInput;
     const video = await videoService.getRepositoryVideoDownload(params.repoId, params.videoId);
     await redirectToSignedDownload(res, video);
-  }),
-);
-
-router.get(
-  "/:videoId/thumbnail",
-  requireDashboardOrPython,
-  repoAccess({ minRole: "read" }),
-  validate(repoVideoParamsSchema, "params"),
-  asyncHandler(async (req, res) => {
-    const params = req.params as RepoVideoParamsInput;
-    const video = await videoService.getRepositoryVideoThumbnail(params.repoId, params.videoId);
-
-    try {
-      await fsp.stat(video.path);
-    } catch (error) {
-      if (isMissingFileError(error)) {
-        throw NotFound("Thumbnail is not available.");
-      }
-
-      throw error;
-    }
-
-    res.setHeader("Content-Type", "image/jpeg");
-    res.setHeader("Cache-Control", "public, max-age=86400");
-    res.status(200);
-    await pipeline(fs.createReadStream(video.path), res);
   }),
 );
 

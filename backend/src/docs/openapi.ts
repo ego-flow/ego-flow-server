@@ -755,7 +755,7 @@ export const openApiDocument = {
         type: "object",
         required: ["download_url", "content_type"],
         properties: {
-          download_url: { type: "string", example: "/api/v1/repositories/{repoId}/videos/{videoId}/thumbnail" },
+          download_url: { type: "string", example: "/files/owner/repository/.thumbnails/video.jpg?signature=..." },
           content_type: { type: "string", example: "image/jpeg" },
         },
       },
@@ -1982,32 +1982,6 @@ export const openApiDocument = {
               Location: {
                 schema: { type: "string" },
                 description: "Signed `/files/*` URL for the requested video.",
-              },
-            },
-          },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
-          "404": { $ref: "#/components/responses/NotFound" },
-        },
-      },
-    },
-    "/repositories/{repoId}/videos/{videoId}/thumbnail": {
-      get: {
-        tags: ["Videos"],
-        summary: "Download a repository video thumbnail",
-        parameters: [
-          { $ref: "#/components/parameters/RepoId" },
-          { $ref: "#/components/parameters/VideoId" },
-        ],
-        responses: {
-          "200": {
-            description: "Thumbnail image stream",
-            headers: {
-              "Cache-Control": { schema: { type: "string", example: "public, max-age=86400" } },
-            },
-            content: {
-              "image/jpeg": {
-                schema: { type: "string", format: "binary" },
               },
             },
           },

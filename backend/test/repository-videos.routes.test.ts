@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import type { AddressInfo } from "node:net";
@@ -73,10 +72,8 @@ const originalVerifyDashboardSession = dashboardSessionService.verifySession;
 const originalAssertRepositoryAccess = repositoryService.assertRepositoryAccess;
 const originalListRepositoryVideos = videoService.listRepositoryVideos;
 const originalGetRepositoryVideoDownload = videoService.getRepositoryVideoDownload;
-const originalGetRepositoryVideoThumbnail = videoService.getRepositoryVideoThumbnail;
 const originalDeleteRepositoryVideo = videoService.deleteRepositoryVideo;
 
-let server: import("node:http").Server | null = null;
 const repoId = "11111111-1111-4111-8111-111111111111";
 const videoId = "22222222-2222-4222-8222-222222222222";
 const targetDirectory = getTargetDirectory();
@@ -87,12 +84,26 @@ const startServer = async () => {
   app.use("/api/v1/repositories/:repoId/videos", repositoryVideosRoutes);
   app.use(errorMiddleware);
 
-  server = await new Promise<import("node:http").Server>((resolve) => {
-    const listening = app.listen(0, "127.0.0.1", () => resolve(listening));
+  const listening = app.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve, reject) => {
+    listening.once("listening", () => resolve());
+    listening.once("error", reject);
   });
 
-  const { port } = server.address() as AddressInfo;
-  return `http://127.0.0.1:${port}`;
+  const { port } = listening.address() as AddressInfo;
+  return {
+    baseUrl: `http://127.0.0.1:${port}`,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        listening.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      }),
+  };
 };
 
 beforeEach(() => {
@@ -148,7 +159,6 @@ beforeEach(() => {
   }) as typeof repositoryService.assertRepositoryAccess;
   videoService.listRepositoryVideos = originalListRepositoryVideos;
   videoService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
-  videoService.getRepositoryVideoThumbnail = originalGetRepositoryVideoThumbnail;
   videoService.deleteRepositoryVideo = originalDeleteRepositoryVideo;
 });
 
@@ -161,25 +171,12 @@ afterEach(async () => {
   repositoryService.assertRepositoryAccess = originalAssertRepositoryAccess;
   videoService.listRepositoryVideos = originalListRepositoryVideos;
   videoService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
-  videoService.getRepositoryVideoThumbnail = originalGetRepositoryVideoThumbnail;
   videoService.deleteRepositoryVideo = originalDeleteRepositoryVideo;
 
-  if (server) {
-    await new Promise<void>((resolve, reject) => {
-      server?.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
-    });
-    server = null;
-  }
 });
 
-test("repo-scoped list uses repository context resolved by repoAccess", async () => {
-  const baseUrl = await startServer();
+test("repo-scoped list uses repository context resolved by repoAccess", { concurrency: false }, async () => {
+  const { baseUrl, close } = await startServer();
   let capturedRepositoryId = "";
   let capturedStatus = "";
 
@@ -194,26 +191,30 @@ test("repo-scoped list uses repository context resolved by repoAccess", async ()
     };
   }) as typeof videoService.listRepositoryVideos;
 
-  const response = await fetch(
-    `${baseUrl}/api/v1/repositories/${repoId}/videos?status=COMPLETED&page=2&limit=5`,
-    {
-      headers: { Cookie: "egoflow_session=dashboard-session" },
-    },
-  );
+  try {
+    const response = await fetch(
+      `${baseUrl}/api/v1/repositories/${repoId}/videos?status=COMPLETED&page=2&limit=5`,
+      {
+        headers: { Cookie: "egoflow_session=dashboard-session" },
+      },
+    );
 
-  assert.equal(response.status, 200);
-  assert.equal(capturedRepositoryId, repoId);
-  assert.equal(capturedStatus, "COMPLETED");
-  assert.deepEqual(await response.json(), {
-    total: 1,
-    page: 2,
-    limit: 5,
-    data: [],
-  });
+    assert.equal(response.status, 200);
+    assert.equal(capturedRepositoryId, repoId);
+    assert.equal(capturedStatus, "COMPLETED");
+    assert.deepEqual(await response.json(), {
+      total: 1,
+      page: 2,
+      limit: 5,
+      data: [],
+    });
+  } finally {
+    await close();
+  }
 });
 
-test("repo-scoped download accepts dashboard sessions and Python bearer tokens, then redirects to a signed file URL", async () => {
-  const baseUrl = await startServer();
+test("repo-scoped download accepts dashboard sessions and Python bearer tokens, then redirects to a signed file URL", { concurrency: false }, async () => {
+  const { baseUrl, close } = await startServer();
   const videoPath = path.join(targetDirectory, "alice", "daily-kitchen", ".codex-test", `${videoId}.mp4`);
 
   await fs.mkdir(path.dirname(videoPath), { recursive: true });
@@ -279,35 +280,19 @@ test("repo-scoped download accepts dashboard sessions and Python bearer tokens, 
       `alice/daily-kitchen/.codex-test/${videoId}.mp4`,
     );
   } finally {
+    await close();
     await fs.rm(videoPath, { force: true });
     await fs.rm(path.dirname(videoPath), { recursive: true, force: true });
   }
 });
 
-test("repo-scoped thumbnail requires allowed auth and DELETE still requires maintain role", async () => {
-  const baseUrl = await startServer();
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "egoflow-thumbnail-route-"));
-  const thumbnailPath = path.join(tempRoot, `${videoId}.jpg`);
-
-  await fs.writeFile(thumbnailPath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
-
-  videoService.getRepositoryVideoThumbnail = (async () => ({
-    id: videoId,
-    path: thumbnailPath,
-  })) as typeof videoService.getRepositoryVideoThumbnail;
+test("repo-scoped DELETE requires maintain role", { concurrency: false }, async () => {
+  const { baseUrl, close } = await startServer();
   videoService.deleteRepositoryVideo = (async () => {
     throw new Error("DELETE handler should not execute without maintain access");
   }) as typeof videoService.deleteRepositoryVideo;
 
   try {
-    const thumbnailResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/thumbnail`, {
-      headers: { Cookie: "egoflow_session=dashboard-session" },
-    });
-    assert.equal(thumbnailResponse.status, 200);
-    assert.equal(thumbnailResponse.headers.get("content-type"), "image/jpeg");
-    assert.equal(thumbnailResponse.headers.get("cache-control"), "public, max-age=86400");
-    assert.deepEqual(new Uint8Array(await thumbnailResponse.arrayBuffer()), new Uint8Array([0xff, 0xd8, 0xff, 0xd9]));
-
     const deleteResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}`, {
       method: "DELETE",
       headers: { Cookie: "egoflow_session=dashboard-session" },
@@ -315,6 +300,6 @@ test("repo-scoped thumbnail requires allowed auth and DELETE still requires main
     assert.equal(deleteResponse.status, 403);
     assert.equal((await deleteResponse.json()).error.code, "FORBIDDEN");
   } finally {
-    await fs.rm(tempRoot, { recursive: true, force: true });
+    await close();
   }
 });

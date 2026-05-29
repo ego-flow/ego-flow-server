@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Database, Eye, EyeOff, FolderOpen, Plus, RefreshCcw, Search, ShieldCheck, UserRound } from 'lucide-react'
+import { Database, Eye, EyeOff, FolderOpen, Plus, RefreshCcw, Search, ShieldCheck } from 'lucide-react'
 
 import { getApiErrorMessage } from '#/api/client'
 import { type RepositoryRecord, type RepositoryRole, requestRepositories } from '#/api/repositories'
@@ -48,8 +48,7 @@ function RepositoriesPage() {
     if (!normalizedQuery) {
       return true
     }
-    const haystack = `${repository.ownerId}/${repository.name}`.toLowerCase()
-    return haystack.includes(normalizedQuery) || repository.id.toLowerCase().includes(normalizedQuery)
+    return repository.name.toLowerCase().includes(normalizedQuery)
   })
 
   const applyFilter = async (next: string) => {
@@ -86,7 +85,7 @@ function RepositoriesPage() {
               id="repository-search"
               value={queryText}
               onChange={(event) => setQueryText(event.target.value)}
-              placeholder="Search repositories by owner, name, or id"
+              placeholder="Search repositories by name"
               className="h-10 pl-9"
             />
           </div>
@@ -168,22 +167,13 @@ function RepositoryRow({ repository }: { repository: RepositoryRecord }) {
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="text-sm font-semibold text-[var(--sea-ink-soft)]">{repository.ownerId}</span>
-            <span className="text-sm text-[var(--sea-ink-soft)]">/</span>
-            <h2 className="truncate text-xl font-bold text-[var(--sea-ink)]">{repository.name}</h2>
-          </div>
+          <h2 className="truncate text-xl font-bold text-[var(--sea-ink)]">{repository.name}</h2>
           <p className="mt-2 line-clamp-2 text-sm text-[var(--sea-ink-soft)]">
             {repository.description || 'No description provided.'}
           </p>
         </div>
 
         <div className="flex w-full shrink-0 flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
-          <Chip
-            icon={<UserRound size={12} aria-hidden="true" />}
-            label="Owner"
-            value={repository.ownerId}
-          />
           <Chip
             icon={isPublic ? <Eye size={12} aria-hidden="true" /> : <EyeOff size={12} aria-hidden="true" />}
             label="Visibility"
@@ -213,8 +203,6 @@ function RepositoryRow({ repository }: { repository: RepositoryRecord }) {
         <span>
           Updated <span className="text-[var(--sea-ink)]">{formatDateTime(repository.updatedAt)}</span>
         </span>
-        <span aria-hidden="true">·</span>
-        <span className="truncate font-mono text-[10px] text-[var(--sea-ink-soft)]">{repository.id}</span>
       </div>
     </Link>
   )

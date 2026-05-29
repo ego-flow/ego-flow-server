@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
-import { AlertTriangle, Download, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Download, Trash2 } from 'lucide-react'
 
 import {
   requestDeleteVideo,
@@ -106,8 +106,14 @@ function RepositoryVideoDetailPage() {
           to="/repositories/$repoId"
           params={{ repoId }}
           search={repositorySearch}
-          className="text-sm font-semibold text-[var(--lagoon-deep)] no-underline hover:underline"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--lagoon-deep)] no-underline hover:underline"
         >
+          <span
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--chip-bg)] text-[var(--sea-ink)] transition-colors hover:bg-[var(--card)]"
+            aria-hidden="true"
+          >
+            <ArrowLeft size={16} />
+          </span>
           Back to repository
         </Link>
         <div className="flex items-center gap-3">

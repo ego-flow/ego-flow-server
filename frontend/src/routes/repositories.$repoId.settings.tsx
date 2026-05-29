@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
+import { ArrowLeft } from 'lucide-react'
 
 import { getApiErrorMessage } from '#/api/client'
 import {
@@ -99,8 +100,14 @@ function RepositorySettingsPage() {
           to="/repositories/$repoId"
           params={{ repoId }}
           search={repositorySearch}
-          className="text-sm font-semibold text-[var(--lagoon-deep)] no-underline hover:underline"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--lagoon-deep)] no-underline hover:underline"
         >
+          <span
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--chip-bg)] text-[var(--sea-ink)] transition-colors hover:bg-[var(--card)]"
+            aria-hidden="true"
+          >
+            <ArrowLeft size={16} />
+          </span>
           Back to repository
         </Link>
       </div>
@@ -145,7 +152,7 @@ function RepositorySettingsPage() {
                     id="repo-visibility"
                     value={visibility}
                     onChange={(event) => setVisibility(event.target.value as RepositoryVisibility)}
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="theme-select h-9 w-full rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
                     <option value="private">private</option>
                     <option value="public">public</option>
@@ -221,7 +228,7 @@ function RepositorySettingsPage() {
                     id="member-role"
                     value={memberRole}
                     onChange={(event) => setMemberRole(event.target.value as RepositoryRole)}
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="theme-select h-9 w-full rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
                     <option value="read">read</option>
                     <option value="maintain">maintain</option>
@@ -293,7 +300,7 @@ function RepositorySettingsPage() {
                                     })
                                   })
                                 }}
-                                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                className="theme-select h-9 rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                               >
                                 <option value="read">read</option>
                                 <option value="maintain">maintain</option>

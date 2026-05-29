@@ -145,6 +145,15 @@ const { getTargetDirectory } = require("../src/lib/storage") as typeof import(".
 const service = new VideoService();
 const targetDirectory = getTargetDirectory();
 
+const assertSignedFileUrl = (value: string | null | undefined, expectedPath: string) => {
+  assert.equal(typeof value, "string");
+  const url = new URL(value as string, "http://backend.local");
+  assert.equal(url.pathname, `/files/${expectedPath.split("/").map(encodeURIComponent).join("/")}`);
+  const signature = url.searchParams.get("signature");
+  assert.ok(signature);
+  assert.equal(verifySignedFileUrlToken(signature).path, expectedPath);
+};
+
 const repository: RepositoryRecord = {
   id: "repo-1",
   name: "daily-kitchen",
@@ -253,11 +262,12 @@ test("listRepositoryVideos returns repo-scoped responses without internal file p
     fps: 30,
     codec: "h264",
     recorded_at: "2026-04-12T01:02:03.000Z",
-    thumbnail_url: "/api/v1/repositories/repo-1/videos/video-1/thumbnail",
+    thumbnail_url: response.data[0]!.thumbnail_url,
     scene_summary: null,
     clip_segments: null,
     created_at: "2026-04-12T01:05:00.000Z",
   });
+  assertSignedFileUrl(response.data[0]!.thumbnail_url, "alice/daily-kitchen/.thumbnails/video-1.jpg");
   assert.equal("dashboard_video_url" in response.data[0], false);
   assert.equal("vlm_video_path" in response.data[0], false);
 });
@@ -268,13 +278,7 @@ test("repo-scoped detail returns a signed dashboard playback URL", async () => {
   assert.equal(response.id, "video-1");
   assert.equal(typeof response.dashboard_video_url, "string");
 
-  const playbackUrl = new URL(response.dashboard_video_url as string, "http://backend.local");
-  assert.equal(playbackUrl.pathname, "/files/alice/daily-kitchen/.dashboard/video-1.mp4");
-  assert.equal(playbackUrl.searchParams.has("token"), false);
-
-  const signature = playbackUrl.searchParams.get("signature");
-  assert.ok(signature);
-  assert.equal(verifySignedFileUrlToken(signature).path, "alice/daily-kitchen/.dashboard/video-1.mp4");
+  assertSignedFileUrl(response.dashboard_video_url, "alice/daily-kitchen/.dashboard/video-1.mp4");
 });
 
 test("repo-scoped detail returns 404 when the video belongs to another repository", async () => {
@@ -338,13 +342,17 @@ test("getRepositoryManifest returns completed videos with download metadata and 
             content_type: "video/mp4",
           },
           thumbnail: {
-            download_url: "/api/v1/repositories/repo-1/videos/video-1/thumbnail",
+            download_url: response.videos[0]!.artifacts.thumbnail!.download_url,
             content_type: "image/jpeg",
           },
         },
       },
     ],
   });
+  assertSignedFileUrl(
+    response.videos[0]!.artifacts.thumbnail!.download_url,
+    "alice/daily-kitchen/.thumbnails/video-1.jpg",
+  );
   const firstVideo = response.videos[0]!;
   assert.equal("vlmVideoPath" in firstVideo, false);
   assert.equal("thumbnailPath" in firstVideo, false);
@@ -471,17 +479,9 @@ test("getRepositoryManifest throws when a completed video lacks artifact metadat
   );
 });
 
-test("repo-scoped download and thumbnail require available completed artifacts", async () => {
+test("repo-scoped download requires available completed artifacts", async () => {
   await assert.rejects(
     () => service.getRepositoryVideoDownload("repo-2", "video-2"),
-    (error: unknown) =>
-      error instanceof AppError &&
-      error.statusCode === 404 &&
-      error.code === "NOT_FOUND",
-  );
-
-  await assert.rejects(
-    () => service.getRepositoryVideoThumbnail("repo-2", "video-2"),
     (error: unknown) =>
       error instanceof AppError &&
       error.statusCode === 404 &&

@@ -130,6 +130,16 @@ body {
   color: var(--lagoon-deep);
 }
 
+.theme-select {
+  background: var(--card);
+  color: var(--sea-ink);
+}
+
+.theme-select option {
+  background: var(--popover);
+  color: var(--popover-foreground);
+}
+
 .display-title {
   letter-spacing: -0.03em;
   line-height: 1.04;

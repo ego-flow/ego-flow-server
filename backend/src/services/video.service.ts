@@ -64,8 +64,10 @@ const normalizeProgress = (status: VideoStatus, progress: number | null): number
   }
 };
 
-const toRepositoryThumbnailUrl = (repositoryId: string, videoId: string) =>
-  `/api/v1/repositories/${repositoryId}/videos/${videoId}/thumbnail`;
+const toRepositoryThumbnailUrl = (
+  targetDirectory: string,
+  video: Pick<RepositoryVideoRecord, "thumbnailPath">,
+) => toSignedFileUrl(targetDirectory, video.thumbnailPath);
 
 const toRepositoryVideoDownloadUrl = (repositoryId: string, videoId: string) =>
   `/api/v1/repositories/${repositoryId}/videos/${videoId}/download`;
@@ -102,7 +104,7 @@ const toRepoVideoResponse = (
   fps: video.fps,
   codec: video.codec,
   recorded_at: video.recordedAt ? video.recordedAt.toISOString() : null,
-  thumbnail_url: video.thumbnailPath ? toRepositoryThumbnailUrl(repository.id, video.id) : null,
+  thumbnail_url: video.thumbnailPath ? toRepositoryThumbnailUrl(targetDirectory, video) : null,
   ...(options?.includeDashboardVideoUrl
     ? { dashboard_video_url: toSignedFileUrl(targetDirectory, video.dashboardVideoPath) }
     : {}),
@@ -251,6 +253,7 @@ export class VideoService {
     effectiveRole: AppRepoRole,
     query: { page: number; limit: number },
   ) {
+    const targetDirectory = getTargetDirectory();
     const where: Prisma.VideoWhereInput = {
       repositoryId: repoId,
       status: VideoStatus.COMPLETED,
@@ -317,7 +320,7 @@ export class VideoService {
             },
             thumbnail: video.thumbnailPath
               ? {
-                  download_url: toRepositoryThumbnailUrl(repoId, video.id),
+                  download_url: toRepositoryThumbnailUrl(targetDirectory, video),
                   content_type: "image/jpeg",
                 }
               : null,
@@ -354,19 +357,6 @@ export class VideoService {
       path: video.vlmVideoPath,
       sizeBytes: video.vlmSizeBytes,
       sha256: video.vlmSha256,
-    };
-  }
-
-  async getRepositoryVideoThumbnail(repoId: string, videoId: string) {
-    const video = await this.getManagedRepositoryVideo(repoId, videoId);
-
-    if (!video.thumbnailPath) {
-      throw NotFound("Thumbnail is not available.");
-    }
-
-    return {
-      id: video.id,
-      path: video.thumbnailPath,
     };
   }
 

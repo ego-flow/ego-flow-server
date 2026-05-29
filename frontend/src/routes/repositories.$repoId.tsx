@@ -254,7 +254,7 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                         page: 1,
                       })
                     }}
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="theme-select h-9 w-full rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
                     <option value="ALL">All</option>
                     <option value="COMPLETED">Completed</option>
@@ -274,7 +274,7 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                         page: 1,
                       })
                     }}
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="theme-select h-9 w-full rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
                     <option value="created_at">Created at</option>
                     <option value="recorded_at">Recorded at</option>
@@ -292,7 +292,7 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                         page: 1,
                       })
                     }}
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="theme-select h-9 w-full rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
                     <option value="desc">Newest first</option>
                     <option value="asc">Oldest first</option>
