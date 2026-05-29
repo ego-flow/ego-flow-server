@@ -50,10 +50,11 @@ export class RecordingSessionService {
   /**
    * [세션 생성 - PENDING]
    * stream 등록 시 호출. RecordingSession을 PENDING 상태로 DB에 생성하고,
-   * Redis에 recording/repo/path 키를 5분 TTL로 저장한다.
+   * Redis에 recording cache를 5분 TTL로 저장한다.
    * 5분 이내에 첫 RTMP publish가 시작되지 않으면 reconcile에서 ABORTED 처리된다.
    */
   async createSession(params: {
+    id?: string;
     repositoryId: string;
     ownerId: string;
     userId: string;
@@ -63,6 +64,7 @@ export class RecordingSessionService {
   }) {
     const session = await prisma.recordingSession.create({
       data: {
+        ...(params.id ? { id: params.id } : {}),
         repositoryId: params.repositoryId,
         ownerId: params.ownerId,
         userId: params.userId,
@@ -73,32 +75,12 @@ export class RecordingSessionService {
       },
     });
 
-    const liveCache: RecordingSessionLiveCache = {
-      recordingSessionId: session.id,
-      repositoryId: session.repositoryId,
-      repositoryName: this.extractRepositoryName(session.streamPath),
-      ownerId: session.ownerId,
-      userId: session.userId,
-      targetDirectory: session.targetDirectory,
-      registeredAt: session.createdAt.toISOString(),
-      status: "PENDING",
-    };
-    if (session.deviceType) {
-      liveCache.deviceType = session.deviceType;
-    }
-
-    const repoName = liveCache.repositoryName;
-    await redis
-      .multi()
-      .set(streamRecordingKey(session.id), JSON.stringify(liveCache), "EX", RECORDING_REGISTRATION_TTL_SECONDS)
-      .set(streamRepoKey(session.repositoryId), session.id, "EX", RECORDING_REGISTRATION_TTL_SECONDS)
-      .set(streamPathKey(repoName), session.id, "EX", RECORDING_REGISTRATION_TTL_SECONDS)
-      .exec();
+    await this.cachePendingSession(session, RECORDING_REGISTRATION_TTL_SECONDS);
 
     console.info("[rtmp-state] pending-created", {
       recordingSessionId: session.id,
       repositoryId: session.repositoryId,
-      repositoryName: repoName,
+      repositoryName: this.extractRepositoryName(session.streamPath),
       ownerId: session.ownerId,
       userId: session.userId,
       deviceType: session.deviceType,
@@ -107,6 +89,44 @@ export class RecordingSessionService {
     });
 
     return session;
+  }
+
+  async cachePendingSession(
+    session: {
+      id: string;
+      repositoryId: string;
+      ownerId: string;
+      userId: string;
+      deviceType: string | null;
+      streamPath: string;
+      targetDirectory: string;
+      createdAt: Date;
+    },
+    ttlSeconds: number,
+  ) {
+    const liveCache: RecordingSessionLiveCache = {
+      recordingSessionId: session.id,
+      repositoryId: session.repositoryId,
+      repositoryName: this.extractRepositoryName(session.streamPath),
+      userId: session.userId,
+      status: "PENDING",
+    };
+    if (session.deviceType) {
+      liveCache.deviceType = session.deviceType;
+    }
+
+    await redis.set(streamRecordingKey(session.id), JSON.stringify(liveCache), "EX", Math.max(1, ttlSeconds));
+
+    console.info("[rtmp-state] pending-cache-refreshed", {
+      recordingSessionId: session.id,
+      repositoryId: session.repositoryId,
+      repositoryName: liveCache.repositoryName,
+      ownerId: session.ownerId,
+      userId: session.userId,
+      deviceType: session.deviceType,
+      streamPath: session.streamPath,
+      ttlSec: Math.max(1, ttlSeconds),
+    });
   }
 
   /**
@@ -237,17 +257,12 @@ export class RecordingSessionService {
       recordingSessionId,
       repositoryId: session.repositoryId,
       repositoryName: repoName,
-      ownerId: session.ownerId,
       userId: session.userId,
-      targetDirectory: session.targetDirectory,
-      registeredAt: existingLiveCache?.registeredAt ?? session.createdAt.toISOString(),
       status: "STREAMING",
       sourceId: input.source_id,
-      sourceType: input.source_type,
       ...(existingLiveCache?.publishTicketIssuedAt
         ? { publishTicketIssuedAt: existingLiveCache.publishTicketIssuedAt }
         : {}),
-      readyAt: readyAt.toISOString(),
     };
     if (session.deviceType) {
       liveCache.deviceType = session.deviceType;
@@ -615,7 +630,6 @@ export class RecordingSessionService {
       try {
         const cached = JSON.parse(cachedStr) as RecordingSessionLiveCache;
         cached.status = "STOP_REQUESTED";
-        cached.stopRequestedAt = new Date().toISOString();
         await redis.set(streamRecordingKey(recordingSessionId), JSON.stringify(cached), "EX", RECORDING_ACTIVE_TTL_SECONDS);
       } catch (_error) {
         // Ignore parse failures.
@@ -876,7 +890,7 @@ export class RecordingSessionService {
           continue;
         }
 
-        const age = now - session.createdAt.getTime();
+        const age = now - this.getPendingRegistrationReferenceAt(session).getTime();
         if (age > RECORDING_REGISTRATION_TTL_SECONDS * 1000) {
           await prisma.recordingSession.update({
             where: { id: session.id },
@@ -1207,6 +1221,10 @@ export class RecordingSessionService {
       throw BadRequest("Invalid stream path format.");
     }
     return parts[1];
+  }
+
+  private getPendingRegistrationReferenceAt(session: { createdAt: Date; updatedAt?: Date | null }) {
+    return session.updatedAt ?? session.createdAt;
   }
 
   private getFinalizeReferenceAt(session: {

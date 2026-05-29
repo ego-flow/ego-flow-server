@@ -23,8 +23,8 @@ const optionalHookNumber = z.preprocess(
 );
 
 export const streamRegisterSchema = z.object({
-  repository_id: z.uuid(),
-  device_type: z.string().max(100).optional(),
+  repositoryId: z.uuid(),
+  deviceType: z.string().max(100).optional(),
 });
 
 export const publishTicketParamsSchema = z.object({

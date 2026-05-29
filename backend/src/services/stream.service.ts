@@ -1,7 +1,10 @@
-import { RecordingSessionEndReason, RecordingSessionStatus } from "@prisma/client";
+import { randomUUID } from "node:crypto";
+
+import { RecordingSessionStatus } from "@prisma/client";
 
 import {
   FIRST_PUBLISH_DEADLINE_MS,
+  RECORDING_REGISTRATION_TTL_SECONDS,
   STREAM_ACTIVE_SET_KEY,
   STREAM_RECONCILE_INTERVAL_MS,
 } from "../constants/stream/stream-constants";
@@ -16,7 +19,7 @@ import type { RecordingSessionLiveCache } from "../types/stream";
 import { repositoryService } from "./repository.service";
 import { recordingSessionService } from "./recording-session.service";
 import { streamOwnershipService } from "./stream-ownership.service";
-import { streamPathKey, streamRecordingKey, streamRepoKey, streamSourceKey } from "../utils/stream-keys";
+import { streamRecordingKey } from "../utils/stream-keys";
 
 /**
  * 스트리밍 세션의 등록, 활성 조회, RTMP 인증 보조, reconcile 루프를 관리하는 서비스.
@@ -33,24 +36,48 @@ export class StreamService {
    * [1단계: 세션 등록]
    * 앱에서 POST /api/v1/streams/register 호출 시 진입점.
    * - repository maintain 권한 확인
-   * - 해당 repository에 이미 활성 스트림이 없는지 검증
-   * - RecordingSession을 PENDING 상태로 생성하고 Redis에 live pointer 저장
-   * - recording session metadata를 반환하고, 실제 publish credential은 별도 publish-ticket 발급으로 분리함
+   * - 아직 publish가 시작되지 않은 같은 사용자/repository/deviceType의 PENDING 세션은 재사용
+   * - timeout이 지난 PENDING 세션은 재사용하지 않고 reconcile이 ABORTED로 정리하도록 둠
+   * - RecordingSession을 PENDING 상태로 생성하고 recording cache만 저장
+   * - recordingSessionId만 반환하고, 실제 publish credential은 별도 publish-ticket 발급으로 분리함
    */
   async registerSession(
     userId: string,
     userRole: AppUserRole,
     input: StreamRegisterInput,
   ) {
-    const access = await repositoryService.assertRepositoryAccess(userId, userRole, input.repository_id, "maintain");
-    await this.ensureRepositoryPathIsAvailable(access.repository.id, access.repository.name);
+    const access = await repositoryService.assertRepositoryAccess(userId, userRole, input.repositoryId, "maintain");
+    const existingSession = await this.findReusablePendingSession(
+      access.repository.id,
+      userId,
+      input.deviceType ?? null,
+    );
 
-    const streamPath = `live/${access.repository.name}`;
+    if (existingSession) {
+      console.info("[rtmp-register] reused-pending", {
+        recordingSessionId: existingSession.id,
+        repositoryId: access.repository.id,
+        repositoryName: access.repository.name,
+        ownerId: access.repository.ownerId,
+        userId,
+        deviceType: existingSession.deviceType,
+        streamPath: existingSession.streamPath,
+        status: existingSession.status,
+      });
+
+      return {
+        recordingSessionId: existingSession.id,
+      };
+    }
+
+    const recordingSessionId = randomUUID();
+    const streamPath = this.buildStreamPath(access.repository.name, recordingSessionId);
     const session = await recordingSessionService.createSession({
+      id: recordingSessionId,
       repositoryId: access.repository.id,
       ownerId: access.repository.ownerId,
       userId,
-      ...(input.device_type ? { deviceType: input.device_type } : {}),
+      ...(input.deviceType ? { deviceType: input.deviceType } : {}),
       streamPath,
       targetDirectory: getTargetDirectory(),
     });
@@ -61,18 +88,55 @@ export class StreamService {
       repositoryName: access.repository.name,
       ownerId: access.repository.ownerId,
       userId,
-      deviceType: input.device_type ?? null,
+      deviceType: input.deviceType ?? null,
       streamPath,
       status: session.status,
     });
 
     return {
-      recording_session_id: session.id,
-      repository_id: access.repository.id,
-      repository_name: access.repository.name,
-      stream_path: streamPath,
-      status: "pending" as const,
+      recordingSessionId: session.id,
     };
+  }
+
+  private buildStreamPath(repositoryName: string, recordingSessionId: string) {
+    return `live/${repositoryName}/${recordingSessionId}`;
+  }
+
+  private async findReusablePendingSession(
+    repositoryId: string,
+    userId: string,
+    deviceType: string | null,
+  ) {
+    const pendingSessions = await prisma.recordingSession.findMany({
+      where: {
+        repositoryId,
+        userId,
+        deviceType,
+        status: RecordingSessionStatus.PENDING,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (pendingSessions.length === 0) {
+      return null;
+    }
+
+    const reusableSession = pendingSessions[0]!;
+
+    const refreshedSession = await prisma.recordingSession.update({
+      where: { id: reusableSession.id },
+      data: {
+        status: RecordingSessionStatus.PENDING,
+        updatedAt: new Date(),
+      },
+    });
+    await recordingSessionService.cachePendingSession(refreshedSession, RECORDING_REGISTRATION_TTL_SECONDS);
+
+    return refreshedSession;
+  }
+
+  private getPendingRegistrationReferenceAt(session: { createdAt: Date; updatedAt?: Date | null }) {
+    return session.updatedAt ?? session.createdAt;
   }
 
   async issuePublishTicket(
@@ -101,7 +165,7 @@ export class StreamService {
       throw Conflict(`Recording session is already in ${session.status} state.`);
     }
 
-    const firstPublishDeadlineMs = session.createdAt.getTime() + FIRST_PUBLISH_DEADLINE_MS;
+    const firstPublishDeadlineMs = this.getPendingRegistrationReferenceAt(session).getTime() + FIRST_PUBLISH_DEADLINE_MS;
     if (session.status === RecordingSessionStatus.PENDING && Date.now() > firstPublishDeadlineMs) {
       throw Conflict(
         "Recording session registration expired before publish started.",
@@ -323,7 +387,6 @@ export class StreamService {
    * 2. SMEMBERS stream:active:sessions
    * 3. 각 id를 stream:recording:{id}로 MGET
    * 4. status === STREAMING + 접근 가능 repo만 응답에 포함
-   * 5. registeredAt desc로 정렬
    *
    * cache가 없거나 깨졌거나 STREAMING이 아닌 entry는 무시만 한다 (cleanup은 hook/reconcile이 담당).
    */
@@ -358,16 +421,12 @@ export class StreamService {
       entries.push(parsed);
     }
 
-    entries.sort((a, b) => (a.registeredAt > b.registeredAt ? -1 : 1));
-
     const streams = entries.map((entry) => ({
       stream_id: entry.recordingSessionId,
       repository_id: entry.repositoryId,
       repository_name: entry.repositoryName,
-      owner_id: entry.ownerId,
       user_id: entry.userId,
       device_type: entry.deviceType ?? null,
-      registered_at: entry.registeredAt,
       status: "live" as const,
       hls_path: this.buildHlsPath(entry.repositoryName),
       whep_path: this.buildWhepPath(entry.repositoryName),
@@ -462,190 +521,6 @@ export class StreamService {
     }, STREAM_RECONCILE_INTERVAL_MS);
 
     this.reconcileTimer.unref();
-  }
-
-  /**
-   * [등록 전 중복 검사]
-   * 해당 repository에 이미 활성 스트림이 있는지 확인한다.
-   * MediaMTX active path와 DB(PENDING/STREAMING/STOP_REQUESTED)를 모두 체크하고,
-   * register 후 5분을 넘겼거나 publish ticket 이후 owner lease가 사라진 PENDING 세션은 ABORTED 처리하여 새 등록을 허용한다.
-   * Redis에 남아있는 stale pointer도 정리한다.
-   */
-  private async ensureRepositoryPathIsAvailable(repositoryId: string, repositoryName: string) {
-    const activeRepoNames = await this.getActiveRepositoryNames();
-    if (activeRepoNames?.has(repositoryName)) {
-      console.warn("[rtmp-register] conflict-active-path", {
-        repositoryId,
-        repositoryName,
-        reason: "mediamtx-active-path",
-      });
-      throw Conflict("Repository already has an active stream.");
-    }
-
-    const existingSession = await prisma.recordingSession.findFirst({
-      where: {
-        repositoryId,
-        status: {
-          in: [RecordingSessionStatus.PENDING, RecordingSessionStatus.STREAMING, RecordingSessionStatus.STOP_REQUESTED],
-        },
-      },
-    });
-
-    if (existingSession) {
-      if (existingSession.status === RecordingSessionStatus.PENDING) {
-        const liveCache = await recordingSessionService.getLiveCacheByRecordingSessionId(existingSession.id);
-        const publishTicketIssuedAtMs = liveCache?.publishTicketIssuedAt
-          ? Date.parse(liveCache.publishTicketIssuedAt)
-          : Number.NaN;
-        const hasPublishTicketIssuedAt = Number.isFinite(publishTicketIssuedAtMs);
-        const currentOwner = await streamOwnershipService.getCurrentOwnerForRepository(repositoryId);
-        const ownerMatchesSession = currentOwner?.recordingSessionId === existingSession.id;
-        const ownerIsStale = currentOwner ? streamOwnershipService.isStaleOwner(currentOwner) : true;
-
-        if (hasPublishTicketIssuedAt && (!currentOwner || !ownerMatchesSession || ownerIsStale)) {
-          console.info("[rtmp-register] pending-claimed-owner-missing-or-stale-cleanup", {
-            repositoryId,
-            repositoryName,
-            staleRecordingSessionId: existingSession.id,
-            publishTicketIssuedAt: liveCache?.publishTicketIssuedAt ?? null,
-            ownerConnectionId: currentOwner?.connectionId ?? null,
-            ownerGeneration: currentOwner?.generation ?? null,
-            ownerLeaseExpiresAt: currentOwner
-              ? new Date(currentOwner.leaseExpiresAt).toISOString()
-              : null,
-          });
-          await prisma.recordingSession.update({
-            where: { id: existingSession.id },
-            data: {
-              status: RecordingSessionStatus.ABORTED,
-              endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
-              finalizedAt: new Date(),
-            },
-          });
-          const repoName = recordingSessionService.extractRepositoryName(existingSession.streamPath);
-          await redis.del(streamRepoKey(repositoryId));
-          await redis.del(streamPathKey(repoName));
-          await redis.del(streamRecordingKey(existingSession.id));
-          await redis.srem(STREAM_ACTIVE_SET_KEY, existingSession.id);
-          return;
-        }
-
-        const age = Date.now() - existingSession.createdAt.getTime();
-        if (age > FIRST_PUBLISH_DEADLINE_MS) {
-          console.info("[rtmp-register] pending-timeout-cleanup", {
-            repositoryId,
-            repositoryName,
-            staleRecordingSessionId: existingSession.id,
-            ageMs: age,
-          });
-          await prisma.recordingSession.update({
-            where: { id: existingSession.id },
-            data: {
-              status: RecordingSessionStatus.ABORTED,
-              endReason: "REGISTRATION_TIMEOUT",
-              finalizedAt: new Date(),
-            },
-          });
-          const repoName = recordingSessionService.extractRepositoryName(existingSession.streamPath);
-          await redis.del(streamRepoKey(repositoryId));
-          await redis.del(streamPathKey(repoName));
-          await redis.del(streamRecordingKey(existingSession.id));
-          await redis.srem(STREAM_ACTIVE_SET_KEY, existingSession.id);
-          return;
-        }
-      }
-
-      if (
-        existingSession.status === RecordingSessionStatus.STREAMING ||
-        existingSession.status === RecordingSessionStatus.STOP_REQUESTED
-      ) {
-        const currentOwner = await streamOwnershipService.getCurrentOwnerForRepository(repositoryId);
-        const ownerMatchesSession = currentOwner?.recordingSessionId === existingSession.id;
-        const ownerIsStale = currentOwner ? streamOwnershipService.isStaleOwner(currentOwner) : true;
-        const activePathPresent = activeRepoNames?.has(repositoryName) ?? false;
-
-        if (!activePathPresent || !currentOwner || !ownerMatchesSession || ownerIsStale) {
-          if (currentOwner && ownerMatchesSession) {
-            const releaseResult = await streamOwnershipService.releaseConnectionLease({
-              repositoryId,
-              recordingSessionId: existingSession.id,
-              connectionId: currentOwner.connectionId,
-              generation: currentOwner.generation,
-            });
-            if (releaseResult.outcome === "released") {
-              console.info("[rtmp-register] stale-owner-release-cleanup", {
-                repositoryId,
-                repositoryName,
-                staleRecordingSessionId: existingSession.id,
-                connectionId: currentOwner.connectionId,
-                generation: currentOwner.generation,
-                previousStatus: existingSession.status,
-              });
-            }
-          }
-
-          console.info("[rtmp-register] active-session-cleanup", {
-            repositoryId,
-            repositoryName,
-            staleRecordingSessionId: existingSession.id,
-            previousStatus: existingSession.status,
-            activePathPresent,
-            ownerRecordingSessionId: currentOwner?.recordingSessionId ?? null,
-            ownerConnectionId: currentOwner?.connectionId ?? null,
-            ownerGeneration: currentOwner?.generation ?? null,
-            ownerStatus: currentOwner?.status ?? null,
-          });
-
-          await prisma.recordingSession.update({
-            where: { id: existingSession.id },
-            data: {
-              status: RecordingSessionStatus.FINALIZING,
-              notReadyAt: new Date(),
-              ...(existingSession.endReason
-                ? {}
-                : { endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT }),
-            },
-          });
-          await redis.del(streamRepoKey(repositoryId));
-          await redis.del(streamPathKey(repositoryName));
-          await redis.del(streamRecordingKey(existingSession.id));
-          await redis.srem(STREAM_ACTIVE_SET_KEY, existingSession.id);
-          if (existingSession.sourceId) {
-            await redis.del(streamSourceKey(existingSession.sourceId));
-          }
-          await recordingSessionService.tryEnqueueFinalize(existingSession.id);
-          return;
-        }
-      }
-
-      console.warn("[rtmp-register] conflict-existing-session", {
-        repositoryId,
-        repositoryName,
-        existingRecordingSessionId: existingSession.id,
-        existingStatus: existingSession.status,
-      });
-      throw Conflict("Repository already has an active stream.");
-    }
-
-    const [repoSessionId, pathSessionId] = await Promise.all([
-      redis.get(streamRepoKey(repositoryId)),
-      redis.get(streamPathKey(repositoryName)),
-    ]);
-
-    const staleIds = Array.from(new Set([repoSessionId, pathSessionId].filter((v): v is string => Boolean(v))));
-    if (staleIds.length > 0) {
-      console.info("[rtmp-register] cleared-stale-pointers", {
-        repositoryId,
-        repositoryName,
-        staleRecordingSessionIds: staleIds,
-      });
-    }
-    for (const staleId of staleIds) {
-      await redis.del(streamRepoKey(repositoryId));
-      await redis.del(streamPathKey(repositoryName));
-      await redis.del(streamRecordingKey(staleId));
-      await redis.srem(STREAM_ACTIVE_SET_KEY, staleId);
-    }
   }
 
   /**

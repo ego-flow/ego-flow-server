@@ -2,17 +2,11 @@ export interface RecordingSessionLiveCache {
   recordingSessionId: string;
   repositoryId: string;
   repositoryName: string;
-  ownerId: string;
   userId: string;
   deviceType?: string;
-  targetDirectory: string;
-  registeredAt: string;
   status: "PENDING" | "STREAMING" | "STOP_REQUESTED" | "FINALIZING";
   sourceId?: string;
-  sourceType?: string;
   publishTicketIssuedAt?: string;
-  readyAt?: string;
-  stopRequestedAt?: string;
 }
 
 export interface RecordingFinalizeJobData {
