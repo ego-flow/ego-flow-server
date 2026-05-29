@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { ArrowLeft } from 'lucide-react'
 
 import { getApiErrorMessage } from '#/api/client'
 import { requestCreateRepository, type RepositoryVisibility } from '#/api/repositories'
@@ -39,15 +40,16 @@ function NewRepositoryPage() {
 
   return (
     <main className="page-wrap px-4 py-8 sm:py-10">
-      <div className="mb-5">
+      <section className="island-shell mb-6 rounded-2xl p-3 shadow-sm">
         <Link
           to="/repositories"
           search={defaultRepositoriesSearch}
-          className="text-sm font-semibold text-[var(--lagoon-deep)] no-underline hover:underline"
+          className="inline-flex w-fit items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-3 py-2 text-sm font-semibold text-[var(--lagoon-deep)] no-underline transition-colors hover:bg-[var(--card)]"
         >
+          <ArrowLeft size={16} aria-hidden="true" />
           Back to repositories
         </Link>
-      </div>
+      </section>
 
       <section className="island-shell mx-auto max-w-3xl rounded-2xl p-6 shadow-sm">
         <p className="island-kicker mb-2">Repositories</p>

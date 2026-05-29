@@ -21,6 +21,7 @@ import { Route as RepositoriesRepoIdRouteImport } from './routes/repositories.$r
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as RepositoriesRepoIdSettingsRouteImport } from './routes/repositories.$repoId.settings'
+import { Route as RepositoriesRepoIdContributorsRouteImport } from './routes/repositories.$repoId.contributors'
 import { Route as RepositoriesRepoIdVideosVideoIdRouteImport } from './routes/repositories.$repoId.videos.$videoId'
 
 const RepositoriesRoute = RepositoriesRouteImport.update({
@@ -84,6 +85,12 @@ const RepositoriesRepoIdSettingsRoute =
     path: '/settings',
     getParentRoute: () => RepositoriesRepoIdRoute,
   } as any)
+const RepositoriesRepoIdContributorsRoute =
+  RepositoriesRepoIdContributorsRouteImport.update({
+    id: '/contributors',
+    path: '/contributors',
+    getParentRoute: () => RepositoriesRepoIdRoute,
+  } as any)
 const RepositoriesRepoIdVideosVideoIdRoute =
   RepositoriesRepoIdVideosVideoIdRouteImport.update({
     id: '/videos/$videoId',
@@ -103,6 +110,7 @@ export interface FileRoutesByFullPath {
   '/repositories/$repoId': typeof RepositoriesRepoIdRouteWithChildren
   '/repositories/new': typeof RepositoriesNewRoute
   '/repositories/': typeof RepositoriesIndexRoute
+  '/repositories/$repoId/contributors': typeof RepositoriesRepoIdContributorsRoute
   '/repositories/$repoId/settings': typeof RepositoriesRepoIdSettingsRoute
   '/repositories/$repoId/videos/$videoId': typeof RepositoriesRepoIdVideosVideoIdRoute
 }
@@ -117,6 +125,7 @@ export interface FileRoutesByTo {
   '/repositories/$repoId': typeof RepositoriesRepoIdRouteWithChildren
   '/repositories/new': typeof RepositoriesNewRoute
   '/repositories': typeof RepositoriesIndexRoute
+  '/repositories/$repoId/contributors': typeof RepositoriesRepoIdContributorsRoute
   '/repositories/$repoId/settings': typeof RepositoriesRepoIdSettingsRoute
   '/repositories/$repoId/videos/$videoId': typeof RepositoriesRepoIdVideosVideoIdRoute
 }
@@ -133,6 +142,7 @@ export interface FileRoutesById {
   '/repositories/$repoId': typeof RepositoriesRepoIdRouteWithChildren
   '/repositories/new': typeof RepositoriesNewRoute
   '/repositories/': typeof RepositoriesIndexRoute
+  '/repositories/$repoId/contributors': typeof RepositoriesRepoIdContributorsRoute
   '/repositories/$repoId/settings': typeof RepositoriesRepoIdSettingsRoute
   '/repositories/$repoId/videos/$videoId': typeof RepositoriesRepoIdVideosVideoIdRoute
 }
@@ -150,6 +160,7 @@ export interface FileRouteTypes {
     | '/repositories/$repoId'
     | '/repositories/new'
     | '/repositories/'
+    | '/repositories/$repoId/contributors'
     | '/repositories/$repoId/settings'
     | '/repositories/$repoId/videos/$videoId'
   fileRoutesByTo: FileRoutesByTo
@@ -164,6 +175,7 @@ export interface FileRouteTypes {
     | '/repositories/$repoId'
     | '/repositories/new'
     | '/repositories'
+    | '/repositories/$repoId/contributors'
     | '/repositories/$repoId/settings'
     | '/repositories/$repoId/videos/$videoId'
   id:
@@ -179,6 +191,7 @@ export interface FileRouteTypes {
     | '/repositories/$repoId'
     | '/repositories/new'
     | '/repositories/'
+    | '/repositories/$repoId/contributors'
     | '/repositories/$repoId/settings'
     | '/repositories/$repoId/videos/$videoId'
   fileRoutesById: FileRoutesById
@@ -278,6 +291,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RepositoriesRepoIdSettingsRouteImport
       parentRoute: typeof RepositoriesRepoIdRoute
     }
+    '/repositories/$repoId/contributors': {
+      id: '/repositories/$repoId/contributors'
+      path: '/contributors'
+      fullPath: '/repositories/$repoId/contributors'
+      preLoaderRoute: typeof RepositoriesRepoIdContributorsRouteImport
+      parentRoute: typeof RepositoriesRepoIdRoute
+    }
     '/repositories/$repoId/videos/$videoId': {
       id: '/repositories/$repoId/videos/$videoId'
       path: '/videos/$videoId'
@@ -301,11 +321,13 @@ const AdminRouteChildren: AdminRouteChildren = {
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface RepositoriesRepoIdRouteChildren {
+  RepositoriesRepoIdContributorsRoute: typeof RepositoriesRepoIdContributorsRoute
   RepositoriesRepoIdSettingsRoute: typeof RepositoriesRepoIdSettingsRoute
   RepositoriesRepoIdVideosVideoIdRoute: typeof RepositoriesRepoIdVideosVideoIdRoute
 }
 
 const RepositoriesRepoIdRouteChildren: RepositoriesRepoIdRouteChildren = {
+  RepositoriesRepoIdContributorsRoute: RepositoriesRepoIdContributorsRoute,
   RepositoriesRepoIdSettingsRoute: RepositoriesRepoIdSettingsRoute,
   RepositoriesRepoIdVideosVideoIdRoute: RepositoriesRepoIdVideosVideoIdRoute,
 }

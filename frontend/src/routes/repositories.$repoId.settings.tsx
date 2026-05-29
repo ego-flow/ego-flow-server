@@ -112,22 +112,17 @@ function RepositorySettingsPage() {
 
   return (
     <main className="page-wrap px-4 py-8 sm:py-10">
-      <div className="mb-5">
+      <section className="island-shell mb-6 rounded-2xl p-3 shadow-sm">
         <Link
           to="/repositories/$repoId"
           params={{ repoId }}
           search={repositorySearch}
-          className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--lagoon-deep)] no-underline hover:underline"
+          className="inline-flex w-fit items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-3 py-2 text-sm font-semibold text-[var(--lagoon-deep)] no-underline transition-colors hover:bg-[var(--card)]"
         >
-          <span
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--chip-bg)] text-[var(--sea-ink)] transition-colors hover:bg-[var(--card)]"
-            aria-hidden="true"
-          >
-            <ArrowLeft size={16} />
-          </span>
+          <ArrowLeft size={16} aria-hidden="true" />
           Back to repository
         </Link>
-      </div>
+      </section>
 
       {repositoryQuery.isError ? (
         <section className="rounded-2xl border border-red-500/25 bg-red-500/6 px-6 py-5 text-sm text-red-700 dark:text-red-300">

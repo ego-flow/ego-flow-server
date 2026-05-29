@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, Outlet, createFileRoute, useNavigate, useRouterState } from '@tanstack/react-router'
-import { ArrowLeft, Eye, EyeOff, PlayCircle, Settings, ShieldCheck, UserRound } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, PlayCircle, Settings, ShieldCheck, UserRound, UsersRound } from 'lucide-react'
 
 import { getApiErrorMessage } from '#/api/client'
 import { requestRepositoryDetail } from '#/api/repositories'
@@ -133,7 +133,7 @@ function MetaCard({
   value: ReactNode
 }) {
   return (
-    <div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
+    <div className="min-w-0 rounded-xl bg-[var(--chip-bg)] px-3 py-2.5">
       <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--sea-ink-soft)]">
         {icon}
         {label}
@@ -178,6 +178,8 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
 
   const repository = repositoryQuery.data
   const contributors = videosQuery.data?.contributors ?? []
+  const visibleContributors = contributors.slice(0, 5)
+  const hiddenContributorCount = Math.max(0, contributors.length - visibleContributors.length)
   const totalPages = Math.max(1, Math.ceil((videosQuery.data?.total ?? 0) / search.limit))
 
   const updateSearch = (nextSearch: Partial<typeof search>) =>
@@ -191,16 +193,18 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
     })
 
   return (
-    <main className="page-wrap px-4 py-8 sm:py-10">
-      {repositoryQuery.isError ? (
-        <section className="rounded-2xl border border-red-500/25 bg-red-500/6 px-6 py-5 text-sm text-red-700 dark:text-red-300">
-          {getApiErrorMessage(repositoryQuery.error, 'Failed to load repository.')}
-        </section>
-      ) : null}
+    <main className="page-wide px-4 py-8 sm:py-10">
+      <div className="mx-auto grid w-full max-w-[89.5rem] gap-6 xl:grid-cols-[minmax(0,72rem)_16rem] xl:items-start">
+        <div className="min-w-0">
+          {repositoryQuery.isError ? (
+            <section className="rounded-2xl border border-red-500/25 bg-red-500/6 px-6 py-5 text-sm text-red-700 dark:text-red-300">
+              {getApiErrorMessage(repositoryQuery.error, 'Failed to load repository.')}
+            </section>
+          ) : null}
 
-      {repository ? (
-        <>
-          <section className="island-shell mb-6 rounded-2xl p-5 shadow-sm">
+          {repository ? (
+            <>
+          <section className="island-shell rounded-2xl p-4 shadow-sm sm:p-5">
             <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <Link
                 to="/repositories"
@@ -226,55 +230,56 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
               ) : null}
             </div>
 
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.75fr)] lg:items-start">
-              <div className="min-w-0">
-                <p className="island-kicker mb-2">Repository</p>
-                <h1 className="display-title truncate text-3xl font-bold text-[var(--sea-ink)] sm:text-4xl">
-                  {repository.name}
-                </h1>
-                <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)] sm:text-base">
-                  {repository.description || 'No description provided.'}
-                </p>
-              </div>
+            <div className="rounded-2xl bg-[color-mix(in_oklab,var(--card)_70%,var(--chip-bg))] px-5 py-6 sm:px-6 sm:py-7">
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_14rem] lg:items-center">
+                <div className="min-w-0">
+                  <p className="island-kicker mb-3">Repository</p>
+                  <h1 className="display-title break-words text-4xl font-bold text-[var(--sea-ink)] sm:text-5xl">
+                    {repository.name}
+                  </h1>
+                  <p className="mt-4 max-w-3xl text-base leading-7 text-[var(--sea-ink-soft)]">
+                    {repository.description || 'No description provided.'}
+                  </p>
+                </div>
 
-              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-                <MetaCard
-                  icon={<UserRound size={14} aria-hidden="true" />}
-                  label="Owner"
-                  value={repository.ownerId}
-                />
-                <MetaCard
-                  icon={repository.visibility === 'public' ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}
-                  label="Visibility"
-                  value={
-                    <span
-                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                        repository.visibility === 'public'
-                          ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
-                          : 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      {repository.visibility}
-                    </span>
-                  }
-                />
-                <MetaCard
-                  icon={<ShieldCheck size={14} aria-hidden="true" />}
-                  label="My role"
-                  value={
-                    <span
-                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${roleBadgeClassName(repository.myRole)}`}
-                    >
-                      {repository.myRole}
-                    </span>
-                  }
-                />
+                <div className="grid max-w-md gap-2 sm:grid-cols-3 lg:max-w-none lg:grid-cols-1">
+                  <MetaCard
+                    icon={<UserRound size={14} aria-hidden="true" />}
+                    label="Owner"
+                    value={repository.ownerId}
+                  />
+                  <MetaCard
+                    icon={repository.visibility === 'public' ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}
+                    label="Visibility"
+                    value={
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                          repository.visibility === 'public'
+                            ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
+                            : 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        {repository.visibility}
+                      </span>
+                    }
+                  />
+                  <MetaCard
+                    icon={<ShieldCheck size={14} aria-hidden="true" />}
+                    label="My role"
+                    value={
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${roleBadgeClassName(repository.myRole)}`}
+                      >
+                        {repository.myRole}
+                      </span>
+                    }
+                  />
+                </div>
               </div>
             </div>
           </section>
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
-          <section className="island-shell rounded-2xl p-5 shadow-sm">
+          <section className="island-shell mt-6 rounded-2xl p-5 shadow-sm">
             <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-[var(--sea-ink)]">Videos</h2>
@@ -484,17 +489,25 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
               </div>
             )}
           </section>
-          <aside className="island-shell rounded-2xl p-5 shadow-sm">
+            </>
+          ) : null}
+        </div>
+
+        {repository ? (
+          <aside className="island-shell rounded-2xl p-4 shadow-sm xl:sticky xl:top-24">
             <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold text-[var(--sea-ink)]">Contributors</h2>
+              <div className="flex items-center gap-2">
+                <UsersRound size={18} aria-hidden="true" className="text-[var(--lagoon-deep)]" />
+                <h2 className="text-base font-semibold text-[var(--sea-ink)]">Contributors</h2>
+              </div>
               <span className="rounded-full border border-[var(--line)] bg-[var(--chip-bg)] px-2.5 py-1 text-xs text-[var(--sea-ink-soft)]">
                 {contributors.length}
               </span>
             </div>
 
             {contributors.length > 0 ? (
-              <div className="space-y-3">
-                {contributors.map((contributor) => {
+              <div className="space-y-2">
+                {visibleContributors.map((contributor) => {
                   const isSelected = search.contributorUserId === contributor.userId
 
                   return (
@@ -507,31 +520,28 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                           page: 1,
                         })
                       }}
-                      className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${
+                      className={`w-full rounded-xl border px-3 py-2.5 text-left transition-colors ${
                         isSelected
                           ? 'border-[color-mix(in_oklab,var(--lagoon-deep)_55%,var(--line))] bg-[color-mix(in_oklab,var(--lagoon-deep)_10%,var(--card))]'
                           : 'border-[var(--line)] bg-[color-mix(in_oklab,var(--card)_88%,transparent)] hover:bg-[var(--chip-bg)]'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-[var(--sea-ink)]">
-                            {contributor.displayName || contributor.userId}
-                          </div>
-                          <div className="mt-1 truncate text-xs text-[var(--sea-ink-soft)]">
-                            {contributor.userId}
-                          </div>
-                        </div>
-                        <span className="shrink-0 rounded-full bg-[var(--chip-bg)] px-2 py-0.5 text-xs text-[var(--sea-ink-soft)]">
-                          {contributor.videoCount}
-                        </span>
-                      </div>
-                      <div className="mt-2 text-xs text-[var(--sea-ink-soft)]">
-                        Latest {formatDateTime(contributor.latestRecordedAt)}
+                      <div className="truncate text-sm font-semibold text-[var(--sea-ink)]">
+                        {contributor.displayName || contributor.userId}
                       </div>
                     </button>
                   )
                 })}
+                {hiddenContributorCount > 0 ? (
+                  <Link
+                    to="/repositories/$repoId/contributors"
+                    params={{ repoId: repository.id }}
+                    search={search}
+                    className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-3 py-2 text-sm font-semibold text-[var(--lagoon-deep)] no-underline transition-colors hover:bg-[var(--card)]"
+                  >
+                    View all contributors
+                  </Link>
+                ) : null}
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-[var(--line)] px-4 py-8 text-center text-sm text-[var(--sea-ink-soft)]">
@@ -539,9 +549,8 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
               </div>
             )}
           </aside>
-          </div>
-        </>
-      ) : null}
+        ) : null}
+      </div>
     </main>
   )
 }

@@ -114,50 +114,47 @@ function RepositoryVideoDetailPage() {
 
   return (
     <main className="page-wrap px-4 py-8 sm:py-10">
-      <div className="mb-5 flex items-center justify-between">
-        <Link
-          to="/repositories/$repoId"
-          params={{ repoId }}
-          search={repositorySearch}
-          className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--lagoon-deep)] no-underline hover:underline"
-        >
-          <span
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--chip-bg)] text-[var(--sea-ink)] transition-colors hover:bg-[var(--card)]"
-            aria-hidden="true"
+      <section className="island-shell mb-6 rounded-2xl p-3 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Link
+            to="/repositories/$repoId"
+            params={{ repoId }}
+            search={repositorySearch}
+            className="inline-flex w-fit items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-3 py-2 text-sm font-semibold text-[var(--lagoon-deep)] no-underline transition-colors hover:bg-[var(--card)]"
           >
-            <ArrowLeft size={16} />
-          </span>
-          Back to repository
-        </Link>
-        <div className="flex items-center gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!video || currentStatus !== 'COMPLETED' || downloadMutation.isPending}
-            onClick={() => {
-              downloadMutation.mutate()
-            }}
-          >
-            <Download size={16} aria-hidden="true" />
-            {downloadMutation.isPending ? 'Downloading...' : 'Download'}
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={deleteMutation.isPending}
-            onClick={() => {
-              if (!window.confirm('Delete this video and remove all generated files?')) {
-                return
-              }
+            <ArrowLeft size={16} aria-hidden="true" />
+            Back to repository
+          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!video || currentStatus !== 'COMPLETED' || downloadMutation.isPending}
+              onClick={() => {
+                downloadMutation.mutate()
+              }}
+            >
+              <Download size={16} aria-hidden="true" />
+              {downloadMutation.isPending ? 'Downloading...' : 'Download'}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => {
+                if (!window.confirm('Delete this video and remove all generated files?')) {
+                  return
+                }
 
-              deleteMutation.mutate()
-            }}
-          >
-            <Trash2 size={16} aria-hidden="true" />
-            Delete
-          </Button>
+                deleteMutation.mutate()
+              }}
+            >
+              <Trash2 size={16} aria-hidden="true" />
+              Delete
+            </Button>
+          </div>
         </div>
-      </div>
+      </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(18rem,1fr)]">
         <article className="island-shell rounded-2xl p-5 shadow-sm">
