@@ -27,7 +27,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     requestCurrentSession()
       .then((response) => {
         if (!isCancelled) {
-          setSession({ user: response.user })
+          setSession(response)
         }
       })
       .catch(() => {
@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       isReady,
-      isAuthenticated: Boolean(session),
+      isAuthenticated: Boolean(session?.user),
       session,
       login,
       logout,

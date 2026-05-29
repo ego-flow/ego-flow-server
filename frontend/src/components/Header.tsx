@@ -13,8 +13,9 @@ export default function Header() {
     return null
   }
 
-  const isAdmin = session?.user.role === 'admin'
-  const identityLabel = session?.user.displayName || session?.user.id
+  const user = session?.user ?? null
+  const isAdmin = user?.role === 'admin'
+  const identityLabel = user?.displayName || user?.id
 
   return (
     <header className="sticky top-0 z-50 border-b border-[var(--line)] bg-[var(--header-bg)] backdrop-blur-lg">
@@ -73,7 +74,7 @@ export default function Header() {
             </Link>
             <div className="flex items-center gap-3">
               <span className="rounded-full border border-[var(--line)] bg-[var(--chip-bg)] px-3 py-1 text-xs text-[var(--sea-ink-soft)] sm:text-sm">
-                {identityLabel}
+                {identityLabel ?? 'Signed in'}
               </span>
               <ThemeToggle />
               <Button

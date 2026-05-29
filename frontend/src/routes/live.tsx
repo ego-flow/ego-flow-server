@@ -50,7 +50,7 @@ function LivePage() {
   const streams = streamsQuery.data ?? []
   const selectedStream =
     streams.find((stream) => stream.streamId === selectedStreamId) ?? null
-  const isAdmin = session?.user.role === 'admin'
+  const isAdmin = session?.user?.role === 'admin'
 
   return (
     <main className="page-wrap px-4 py-8 sm:py-10">

@@ -7,8 +7,15 @@ export interface LoginRequestInput {
   rememberMe: boolean
 }
 
-interface LoginResponse {
-  user: AuthUser
+interface AuthUserApiRecord {
+  id?: unknown
+  role?: unknown
+  displayName?: unknown
+  display_name?: unknown
+}
+
+interface AuthResponseApiRecord {
+  user?: AuthUserApiRecord | null
 }
 
 interface ChangeMyPasswordResponse {
@@ -20,13 +27,13 @@ export async function requestLogin({
   password,
   rememberMe,
 }: LoginRequestInput) {
-  const response = await apiClient.post<LoginResponse>('/auth/dashboard/login', {
+  const response = await apiClient.post<AuthResponseApiRecord>('/auth/dashboard/login', {
     id,
     password,
     remember_me: rememberMe,
   })
 
-  return response.data
+  return normalizeAuthResponse(response.data)
 }
 
 export async function requestLogout(): Promise<void> {
@@ -34,8 +41,8 @@ export async function requestLogout(): Promise<void> {
 }
 
 export async function requestCurrentSession() {
-  const response = await apiClient.get<LoginResponse>('/auth/dashboard/session')
-  return response.data
+  const response = await apiClient.get<AuthResponseApiRecord>('/auth/dashboard/session')
+  return normalizeAuthResponse(response.data)
 }
 
 export async function requestChangeMyPassword(input: {
@@ -48,4 +55,32 @@ export async function requestChangeMyPassword(input: {
   )
 
   return response.data
+}
+
+function normalizeAuthResponse(response: AuthResponseApiRecord) {
+  const user = normalizeAuthUser(response.user)
+
+  if (!user) {
+    throw new Error('Invalid authentication response.')
+  }
+
+  return { user }
+}
+
+function normalizeAuthUser(user: AuthUserApiRecord | null | undefined): AuthUser | null {
+  if (!user || typeof user.id !== 'string') {
+    return null
+  }
+
+  if (user.role !== 'admin' && user.role !== 'user') {
+    return null
+  }
+
+  const displayName = user.displayName ?? user.display_name
+
+  return {
+    id: user.id,
+    role: user.role,
+    displayName: typeof displayName === 'string' ? displayName : null,
+  }
 }

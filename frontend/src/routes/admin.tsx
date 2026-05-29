@@ -18,7 +18,7 @@ function AdminLayout() {
     return <Navigate to="/login" />
   }
 
-  if (session?.user.role !== 'admin') {
+  if (session?.user?.role !== 'admin') {
     return <Navigate to="/repositories" search={defaultRepositoriesSearch} />
   }
 

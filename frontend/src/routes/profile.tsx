@@ -107,12 +107,12 @@ function ProfilePage() {
             <span className="font-semibold text-[var(--sea-ink)]">Role:</span>
             <span
               className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                session?.user.role === 'admin'
+                session?.user?.role === 'admin'
                   ? 'bg-indigo-500/14 text-indigo-700 dark:text-indigo-300'
                   : 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
               }`}
             >
-              {session?.user.role === 'admin' ? 'Administrator' : 'User'}
+              {session?.user?.role === 'admin' ? 'Administrator' : 'User'}
             </span>
           </div>
         </div>
