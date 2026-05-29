@@ -13,55 +13,24 @@ export default function ProtectedImage({
   className,
   fallback = null,
 }: ProtectedImageProps) {
-  const [objectUrl, setObjectUrl] = useState<string | null>(null)
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!src) {
-      setObjectUrl(null)
-      return
-    }
-
-    const controller = new AbortController()
-    let nextObjectUrl: string | null = null
-
-    const loadImage = async () => {
-      try {
-        const response = await fetch(src, {
-          credentials: 'include',
-          signal: controller.signal,
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to load image: ${response.status}`)
-        }
-
-        const blob = await response.blob()
-        nextObjectUrl = URL.createObjectURL(blob)
-        setObjectUrl(nextObjectUrl)
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return
-        }
-
-        console.error(error)
-        setObjectUrl(null)
-      }
-    }
-
-    setObjectUrl(null)
-    void loadImage()
-
-    return () => {
-      controller.abort()
-      if (nextObjectUrl) {
-        URL.revokeObjectURL(nextObjectUrl)
-      }
-    }
+    setFailedSrc(null)
   }, [src])
 
-  if (!objectUrl) {
+  if (!src || failedSrc === src) {
     return <>{fallback}</>
   }
 
-  return <img src={objectUrl} alt={alt} className={className} />
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      onError={() => {
+        setFailedSrc(src)
+      }}
+    />
+  )
 }

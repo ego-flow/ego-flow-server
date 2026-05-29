@@ -41,6 +41,10 @@ export function resolveBackendUrl(path: string | null) {
     return path
   }
 
+  if (path.startsWith('/')) {
+    return path
+  }
+
   return new URL(path, `${getBackendOrigin()}/`).toString()
 }
 

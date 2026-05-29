@@ -74,6 +74,10 @@ function getContentType(filePath) {
   return CONTENT_TYPES.get(path.extname(filePath).toLowerCase()) ?? 'application/octet-stream'
 }
 
+function isAssetRequest(pathname) {
+  return pathname.startsWith('/assets/')
+}
+
 function resolveStaticFile(urlPathname) {
   const decodedPath = decodeURIComponent(urlPathname)
   const normalizedPath = path.posix.normalize(decodedPath)
@@ -115,7 +119,7 @@ async function serveStaticAsset(req, res) {
     res.writeHead(200, {
       'content-length': assetStat.size,
       'content-type': getContentType(assetPath),
-      'cache-control': requestUrl.pathname.startsWith('/assets/')
+      'cache-control': isAssetRequest(requestUrl.pathname)
         ? 'public, max-age=31536000, immutable'
         : 'public, max-age=3600',
     })
@@ -129,6 +133,15 @@ async function serveStaticAsset(req, res) {
     await once(res, 'finish')
     return true
   } catch {
+    if (isAssetRequest(requestUrl.pathname)) {
+      res.writeHead(404, {
+        'cache-control': 'no-store, max-age=0',
+        'content-type': 'text/plain; charset=utf-8',
+      })
+      res.end('Asset not found')
+      return true
+    }
+
     return false
   }
 }
@@ -144,6 +157,10 @@ const server = http.createServer(async (req, res) => {
     res.statusCode = response.status
     res.statusMessage = response.statusText
     applyHeaders(res, response.headers)
+
+    if ((response.headers.get('content-type') ?? '').includes('text/html')) {
+      res.setHeader('cache-control', 'no-store, max-age=0')
+    }
 
     if (!response.body || req.method === 'HEAD') {
       res.end()
