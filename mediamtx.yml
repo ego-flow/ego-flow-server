@@ -4,6 +4,10 @@ rtmpAddress: :1935
 hls: yes
 hlsAddress: :8888
 hlsAlwaysRemux: yes
+# hls.js (light build, lowLatencyMode)이 mediamtx의 LL-HLS playlist part duration 미세
+# 변화(예: 237ms → 238ms)에 stall 했다. dashboard live playback에는 sub-second latency가
+# 필요하지 않으므로 표준 fMP4 HLS variant로 전환. 1s segment × 7개 buffer로 약 3–7s 지연.
+hlsVariant: fmp4
 
 webrtc: yes
 webrtcAddress: :8889
