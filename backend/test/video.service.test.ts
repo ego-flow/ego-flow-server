@@ -57,13 +57,14 @@ type VideoRow = {
   thumbnailPath: string | null;
   dashboardVideoPath: string | null;
   vlmVideoPath: string | null;
+  sizeBytes: bigint | null;
   vlmSizeBytes: bigint | null;
   vlmSha256: string | null;
+  recorderUserId: string | null;
   sceneSummary: string | null;
   clipSegments: unknown;
   createdAt: Date;
   recordingSessionId: string | null;
-  recordingSessionUserId: string | null;
   errorMessage: string | null;
   processingStartedAt: Date | null;
   processingCompletedAt: Date | null;
@@ -79,13 +80,6 @@ const pickFields = (video: VideoRow, select?: Record<string, unknown>) => {
 
   const result: Record<string, unknown> = {};
   for (const [key, enabled] of Object.entries(select)) {
-    if (key === "recordingSession" && enabled) {
-      result.recordingSession = video.recordingSessionUserId
-        ? { userId: video.recordingSessionUserId }
-        : null;
-      continue;
-    }
-
     if (enabled) {
       result[key] = (video as Record<string, unknown>)[key];
     }
@@ -99,13 +93,15 @@ const matchesWhere = (
   where: {
     repositoryId: string;
     status?: VideoStatus;
-    recordingSession?: { is?: { userId: string }; isNot?: null };
+    recorderUserId?: string | { in: string[] };
   },
 ) =>
   video.repositoryId === where.repositoryId &&
   (!where.status || video.status === where.status) &&
-  (!where.recordingSession?.is || video.recordingSessionUserId === where.recordingSession.is.userId) &&
-  (!("isNot" in (where.recordingSession ?? {})) || video.recordingSessionUserId !== null);
+  (!where.recorderUserId ||
+    (typeof where.recorderUserId === "string"
+      ? video.recorderUserId === where.recorderUserId
+      : Boolean(video.recorderUserId && where.recorderUserId.in.includes(video.recorderUserId))));
 
 const fakePrisma: any = {
   video: {
@@ -125,6 +121,7 @@ const fakePrisma: any = {
         createdAt?: "asc" | "desc";
         recordedAt?: "asc" | "desc";
         durationSec?: "asc" | "desc";
+        sizeBytes?: "asc" | "desc";
         vlmSizeBytes?: "asc" | "desc";
       };
       select: Record<string, unknown>;
@@ -135,9 +132,16 @@ const fakePrisma: any = {
           ? "recordedAt"
           : orderBy?.durationSec
             ? "durationSec"
-            : "vlmSizeBytes";
+            : orderBy?.sizeBytes
+              ? "sizeBytes"
+              : "vlmSizeBytes";
       const sortDirection =
-        orderBy?.createdAt ?? orderBy?.recordedAt ?? orderBy?.durationSec ?? orderBy?.vlmSizeBytes ?? "desc";
+        orderBy?.createdAt ??
+        orderBy?.recordedAt ??
+        orderBy?.durationSec ??
+        orderBy?.sizeBytes ??
+        orderBy?.vlmSizeBytes ??
+        "desc";
       const filtered = Array.from(videos.values()).filter((video) => matchesWhere(video, where));
       filtered.sort((left, right) => {
         const leftValue =
@@ -147,7 +151,9 @@ const fakePrisma: any = {
               ? left.recordedAt
               : sortField === "durationSec"
                 ? left.durationSec
-                : left.vlmSizeBytes;
+                : sortField === "sizeBytes"
+                  ? left.sizeBytes
+                  : left.vlmSizeBytes;
         const rightValue =
           sortField === "createdAt"
             ? right.createdAt
@@ -155,7 +161,9 @@ const fakePrisma: any = {
               ? right.recordedAt
               : sortField === "durationSec"
                 ? right.durationSec
-                : right.vlmSizeBytes;
+                : sortField === "sizeBytes"
+                  ? right.sizeBytes
+                  : right.vlmSizeBytes;
         const leftSort = leftValue instanceof Date ? leftValue.getTime() : Number(leftValue ?? -1);
         const rightSort = rightValue instanceof Date ? rightValue.getTime() : Number(rightValue ?? -1);
         return sortDirection === "asc" ? leftSort - rightSort : rightSort - leftSort;
@@ -172,6 +180,18 @@ const fakePrisma: any = {
   user: {
     findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
       where.id.in.map((id) => users.get(id)).filter(Boolean),
+  },
+  repository: {
+    findUnique: async ({ where }: { where: { id: string } }) =>
+      where.id === "repo-1"
+        ? {
+            contributorUserIds: ["alice", "bob"],
+            videoContributorUserIds: ["alice", "bob"],
+          }
+        : {
+            contributorUserIds: ["alice"],
+            videoContributorUserIds: ["alice"],
+          },
   },
 };
 
@@ -223,13 +243,14 @@ beforeEach(() => {
     thumbnailPath: path.join(targetDirectory, "alice", "daily-kitchen", ".thumbnails", "video-1.jpg"),
     dashboardVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", ".dashboard", "video-1.mp4"),
     vlmVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", "video-1.mp4"),
+    sizeBytes: 42n,
     vlmSizeBytes: 42n,
     vlmSha256: "a".repeat(64),
+    recorderUserId: "alice",
     sceneSummary: null,
     clipSegments: null,
     createdAt: new Date("2026-04-12T01:05:00.000Z"),
     recordingSessionId: "session-1",
-    recordingSessionUserId: "alice",
     errorMessage: null,
     processingStartedAt: new Date("2026-04-12T01:03:00.000Z"),
     processingCompletedAt: new Date("2026-04-12T01:04:00.000Z"),
@@ -248,13 +269,14 @@ beforeEach(() => {
     thumbnailPath: null,
     dashboardVideoPath: null,
     vlmVideoPath: null,
+    sizeBytes: null,
     vlmSizeBytes: null,
     vlmSha256: null,
+    recorderUserId: "alice",
     sceneSummary: null,
     clipSegments: null,
     createdAt: new Date("2026-04-13T00:00:00.000Z"),
     recordingSessionId: "session-2",
-    recordingSessionUserId: "alice",
     errorMessage: null,
     processingStartedAt: null,
     processingCompletedAt: null,
@@ -273,13 +295,14 @@ beforeEach(() => {
     thumbnailPath: null,
     dashboardVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", ".dashboard", "video-3.mp4"),
     vlmVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", "video-3.mp4"),
+    sizeBytes: 84n,
     vlmSizeBytes: 84n,
     vlmSha256: "b".repeat(64),
+    recorderUserId: "bob",
     sceneSummary: "Kitchen prep",
     clipSegments: [{ start_sec: 0, end_sec: 9.5 }],
     createdAt: new Date("2026-04-11T09:35:00.000Z"),
     recordingSessionId: "session-3",
-    recordingSessionUserId: "bob",
     errorMessage: null,
     processingStartedAt: new Date("2026-04-11T09:31:00.000Z"),
     processingCompletedAt: new Date("2026-04-11T09:34:00.000Z"),
@@ -527,13 +550,14 @@ test("getRepositoryManifest throws when a completed video lacks artifact metadat
     thumbnailPath: null,
     dashboardVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", ".dashboard", "video-bad.mp4"),
     vlmVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", "video-bad.mp4"),
+    sizeBytes: null,
     vlmSizeBytes: null,
     vlmSha256: null,
+    recorderUserId: "alice",
     sceneSummary: null,
     clipSegments: null,
     createdAt: new Date("2026-04-10T00:01:00.000Z"),
     recordingSessionId: "session-bad",
-    recordingSessionUserId: "alice",
     errorMessage: null,
     processingStartedAt: new Date("2026-04-10T00:00:30.000Z"),
     processingCompletedAt: new Date("2026-04-10T00:00:50.000Z"),

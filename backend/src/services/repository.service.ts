@@ -16,6 +16,7 @@ import type {
 } from "../schemas/repository.schema";
 import type { AppUserRole } from "../types/auth";
 import type { AppRepoRole, RepositoryAccessContext, RepositoryRecord } from "../types/repository";
+import { refreshRepositoryContributors } from "./repository-contributors.service";
 
 const REPO_ROLE_RANK: Record<AppRepoRole, number> = {
   read: 1,
@@ -334,6 +335,7 @@ export class RepositoryService {
           ownerId: userId,
           visibility: input.visibility,
           description: normalizeDescription(input.description),
+          contributorUserIds: [userId],
         },
         select: {
           id: true,
@@ -531,6 +533,7 @@ export class RepositoryService {
         role: input.role,
       },
     });
+    await refreshRepositoryContributors(repositoryId);
 
     return this.listRepositoryMembers(userId, userRole, repositoryId);
   }
@@ -570,6 +573,7 @@ export class RepositoryService {
         role: input.role,
       },
     });
+    await refreshRepositoryContributors(repositoryId);
 
     return this.listRepositoryMembers(requestUserId, requestUserRole, repositoryId);
   }
@@ -605,6 +609,7 @@ export class RepositoryService {
         },
       },
     });
+    await refreshRepositoryContributors(repositoryId);
 
     return {
       repository_id: repositoryId,

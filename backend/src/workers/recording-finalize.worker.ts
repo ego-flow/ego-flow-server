@@ -18,6 +18,7 @@ import {
   encodeVlmVideo,
   ensureOutputDirectories,
 } from "./encoding";
+import { refreshRepositoryContributors } from "../services/repository-contributors.service";
 
 /**
  * [최종 비디오 생성 워커]
@@ -135,28 +136,31 @@ const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
   const { sizeBytes, sha256 } = await computeFileDigestAndSize(outputs.vlmVideoPath);
   await job.updateProgress(90);
 
-  await prisma.$transaction([
-    prisma.video.update({
+  await prisma.$transaction(async (tx) => {
+    await tx.video.update({
       where: { id: videoId },
       data: {
         vlmVideoPath: outputs.vlmVideoPath,
         dashboardVideoPath: outputs.dashboardVideoPath,
         thumbnailPath: outputs.thumbnailPath,
+        sizeBytes,
         vlmSizeBytes: sizeBytes,
         vlmSha256: sha256,
+        recorderUserId: session.userId,
         status: VideoStatus.COMPLETED,
         errorMessage: null,
         processingCompletedAt: new Date(),
       },
-    }),
-    prisma.recordingSession.update({
+    });
+    await tx.recordingSession.update({
       where: { id: recordingSessionId },
       data: {
         status: RecordingSessionStatus.COMPLETED,
         finalizedAt: new Date(),
       },
-    }),
-  ]);
+    });
+    await refreshRepositoryContributors(repositoryId, tx);
+  });
 
   if (env.DELETE_RAW_AFTER_PROCESSING) {
     for (const segment of segments) {

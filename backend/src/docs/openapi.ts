@@ -536,7 +536,7 @@ export const openApiDocument = {
               properties: {
                 user_id: { type: "string", example: "alice" },
                 display_name: { type: ["string", "null"], example: "Alice Kim" },
-                video_count: { type: "integer", minimum: 1 },
+                video_count: { type: "integer", minimum: 0 },
                 latest_recorded_at: { type: ["string", "null"], format: "date-time" },
               },
             },
