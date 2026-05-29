@@ -83,7 +83,7 @@ function RepositoryContributorsPage() {
                 className="rounded-2xl border border-[var(--line)] bg-[color-mix(in_oklab,var(--card)_88%,transparent)] p-4"
               >
                 <h2 className="truncate text-base font-semibold text-[var(--sea-ink)]">
-                  {contributor.displayName || 'Unavailable'}
+                  {contributor.displayName || contributor.userId}
                 </h2>
                 <dl className="mt-4 grid gap-2 text-sm text-[var(--sea-ink-soft)]">
                   <div>

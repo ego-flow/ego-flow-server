@@ -73,7 +73,7 @@ export default function Header() {
             {repositoryTitle ? (
               <>
                 <span className="text-[var(--sea-ink-soft)]">/</span>
-                <span className="max-w-[14rem] truncate text-base font-semibold text-[var(--sea-ink-soft)] sm:max-w-[20rem]">
+                <span className="max-w-[14rem] truncate text-lg font-bold text-[var(--sea-ink)] sm:max-w-[20rem]">
                   {repositoryTitle}
                 </span>
               </>
