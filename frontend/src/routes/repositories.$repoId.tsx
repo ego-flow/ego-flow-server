@@ -76,13 +76,7 @@ function formatContributorName(video: {
   contributorUserId: string | null
   contributorDisplayName: string | null
 }) {
-  if (!video.contributorUserId) {
-    return 'Unavailable'
-  }
-
-  return video.contributorDisplayName
-    ? `${video.contributorDisplayName} (${video.contributorUserId})`
-    : video.contributorUserId
+  return video.contributorDisplayName || 'Unavailable'
 }
 
 export const Route = createFileRoute('/repositories/$repoId')({
@@ -324,11 +318,11 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                     <option value="">All contributors</option>
                     {search.contributorUserId &&
                     !contributors.some((contributor) => contributor.userId === search.contributorUserId) ? (
-                      <option value={search.contributorUserId}>{search.contributorUserId}</option>
+                      <option value={search.contributorUserId}>Selected contributor</option>
                     ) : null}
                     {contributors.map((contributor) => (
                       <option key={contributor.userId} value={contributor.userId}>
-                        {contributor.displayName || contributor.userId}
+                        {contributor.displayName || 'Unavailable'}
                       </option>
                     ))}
                   </select>
@@ -527,7 +521,7 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                       }`}
                     >
                       <div className="truncate text-sm font-semibold text-[var(--sea-ink)]">
-                        {contributor.displayName || contributor.userId}
+                        {contributor.displayName || 'Unavailable'}
                       </div>
                     </button>
                   )

@@ -46,13 +46,7 @@ function formatContributorName(video: {
   contributorUserId: string | null
   contributorDisplayName: string | null
 } | null) {
-  if (!video?.contributorUserId) {
-    return 'Unavailable'
-  }
-
-  return video.contributorDisplayName
-    ? `${video.contributorDisplayName} (${video.contributorUserId})`
-    : video.contributorUserId
+  return video?.contributorDisplayName || 'Unavailable'
 }
 
 function RepositoryVideoDetailPage() {
