@@ -186,11 +186,9 @@ const fakePrisma: any = {
       where.id === "repo-1"
         ? {
             contributors: ["alice", "bob"],
-            videoContributors: ["alice", "bob"],
           }
         : {
             contributors: ["alice"],
-            videoContributors: ["alice"],
           },
   },
 };

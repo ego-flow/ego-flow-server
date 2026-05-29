@@ -105,7 +105,6 @@ const fakePrisma: any = {
   repository: {
     findUnique: async () => ({
       contributors: [],
-      videoContributors: [],
     }),
     update: async () => null,
   },

@@ -95,7 +95,6 @@ model Repository {
   visibility         RepoVisibility @default(public)
   description        String?        @db.VarChar(500)
   contributors       Json           @default("[]")
-  videoContributors  Json           @default("[]")
   createdAt          DateTime       @default(now()) @map("created_at")
   updatedAt          DateTime       @updatedAt @map("updated_at")
 

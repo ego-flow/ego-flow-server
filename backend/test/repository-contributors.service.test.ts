@@ -8,14 +8,11 @@ process.env.JWT_SECRET ??= "replace-this-in-tests-only";
 process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 
 let updatedContributors: unknown = null;
-let updatedVideoContributors: unknown = null;
 
 const fakePrisma: any = {
   repoMember: {
     findMany: async () => [
       { userId: "alice", role: RepoRole.admin },
-      { userId: "bob", role: RepoRole.maintain },
-      { userId: "carol", role: RepoRole.maintain },
     ],
   },
   video: {
@@ -24,11 +21,9 @@ const fakePrisma: any = {
   repository: {
     findUnique: async () => ({
       contributors: [],
-      videoContributors: [],
     }),
-    update: async ({ data }: { data: { contributors: unknown; videoContributors: unknown } }) => {
+    update: async ({ data }: { data: { contributors: unknown } }) => {
       updatedContributors = data.contributors;
-      updatedVideoContributors = data.videoContributors;
       return null;
     },
   },
@@ -41,53 +36,48 @@ const { computeRepositoryContributorUserIds, refreshRepositoryContributors } =
 
 beforeEach(() => {
   updatedContributors = null;
-  updatedVideoContributors = null;
   fakePrisma.repoMember.findMany = async () => [
     { userId: "alice", role: RepoRole.admin },
-    { userId: "bob", role: RepoRole.maintain },
-    { userId: "carol", role: RepoRole.maintain },
   ];
   fakePrisma.video.findMany = async () => [{ recorder: "bob" }];
   fakePrisma.repository.findUnique = async () => ({
     contributors: [],
-    videoContributors: [],
   });
 });
 
-test("repository contributors include admins and maintainers with uploaded videos", async () => {
+test("repository contributors include existing contributors, admins, and recorders", async () => {
+  fakePrisma.repository.findUnique = async () => ({
+    contributors: ["carol"],
+  });
+
   const contributors = await computeRepositoryContributorUserIds("repo-1");
 
-  assert.deepEqual(contributors, ["alice", "bob"]);
+  assert.deepEqual(contributors, ["alice", "bob", "carol"]);
 
   await refreshRepositoryContributors("repo-1");
-  assert.deepEqual(updatedContributors, ["alice", "bob"]);
-  assert.deepEqual(updatedVideoContributors, ["bob"]);
+  assert.deepEqual(updatedContributors, ["alice", "bob", "carol"]);
 });
 
-test("repository contributors keep uploaded maintainers even after uploaded videos are removed", async () => {
+test("repository contributors keep existing contributors after role changes and video removal", async () => {
   fakePrisma.repository.findUnique = async () => ({
-    contributors: [],
-    videoContributors: ["carol"],
+    contributors: ["bob", "carol"],
   });
   fakePrisma.video.findMany = async () => [];
+  fakePrisma.repoMember.findMany = async () => [{ userId: "alice", role: RepoRole.admin }];
 
   const contributors = await computeRepositoryContributorUserIds("repo-1");
 
-  assert.deepEqual(contributors, ["alice", "carol"]);
+  assert.deepEqual(contributors, ["alice", "bob", "carol"]);
 });
 
-test("repository contributors drop admin-default contributors when demoted without uploads", async () => {
+test("repository contributors keep admin-default contributors after demotion", async () => {
   fakePrisma.repository.findUnique = async () => ({
     contributors: ["dave"],
-    videoContributors: [],
   });
-  fakePrisma.repoMember.findMany = async () => [
-    { userId: "alice", role: RepoRole.admin },
-    { userId: "dave", role: RepoRole.maintain },
-  ];
+  fakePrisma.repoMember.findMany = async () => [{ userId: "alice", role: RepoRole.admin }];
   fakePrisma.video.findMany = async () => [];
 
   const contributors = await computeRepositoryContributorUserIds("repo-1");
 
-  assert.deepEqual(contributors, ["alice"]);
+  assert.deepEqual(contributors, ["alice", "dave"]);
 });
