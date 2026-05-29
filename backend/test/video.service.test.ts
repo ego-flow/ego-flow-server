@@ -60,7 +60,7 @@ type VideoRow = {
   sizeBytes: bigint | null;
   vlmSizeBytes: bigint | null;
   vlmSha256: string | null;
-  recorderUserId: string | null;
+  recorder: string | null;
   sceneSummary: string | null;
   clipSegments: unknown;
   createdAt: Date;
@@ -93,15 +93,15 @@ const matchesWhere = (
   where: {
     repositoryId: string;
     status?: VideoStatus;
-    recorderUserId?: string | { in: string[] };
+    recorder?: string | { in: string[] };
   },
 ) =>
   video.repositoryId === where.repositoryId &&
   (!where.status || video.status === where.status) &&
-  (!where.recorderUserId ||
-    (typeof where.recorderUserId === "string"
-      ? video.recorderUserId === where.recorderUserId
-      : Boolean(video.recorderUserId && where.recorderUserId.in.includes(video.recorderUserId))));
+  (!where.recorder ||
+    (typeof where.recorder === "string"
+      ? video.recorder === where.recorder
+      : Boolean(video.recorder && where.recorder.in.includes(video.recorder))));
 
 const fakePrisma: any = {
   video: {
@@ -185,12 +185,12 @@ const fakePrisma: any = {
     findUnique: async ({ where }: { where: { id: string } }) =>
       where.id === "repo-1"
         ? {
-            contributorUserIds: ["alice", "bob"],
-            videoContributorUserIds: ["alice", "bob"],
+            contributors: ["alice", "bob"],
+            videoContributors: ["alice", "bob"],
           }
         : {
-            contributorUserIds: ["alice"],
-            videoContributorUserIds: ["alice"],
+            contributors: ["alice"],
+            videoContributors: ["alice"],
           },
   },
 };
@@ -246,7 +246,7 @@ beforeEach(() => {
     sizeBytes: 42n,
     vlmSizeBytes: 42n,
     vlmSha256: "a".repeat(64),
-    recorderUserId: "alice",
+    recorder: "alice",
     sceneSummary: null,
     clipSegments: null,
     createdAt: new Date("2026-04-12T01:05:00.000Z"),
@@ -272,7 +272,7 @@ beforeEach(() => {
     sizeBytes: null,
     vlmSizeBytes: null,
     vlmSha256: null,
-    recorderUserId: "alice",
+    recorder: "alice",
     sceneSummary: null,
     clipSegments: null,
     createdAt: new Date("2026-04-13T00:00:00.000Z"),
@@ -298,7 +298,7 @@ beforeEach(() => {
     sizeBytes: 84n,
     vlmSizeBytes: 84n,
     vlmSha256: "b".repeat(64),
-    recorderUserId: "bob",
+    recorder: "bob",
     sceneSummary: "Kitchen prep",
     clipSegments: [{ start_sec: 0, end_sec: 9.5 }],
     createdAt: new Date("2026-04-11T09:35:00.000Z"),
@@ -553,7 +553,7 @@ test("getRepositoryManifest throws when a completed video lacks artifact metadat
     sizeBytes: null,
     vlmSizeBytes: null,
     vlmSha256: null,
-    recorderUserId: "alice",
+    recorder: "alice",
     sceneSummary: null,
     clipSegments: null,
     createdAt: new Date("2026-04-10T00:01:00.000Z"),

@@ -94,8 +94,8 @@ model Repository {
   ownerId            String         @map("owner_id") @db.VarChar(64)
   visibility         RepoVisibility @default(public)
   description        String?        @db.VarChar(500)
-  contributorUserIds Json           @default("[]") @map("contributor_user_ids")
-  videoContributorUserIds Json      @default("[]") @map("video_contributor_user_ids")
+  contributors       Json           @default("[]")
+  videoContributors  Json           @default("[]")
   createdAt          DateTime       @default(now()) @map("created_at")
   updatedAt          DateTime       @updatedAt @map("updated_at")
 
@@ -180,10 +180,10 @@ model Video {
   vlmVideoPath          String?     @map("vlm_video_path") @db.VarChar(1024)
   dashboardVideoPath    String?     @map("dashboard_video_path") @db.VarChar(1024)
   thumbnailPath         String?     @map("thumbnail_path") @db.VarChar(1024)
-  sizeBytes             BigInt?     @map("size_bytes")
+  sizeBytes             BigInt?
   vlmSizeBytes          BigInt?     @map("vlm_size_bytes")
   vlmSha256             String?     @map("vlm_sha256") @db.VarChar(64)
-  recorderUserId        String?     @map("recorder_user_id") @db.VarChar(64)
+  recorder              String?     @db.VarChar(64)
   clipSegments          Json?       @map("clip_segments")
   actionLabels          Json?       @map("action_labels")
   videoTextAlignment    Json?       @map("video_text_alignment")
@@ -200,7 +200,7 @@ model Video {
   @@index([status])
   @@index([repositoryId], map: "idx_videos_repository_id")
   @@index([recordedAt], map: "idx_videos_recorded_at")
-  @@index([recorderUserId], map: "idx_videos_recorder_user_id")
+  @@index([recorder], map: "idx_videos_recorder")
   @@index([recordingSessionId], map: "idx_videos_recording_session_id")
   @@map("videos")
 }

@@ -146,7 +146,7 @@ const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
         sizeBytes,
         vlmSizeBytes: sizeBytes,
         vlmSha256: sha256,
-        recorderUserId: session.userId,
+        recorder: session.userId,
         status: VideoStatus.COMPLETED,
         errorMessage: null,
         processingCompletedAt: new Date(),

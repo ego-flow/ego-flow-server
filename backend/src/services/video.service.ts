@@ -30,7 +30,7 @@ type RepositoryVideoRecord = {
   dashboardVideoPath: string | null;
   sizeBytes: bigint | null;
   vlmSizeBytes: bigint | null;
-  recorderUserId: string | null;
+  recorder: string | null;
   sceneSummary: string | null;
   clipSegments: Prisma.JsonValue | null;
   createdAt: Date;
@@ -129,8 +129,8 @@ const toRepoVideoResponse = (
     codec: video.codec,
     recorded_at: video.recordedAt ? video.recordedAt.toISOString() : null,
     size_bytes: toSizeBytes(video.sizeBytes ?? video.vlmSizeBytes),
-    contributor_user_id: video.recorderUserId,
-    contributor_display_name: video.recorderUserId ? displayNamesByUserId.get(video.recorderUserId) ?? null : null,
+    contributor_user_id: video.recorder,
+    contributor_display_name: video.recorder ? displayNamesByUserId.get(video.recorder) ?? null : null,
     thumbnail_url: video.thumbnailPath ? toRepositoryThumbnailUrl(targetDirectory, video) : null,
     ...(options?.includeDashboardVideoUrl
       ? { dashboard_video_url: toSignedFileUrl(targetDirectory, video.dashboardVideoPath) }
@@ -166,7 +166,7 @@ export class VideoService {
         dashboardVideoPath: true,
         sizeBytes: true,
         vlmSizeBytes: true,
-        recorderUserId: true,
+        recorder: true,
         sceneSummary: true,
         clipSegments: true,
         createdAt: true,
@@ -258,10 +258,10 @@ export class VideoService {
     const repository = await prisma.repository.findUnique({
       where: { id: repositoryId },
       select: {
-        contributorUserIds: true,
+        contributors: true,
       },
     });
-    const contributorUserIds = normalizeContributorUserIds(repository?.contributorUserIds);
+    const contributorUserIds = normalizeContributorUserIds(repository?.contributors);
 
     if (contributorUserIds.length === 0) {
       return [];
@@ -270,10 +270,10 @@ export class VideoService {
     const contributorVideos = await prisma.video.findMany({
       where: {
         repositoryId,
-        recorderUserId: { in: contributorUserIds },
+        recorder: { in: contributorUserIds },
       },
       select: {
-        recorderUserId: true,
+        recorder: true,
         recordedAt: true,
         createdAt: true,
       },
@@ -290,7 +290,7 @@ export class VideoService {
       ]),
     );
     for (const video of contributorVideos) {
-      const userId = video.recorderUserId;
+      const userId = video.recorder;
       if (!userId) {
         continue;
       }
@@ -325,7 +325,7 @@ export class VideoService {
     const where: Prisma.VideoWhereInput = {
       repositoryId: repository.id,
       ...(query.status ? { status: query.status } : {}),
-      ...(query.contributor_user_id ? { recorderUserId: query.contributor_user_id } : {}),
+      ...(query.contributor_user_id ? { recorder: query.contributor_user_id } : {}),
     };
 
     const [total, videos, contributors] = await Promise.all([
@@ -349,7 +349,7 @@ export class VideoService {
           dashboardVideoPath: true,
           sizeBytes: true,
           vlmSizeBytes: true,
-          recorderUserId: true,
+          recorder: true,
           sceneSummary: true,
           clipSegments: true,
           createdAt: true,
@@ -374,7 +374,7 @@ export class VideoService {
   async getRepositoryVideoDetail(repoId: string, repository: VideoRepositoryContext, videoId: string) {
     const targetDirectory = getTargetDirectory();
     const video = await this.getRepositoryVideoForResponse(repoId, videoId);
-    const contributorUserId = video.recorderUserId;
+    const contributorUserId = video.recorder;
     const displayNamesByUserId = await this.getUserDisplayNames(contributorUserId ? [contributorUserId] : []);
 
     return toRepoVideoResponse(targetDirectory, video, repository, displayNamesByUserId, {

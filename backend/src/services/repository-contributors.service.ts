@@ -5,8 +5,8 @@ import { prisma } from "../lib/prisma";
 type PrismaClientLike = typeof prisma | Prisma.TransactionClient;
 
 type RepositoryContributorState = {
-  contributorUserIds: string[];
-  videoContributorUserIds: string[];
+  contributors: string[];
+  videoContributors: string[];
 };
 
 export const normalizeContributorUserIds = (value: Prisma.JsonValue | null | undefined): string[] => {
@@ -25,7 +25,7 @@ export const computeRepositoryContributorState = async (
     client.repository.findUnique({
       where: { id: repositoryId },
       select: {
-        videoContributorUserIds: true,
+        videoContributors: true,
       },
     }),
     client.repoMember.findMany({
@@ -41,22 +41,22 @@ export const computeRepositoryContributorState = async (
     client.video.findMany({
       where: {
         repositoryId,
-        recorderUserId: {
+        recorder: {
           not: null,
         },
       },
       select: {
-        recorderUserId: true,
+        recorder: true,
       },
     }),
   ]);
-  const videoContributorUserIds = Array.from(
+  const videoContributors = Array.from(
     new Set([
-      ...normalizeContributorUserIds(repository?.videoContributorUserIds),
-      ...videos.map((video) => video.recorderUserId).filter((userId): userId is string => Boolean(userId)),
+      ...normalizeContributorUserIds(repository?.videoContributors),
+      ...videos.map((video) => video.recorder).filter((userId): userId is string => Boolean(userId)),
     ]),
   ).sort();
-  const videoContributorUserIdSet = new Set(videoContributorUserIds);
+  const videoContributorSet = new Set(videoContributors);
 
   const adminUserIds = memberships
     .filter((membership) => membership.role === RepoRole.admin)
@@ -64,11 +64,11 @@ export const computeRepositoryContributorState = async (
   const maintainerUserIds = memberships
     .filter((membership) => membership.role === RepoRole.maintain)
     .map((membership) => membership.userId);
-  const maintainerContributorUserIds = maintainerUserIds.filter((userId) => videoContributorUserIdSet.has(userId));
+  const maintainerContributors = maintainerUserIds.filter((userId) => videoContributorSet.has(userId));
 
   return {
-    contributorUserIds: Array.from(new Set([...adminUserIds, ...maintainerContributorUserIds])).sort(),
-    videoContributorUserIds,
+    contributors: Array.from(new Set([...adminUserIds, ...maintainerContributors])).sort(),
+    videoContributors,
   };
 };
 
@@ -77,7 +77,7 @@ export const computeRepositoryContributorUserIds = async (
   client: PrismaClientLike = prisma,
 ): Promise<string[]> => {
   const contributorState = await computeRepositoryContributorState(repositoryId, client);
-  return contributorState.contributorUserIds;
+  return contributorState.contributors;
 };
 
 export const refreshRepositoryContributors = async (
@@ -89,10 +89,10 @@ export const refreshRepositoryContributors = async (
   await client.repository.update({
     where: { id: repositoryId },
     data: {
-      contributorUserIds: contributorState.contributorUserIds,
-      videoContributorUserIds: contributorState.videoContributorUserIds,
+      contributors: contributorState.contributors,
+      videoContributors: contributorState.videoContributors,
     },
   });
 
-  return contributorState.contributorUserIds;
+  return contributorState.contributors;
 };

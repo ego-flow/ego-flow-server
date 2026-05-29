@@ -83,7 +83,7 @@ const fakePrisma: any = {
   video: {
     findMany: async () => [
       {
-        recorderUserId: "alice",
+        recorder: "alice",
       },
     ],
     update: async (args: { where: { id: string }; data: Record<string, unknown> }) => {
@@ -104,8 +104,8 @@ const fakePrisma: any = {
   },
   repository: {
     findUnique: async () => ({
-      contributorUserIds: [],
-      videoContributorUserIds: [],
+      contributors: [],
+      videoContributors: [],
     }),
     update: async () => null,
   },
@@ -215,7 +215,7 @@ test("recording finalize stores VLM SHA-256 and size metadata after encoding", a
   assert.equal(completedUpdate?.data.sizeBytes, 1234n);
   assert.equal(completedUpdate?.data.vlmSizeBytes, 1234n);
   assert.equal(completedUpdate?.data.vlmSha256, "a".repeat(64));
-  assert.equal(completedUpdate?.data.recorderUserId, "alice");
+  assert.equal(completedUpdate?.data.recorder, "alice");
   assert.equal(completedUpdate?.data.status, VideoStatus.COMPLETED);
   assert.equal(recordingSessionUpdateCalls.at(-1)?.data.status, RecordingSessionStatus.COMPLETED);
   assert.deepEqual(progressUpdates, [5, 15, 35, 90, 100]);

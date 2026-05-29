@@ -7,8 +7,8 @@ process.env.REDIS_URL ??= "redis://127.0.0.1:6379";
 process.env.JWT_SECRET ??= "replace-this-in-tests-only";
 process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 
-let updatedContributorUserIds: unknown = null;
-let updatedVideoContributorUserIds: unknown = null;
+let updatedContributors: unknown = null;
+let updatedVideoContributors: unknown = null;
 
 const fakePrisma: any = {
   repoMember: {
@@ -19,16 +19,16 @@ const fakePrisma: any = {
     ],
   },
   video: {
-    findMany: async () => [{ recorderUserId: "bob" }],
+    findMany: async () => [{ recorder: "bob" }],
   },
   repository: {
     findUnique: async () => ({
-      contributorUserIds: [],
-      videoContributorUserIds: [],
+      contributors: [],
+      videoContributors: [],
     }),
-    update: async ({ data }: { data: { contributorUserIds: unknown; videoContributorUserIds: unknown } }) => {
-      updatedContributorUserIds = data.contributorUserIds;
-      updatedVideoContributorUserIds = data.videoContributorUserIds;
+    update: async ({ data }: { data: { contributors: unknown; videoContributors: unknown } }) => {
+      updatedContributors = data.contributors;
+      updatedVideoContributors = data.videoContributors;
       return null;
     },
   },
@@ -40,17 +40,17 @@ const { computeRepositoryContributorUserIds, refreshRepositoryContributors } =
   require("../src/services/repository-contributors.service") as typeof import("../src/services/repository-contributors.service");
 
 beforeEach(() => {
-  updatedContributorUserIds = null;
-  updatedVideoContributorUserIds = null;
+  updatedContributors = null;
+  updatedVideoContributors = null;
   fakePrisma.repoMember.findMany = async () => [
     { userId: "alice", role: RepoRole.admin },
     { userId: "bob", role: RepoRole.maintain },
     { userId: "carol", role: RepoRole.maintain },
   ];
-  fakePrisma.video.findMany = async () => [{ recorderUserId: "bob" }];
+  fakePrisma.video.findMany = async () => [{ recorder: "bob" }];
   fakePrisma.repository.findUnique = async () => ({
-    contributorUserIds: [],
-    videoContributorUserIds: [],
+    contributors: [],
+    videoContributors: [],
   });
 });
 
@@ -60,14 +60,14 @@ test("repository contributors include admins and maintainers with uploaded video
   assert.deepEqual(contributors, ["alice", "bob"]);
 
   await refreshRepositoryContributors("repo-1");
-  assert.deepEqual(updatedContributorUserIds, ["alice", "bob"]);
-  assert.deepEqual(updatedVideoContributorUserIds, ["bob"]);
+  assert.deepEqual(updatedContributors, ["alice", "bob"]);
+  assert.deepEqual(updatedVideoContributors, ["bob"]);
 });
 
 test("repository contributors keep uploaded maintainers even after uploaded videos are removed", async () => {
   fakePrisma.repository.findUnique = async () => ({
-    contributorUserIds: [],
-    videoContributorUserIds: ["carol"],
+    contributors: [],
+    videoContributors: ["carol"],
   });
   fakePrisma.video.findMany = async () => [];
 
@@ -78,8 +78,8 @@ test("repository contributors keep uploaded maintainers even after uploaded vide
 
 test("repository contributors drop admin-default contributors when demoted without uploads", async () => {
   fakePrisma.repository.findUnique = async () => ({
-    contributorUserIds: ["dave"],
-    videoContributorUserIds: [],
+    contributors: ["dave"],
+    videoContributors: [],
   });
   fakePrisma.repoMember.findMany = async () => [
     { userId: "alice", role: RepoRole.admin },

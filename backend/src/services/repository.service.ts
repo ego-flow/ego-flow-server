@@ -335,7 +335,7 @@ export class RepositoryService {
           ownerId: userId,
           visibility: input.visibility,
           description: normalizeDescription(input.description),
-          contributorUserIds: [userId],
+          contributors: [userId],
         },
         select: {
           id: true,
