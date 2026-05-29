@@ -37,13 +37,31 @@ function parseVideoStatus(value: unknown): VideoStatus | 'ALL' {
 }
 
 function parseSortBy(value: unknown): VideoSortBy {
-  return value === 'recorded_at' || value === 'duration_sec' || value === 'created_at'
+  return value === 'recorded_at' || value === 'duration_sec'
     ? value
-    : 'created_at'
+    : 'recorded_at'
 }
 
 function parseSortOrder(value: unknown): SortOrder {
   return value === 'asc' || value === 'desc' ? value : 'desc'
+}
+
+function getSortOptionValue(sortBy: VideoSortBy, sortOrder: SortOrder) {
+  return `${sortBy}:${sortOrder}`
+}
+
+function parseSortOptionValue(value: string): { sortBy: VideoSortBy; sortOrder: SortOrder } {
+  switch (value) {
+    case 'recorded_at:asc':
+      return { sortBy: 'recorded_at', sortOrder: 'asc' }
+    case 'duration_sec:desc':
+      return { sortBy: 'duration_sec', sortOrder: 'desc' }
+    case 'duration_sec:asc':
+      return { sortBy: 'duration_sec', sortOrder: 'asc' }
+    case 'recorded_at:desc':
+    default:
+      return { sortBy: 'recorded_at', sortOrder: 'desc' }
+  }
 }
 
 export const Route = createFileRoute('/repositories/$repoId')({
@@ -243,7 +261,7 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                 </p>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[34rem]">
+              <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[26rem]">
                 <label className="space-y-1 text-sm text-[var(--sea-ink-soft)]">
                   <span>Status</span>
                   <select
@@ -265,37 +283,22 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                 </label>
 
                 <label className="space-y-1 text-sm text-[var(--sea-ink-soft)]">
-                  <span>Sort by</span>
+                  <span>Sort By</span>
                   <select
-                    value={search.sortBy}
+                    value={getSortOptionValue(search.sortBy, search.sortOrder)}
                     onChange={(event) => {
+                      const sort = parseSortOptionValue(event.target.value)
                       void updateSearch({
-                        sortBy: parseSortBy(event.target.value),
+                        ...sort,
                         page: 1,
                       })
                     }}
                     className="theme-select h-9 w-full rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
-                    <option value="created_at">Created at</option>
-                    <option value="recorded_at">Recorded at</option>
-                    <option value="duration_sec">Duration</option>
-                  </select>
-                </label>
-
-                <label className="space-y-1 text-sm text-[var(--sea-ink-soft)]">
-                  <span>Order</span>
-                  <select
-                    value={search.sortOrder}
-                    onChange={(event) => {
-                      void updateSearch({
-                        sortOrder: parseSortOrder(event.target.value),
-                        page: 1,
-                      })
-                    }}
-                    className="theme-select h-9 w-full rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  >
-                    <option value="desc">Newest first</option>
-                    <option value="asc">Oldest first</option>
+                    <option value="recorded_at:desc">Newest first</option>
+                    <option value="recorded_at:asc">Oldest first</option>
+                    <option value="duration_sec:desc">Duration: longest first</option>
+                    <option value="duration_sec:asc">Duration: shortest first</option>
                   </select>
                 </label>
               </div>
@@ -320,7 +323,7 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
               </div>
             ) : videosQuery.data && videosQuery.data.data.length > 0 ? (
               <>
-                <div className="grid gap-4 xl:grid-cols-2">
+                <div className="grid gap-4">
                   {videosQuery.data.data.map((video) => (
                     <Link
                       key={video.id}
@@ -377,10 +380,6 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                             <div>
                               <dt className="font-semibold text-[var(--sea-ink)]">Recorded at</dt>
                               <dd>{formatDateTime(video.recordedAt)}</dd>
-                            </div>
-                            <div>
-                              <dt className="font-semibold text-[var(--sea-ink)]">Created at</dt>
-                              <dd>{formatDateTime(video.createdAt)}</dd>
                             </div>
                           </dl>
                         </div>

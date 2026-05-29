@@ -14,6 +14,6 @@ export const defaultRepositoryVideosSearch: {
   page: 1,
   limit: 20,
   status: 'ALL',
-  sortBy: 'created_at',
+  sortBy: 'recorded_at',
   sortOrder: 'desc',
 }

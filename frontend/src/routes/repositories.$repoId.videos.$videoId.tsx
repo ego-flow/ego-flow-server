@@ -240,10 +240,6 @@ function RepositoryVideoDetailPage() {
                 <dd>{formatDateTime(video?.recordedAt ?? null)}</dd>
               </div>
               <div>
-                <dt className="font-semibold text-[var(--sea-ink)]">Created at</dt>
-                <dd>{formatDateTime(video?.createdAt ?? null)}</dd>
-              </div>
-              <div>
                 <dt className="font-semibold text-[var(--sea-ink)]">Processing started</dt>
                 <dd>{formatDateTime(statusQuery.data?.processingStartedAt ?? null)}</dd>
               </div>

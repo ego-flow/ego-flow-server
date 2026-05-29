@@ -3,7 +3,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { apiClient, resolveBackendUrl } from '#/api/client'
 
 export type VideoStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
-export type VideoSortBy = 'created_at' | 'recorded_at' | 'duration_sec'
+export type VideoSortBy = 'recorded_at' | 'duration_sec'
 export type SortOrder = 'asc' | 'desc'
 
 export interface VideoListFilters {
@@ -173,7 +173,7 @@ export async function requestVideos(repositoryId: string, filters: VideoListFilt
         limit: filters.limit ?? 20,
         status:
           filters.status && filters.status !== 'ALL' ? filters.status : undefined,
-        sort_by: filters.sortBy ?? 'created_at',
+        sort_by: filters.sortBy ?? 'recorded_at',
         sort_order: filters.sortOrder ?? 'desc',
       },
     },
