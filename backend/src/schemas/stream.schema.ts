@@ -46,6 +46,10 @@ export const streamReadyHookSchema = z.object({
   ticket: optionalHookString,
   source_id: z.string().min(1),
   source_type: z.string().min(1),
+  mtx_query: optionalHookString,
+  mtx_source_id: optionalHookString,
+  mtx_source_type: optionalHookString,
+  mtx_path: optionalHookString,
 });
 
 export const streamNotReadyHookSchema = z.object({

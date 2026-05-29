@@ -116,6 +116,7 @@ export class RecordingSessionService {
    */
   async handleStreamReady(input: StreamReadyHookInput) {
     const publishTicketQuery = this.resolvePublishTicketQuery(input.query, input.ticket);
+    const credentialSource = this.classifyTicketCredentialSource(input);
     const ticketValidation = await streamOwnershipService.validatePublishTicket(input.path, publishTicketQuery);
     if (!ticketValidation.ok) {
       console.warn("[rtmp-ticket] stream-ready-validation-rejected", {
@@ -124,6 +125,11 @@ export class RecordingSessionService {
         sourceType: input.source_type,
         reason: ticketValidation.reason,
         ticketId: ticketValidation.ticketId,
+        credentialSource,
+        mtxQuery: input.mtx_query ?? null,
+        mtxSourceId: input.mtx_source_id ?? null,
+        mtxSourceType: input.mtx_source_type ?? null,
+        mtxPath: input.mtx_path ?? null,
       });
       return;
     }
@@ -266,6 +272,7 @@ export class RecordingSessionService {
       ticketId: consumedTicket.ticket.ticketId,
       connectionId: consumedTicket.ticket.connectionId,
       generation: consumedTicket.ticket.generation,
+      credentialSource,
     });
 
     console.info(
@@ -1345,6 +1352,21 @@ export class RecordingSessionService {
     }
 
     return new URLSearchParams({ ticket: ticket.trim() }).toString();
+  }
+
+  private classifyTicketCredentialSource(
+    input: StreamReadyHookInput,
+  ): "hook.query" | "hook.ticket" | "missing" {
+    if (input.query?.trim()) {
+      const params = new URLSearchParams(input.query);
+      if (params.get("ticket")?.trim()) {
+        return "hook.query";
+      }
+    }
+    if (input.ticket?.trim()) {
+      return "hook.ticket";
+    }
+    return "missing";
   }
 }
 
