@@ -63,20 +63,29 @@ type VideoRow = {
   clipSegments: unknown;
   createdAt: Date;
   recordingSessionId: string | null;
+  recordingSessionUserId: string | null;
   errorMessage: string | null;
   processingStartedAt: Date | null;
   processingCompletedAt: Date | null;
 };
 
 const videos = new Map<string, VideoRow>();
+const users = new Map<string, { id: string; displayName: string | null }>();
 
-const pickFields = (video: VideoRow, select?: Record<string, boolean>) => {
+const pickFields = (video: VideoRow, select?: Record<string, unknown>) => {
   if (!select) {
     return { ...video };
   }
 
   const result: Record<string, unknown> = {};
   for (const [key, enabled] of Object.entries(select)) {
+    if (key === "recordingSession" && enabled) {
+      result.recordingSession = video.recordingSessionUserId
+        ? { userId: video.recordingSessionUserId }
+        : null;
+      continue;
+    }
+
     if (enabled) {
       result[key] = (video as Record<string, unknown>)[key];
     }
@@ -85,12 +94,23 @@ const pickFields = (video: VideoRow, select?: Record<string, boolean>) => {
   return result;
 };
 
+const matchesWhere = (
+  video: VideoRow,
+  where: {
+    repositoryId: string;
+    status?: VideoStatus;
+    recordingSession?: { is?: { userId: string }; isNot?: null };
+  },
+) =>
+  video.repositoryId === where.repositoryId &&
+  (!where.status || video.status === where.status) &&
+  (!where.recordingSession?.is || video.recordingSessionUserId === where.recordingSession.is.userId) &&
+  (!("isNot" in (where.recordingSession ?? {})) || video.recordingSessionUserId !== null);
+
 const fakePrisma: any = {
   video: {
-    count: async ({ where }: { where: { repositoryId: string; status?: VideoStatus } }) =>
-      Array.from(videos.values()).filter(
-        (video) => video.repositoryId === where.repositoryId && (!where.status || video.status === where.status),
-      ).length,
+    count: async ({ where }: { where: Parameters<typeof matchesWhere>[1] }) =>
+      Array.from(videos.values()).filter((video) => matchesWhere(video, where)).length,
     findMany: async ({
       where,
       skip,
@@ -98,40 +118,60 @@ const fakePrisma: any = {
       orderBy,
       select,
     }: {
-      where: { repositoryId: string; status?: VideoStatus };
-      skip: number;
-      take: number;
-      orderBy: { createdAt?: "asc" | "desc"; recordedAt?: "asc" | "desc"; durationSec?: "asc" | "desc" };
-      select: Record<string, boolean>;
+      where: Parameters<typeof matchesWhere>[1];
+      skip?: number;
+      take?: number;
+      orderBy?: {
+        createdAt?: "asc" | "desc";
+        recordedAt?: "asc" | "desc";
+        durationSec?: "asc" | "desc";
+        vlmSizeBytes?: "asc" | "desc";
+      };
+      select: Record<string, unknown>;
     }) => {
-      const sortField = orderBy.createdAt ? "createdAt" : orderBy.recordedAt ? "recordedAt" : "durationSec";
-      const sortDirection = orderBy.createdAt ?? orderBy.recordedAt ?? orderBy.durationSec ?? "desc";
-      const filtered = Array.from(videos.values()).filter(
-        (video) => video.repositoryId === where.repositoryId && (!where.status || video.status === where.status),
-      );
+      const sortField = orderBy?.createdAt
+        ? "createdAt"
+        : orderBy?.recordedAt
+          ? "recordedAt"
+          : orderBy?.durationSec
+            ? "durationSec"
+            : "vlmSizeBytes";
+      const sortDirection =
+        orderBy?.createdAt ?? orderBy?.recordedAt ?? orderBy?.durationSec ?? orderBy?.vlmSizeBytes ?? "desc";
+      const filtered = Array.from(videos.values()).filter((video) => matchesWhere(video, where));
       filtered.sort((left, right) => {
         const leftValue =
           sortField === "createdAt"
             ? left.createdAt
             : sortField === "recordedAt"
               ? left.recordedAt
-              : left.durationSec;
+              : sortField === "durationSec"
+                ? left.durationSec
+                : left.vlmSizeBytes;
         const rightValue =
           sortField === "createdAt"
             ? right.createdAt
             : sortField === "recordedAt"
               ? right.recordedAt
-              : right.durationSec;
-        const leftSort = leftValue instanceof Date ? leftValue.getTime() : leftValue ?? -1;
-        const rightSort = rightValue instanceof Date ? rightValue.getTime() : rightValue ?? -1;
+              : sortField === "durationSec"
+                ? right.durationSec
+                : right.vlmSizeBytes;
+        const leftSort = leftValue instanceof Date ? leftValue.getTime() : Number(leftValue ?? -1);
+        const rightSort = rightValue instanceof Date ? rightValue.getTime() : Number(rightValue ?? -1);
         return sortDirection === "asc" ? leftSort - rightSort : rightSort - leftSort;
       });
-      return filtered.slice(skip, skip + take).map((video) => pickFields(video, select));
+      const offset = skip ?? 0;
+      const limit = take ?? filtered.length;
+      return filtered.slice(offset, offset + limit).map((video) => pickFields(video, select));
     },
     findUnique: async ({ where, select }: { where: { id: string }; select: Record<string, boolean> }) => {
       const video = videos.get(where.id);
       return video ? pickFields(video, select) : null;
     },
+  },
+  user: {
+    findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
+      where.id.in.map((id) => users.get(id)).filter(Boolean),
   },
 };
 
@@ -166,6 +206,9 @@ const repository: RepositoryRecord = {
 
 beforeEach(() => {
   videos.clear();
+  users.clear();
+  users.set("alice", { id: "alice", displayName: "Alice Kim" });
+  users.set("bob", { id: "bob", displayName: "Bob Lee" });
 
   videos.set("video-1", {
     id: "video-1",
@@ -186,6 +229,7 @@ beforeEach(() => {
     clipSegments: null,
     createdAt: new Date("2026-04-12T01:05:00.000Z"),
     recordingSessionId: "session-1",
+    recordingSessionUserId: "alice",
     errorMessage: null,
     processingStartedAt: new Date("2026-04-12T01:03:00.000Z"),
     processingCompletedAt: new Date("2026-04-12T01:04:00.000Z"),
@@ -210,6 +254,7 @@ beforeEach(() => {
     clipSegments: null,
     createdAt: new Date("2026-04-13T00:00:00.000Z"),
     recordingSessionId: "session-2",
+    recordingSessionUserId: "alice",
     errorMessage: null,
     processingStartedAt: null,
     processingCompletedAt: null,
@@ -234,6 +279,7 @@ beforeEach(() => {
     clipSegments: [{ start_sec: 0, end_sec: 9.5 }],
     createdAt: new Date("2026-04-11T09:35:00.000Z"),
     recordingSessionId: "session-3",
+    recordingSessionUserId: "bob",
     errorMessage: null,
     processingStartedAt: new Date("2026-04-11T09:31:00.000Z"),
     processingCompletedAt: new Date("2026-04-11T09:34:00.000Z"),
@@ -244,11 +290,25 @@ test("listRepositoryVideos returns repo-scoped responses without internal file p
   const response = await service.listRepositoryVideos(repository, {
     page: 1,
     limit: 20,
-    sort_by: "created_at",
+    sort_by: "recorded_at",
     sort_order: "desc",
   });
 
   assert.equal(response.total, 2);
+  assert.deepEqual(response.contributors, [
+    {
+      user_id: "alice",
+      display_name: "Alice Kim",
+      video_count: 1,
+      latest_recorded_at: "2026-04-12T01:02:03.000Z",
+    },
+    {
+      user_id: "bob",
+      display_name: "Bob Lee",
+      video_count: 1,
+      latest_recorded_at: "2026-04-11T09:30:00.000Z",
+    },
+  ]);
   assert.equal(response.data.length, 2);
   assert.deepEqual(response.data[0], {
     id: "video-1",
@@ -262,6 +322,9 @@ test("listRepositoryVideos returns repo-scoped responses without internal file p
     fps: 30,
     codec: "h264",
     recorded_at: "2026-04-12T01:02:03.000Z",
+    size_bytes: 42,
+    contributor_user_id: "alice",
+    contributor_display_name: "Alice Kim",
     thumbnail_url: response.data[0]!.thumbnail_url,
     scene_summary: null,
     clip_segments: null,
@@ -272,11 +335,30 @@ test("listRepositoryVideos returns repo-scoped responses without internal file p
   assert.equal("vlm_video_path" in response.data[0], false);
 });
 
+test("listRepositoryVideos filters by contributor and sorts by file size", async () => {
+  const response = await service.listRepositoryVideos(repository, {
+    page: 1,
+    limit: 20,
+    contributor_user_id: "bob",
+    sort_by: "size_bytes",
+    sort_order: "desc",
+  });
+
+  assert.equal(response.total, 1);
+  assert.equal(response.data[0]!.id, "video-3");
+  assert.equal(response.data[0]!.size_bytes, 84);
+  assert.equal(response.data[0]!.contributor_user_id, "bob");
+  assert.equal(response.data[0]!.contributor_display_name, "Bob Lee");
+});
+
 test("repo-scoped detail returns a signed dashboard playback URL", async () => {
   const response = await service.getRepositoryVideoDetail("repo-1", repository, "video-1");
 
   assert.equal(response.id, "video-1");
   assert.equal(typeof response.dashboard_video_url, "string");
+  assert.equal(response.size_bytes, 42);
+  assert.equal(response.contributor_user_id, "alice");
+  assert.equal(response.contributor_display_name, "Alice Kim");
 
   assertSignedFileUrl(response.dashboard_video_url, "alice/daily-kitchen/.dashboard/video-1.mp4");
 });
@@ -451,6 +533,7 @@ test("getRepositoryManifest throws when a completed video lacks artifact metadat
     clipSegments: null,
     createdAt: new Date("2026-04-10T00:01:00.000Z"),
     recordingSessionId: "session-bad",
+    recordingSessionUserId: "alice",
     errorMessage: null,
     processingStartedAt: new Date("2026-04-10T00:00:30.000Z"),
     processingCompletedAt: new Date("2026-04-10T00:00:50.000Z"),

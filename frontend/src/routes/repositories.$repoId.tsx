@@ -13,7 +13,7 @@ import {
 } from '#/api/videos'
 import { Button } from '#/components/ui/button'
 import ProtectedImage from '#/components/ProtectedImage'
-import { formatDateTime, formatDuration, formatResolution } from '#/lib/format'
+import { formatBytes, formatDateTime, formatDuration, formatResolution } from '#/lib/format'
 import { defaultRepositoriesSearch, defaultRepositoryVideosSearch } from '#/lib/route-search'
 import { saveVideoSnapshot } from '#/lib/video-snapshots'
 
@@ -37,7 +37,7 @@ function parseVideoStatus(value: unknown): VideoStatus | 'ALL' {
 }
 
 function parseSortBy(value: unknown): VideoSortBy {
-  return value === 'recorded_at' || value === 'duration_sec'
+  return value === 'recorded_at' || value === 'duration_sec' || value === 'size_bytes'
     ? value
     : 'recorded_at'
 }
@@ -58,10 +58,31 @@ function parseSortOptionValue(value: string): { sortBy: VideoSortBy; sortOrder: 
       return { sortBy: 'duration_sec', sortOrder: 'desc' }
     case 'duration_sec:asc':
       return { sortBy: 'duration_sec', sortOrder: 'asc' }
+    case 'size_bytes:desc':
+      return { sortBy: 'size_bytes', sortOrder: 'desc' }
+    case 'size_bytes:asc':
+      return { sortBy: 'size_bytes', sortOrder: 'asc' }
     case 'recorded_at:desc':
     default:
       return { sortBy: 'recorded_at', sortOrder: 'desc' }
   }
+}
+
+function parseContributorUserId(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function formatContributorName(video: {
+  contributorUserId: string | null
+  contributorDisplayName: string | null
+}) {
+  if (!video.contributorUserId) {
+    return 'Unavailable'
+  }
+
+  return video.contributorDisplayName
+    ? `${video.contributorDisplayName} (${video.contributorUserId})`
+    : video.contributorUserId
 }
 
 export const Route = createFileRoute('/repositories/$repoId')({
@@ -71,6 +92,7 @@ export const Route = createFileRoute('/repositories/$repoId')({
     status: parseVideoStatus(search.status),
     sortBy: parseSortBy(search.sortBy),
     sortOrder: parseSortOrder(search.sortOrder),
+    contributorUserId: parseContributorUserId(search.contributorUserId),
   }),
   component: RepositoryDetailPage,
 })
@@ -150,10 +172,12 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
         status: search.status,
         sortBy: search.sortBy,
         sortOrder: search.sortOrder,
+        contributorUserId: search.contributorUserId,
       }),
   })
 
   const repository = repositoryQuery.data
+  const contributors = videosQuery.data?.contributors ?? []
   const totalPages = Math.max(1, Math.ceil((videosQuery.data?.total ?? 0) / search.limit))
 
   const updateSearch = (nextSearch: Partial<typeof search>) =>
@@ -168,22 +192,6 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
 
   return (
     <main className="page-wrap px-4 py-8 sm:py-10">
-      <div className="mb-5">
-        <Link
-          to="/repositories"
-          search={defaultRepositoriesSearch}
-          className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--lagoon-deep)] no-underline hover:underline"
-        >
-          <span
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--chip-bg)] text-[var(--sea-ink)] transition-colors hover:bg-[var(--card)]"
-            aria-hidden="true"
-          >
-            <ArrowLeft size={16} />
-          </span>
-          Back to repositories
-        </Link>
-      </div>
-
       {repositoryQuery.isError ? (
         <section className="rounded-2xl border border-red-500/25 bg-red-500/6 px-6 py-5 text-sm text-red-700 dark:text-red-300">
           {getApiErrorMessage(repositoryQuery.error, 'Failed to load repository.')}
@@ -192,66 +200,80 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
 
       {repository ? (
         <>
-          <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <p className="island-kicker mb-2">Repository</p>
-              <h1 className="display-title text-3xl font-bold text-[var(--sea-ink)] sm:text-4xl">
-                {repository.name}
-              </h1>
-              <p className="mt-2 text-sm text-[var(--sea-ink-soft)] sm:text-base">
-                {repository.description || 'No description provided.'}
-              </p>
+          <section className="island-shell mb-6 rounded-2xl p-5 shadow-sm">
+            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <Link
+                to="/repositories"
+                search={defaultRepositoriesSearch}
+                className="inline-flex w-fit items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-3 py-2 text-sm font-semibold text-[var(--lagoon-deep)] no-underline transition-colors hover:bg-[var(--card)]"
+              >
+                <ArrowLeft size={16} aria-hidden="true" />
+                Back to repositories
+              </Link>
+
+              {repository.myRole === 'admin' ? (
+                <Link
+                  to="/repositories/$repoId/settings"
+                  params={{ repoId: repository.id }}
+                  search={search}
+                  className="no-underline"
+                >
+                  <Button type="button" variant="outline">
+                    <Settings size={16} aria-hidden="true" />
+                    Repository settings
+                  </Button>
+                </Link>
+              ) : null}
             </div>
 
-            {repository.myRole === 'admin' ? (
-              <Link
-                to="/repositories/$repoId/settings"
-                params={{ repoId: repository.id }}
-                search={search}
-                className="no-underline"
-              >
-                <Button type="button" variant="outline">
-                  <Settings size={16} aria-hidden="true" />
-                  Repository settings
-                </Button>
-              </Link>
-            ) : null}
-          </header>
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.75fr)] lg:items-start">
+              <div className="min-w-0">
+                <p className="island-kicker mb-2">Repository</p>
+                <h1 className="display-title truncate text-3xl font-bold text-[var(--sea-ink)] sm:text-4xl">
+                  {repository.name}
+                </h1>
+                <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)] sm:text-base">
+                  {repository.description || 'No description provided.'}
+                </p>
+              </div>
 
-          <section className="mb-6 grid gap-3 sm:grid-cols-3">
-            <MetaCard
-              icon={<UserRound size={14} aria-hidden="true" />}
-              label="Owner"
-              value={repository.ownerId}
-            />
-            <MetaCard
-              icon={repository.visibility === 'public' ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}
-              label="Visibility"
-              value={
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                    repository.visibility === 'public'
-                      ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
-                      : 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
-                  }`}
-                >
-                  {repository.visibility}
-                </span>
-              }
-            />
-            <MetaCard
-              icon={<ShieldCheck size={14} aria-hidden="true" />}
-              label="My role"
-              value={
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${roleBadgeClassName(repository.myRole)}`}
-                >
-                  {repository.myRole}
-                </span>
-              }
-            />
+              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                <MetaCard
+                  icon={<UserRound size={14} aria-hidden="true" />}
+                  label="Owner"
+                  value={repository.ownerId}
+                />
+                <MetaCard
+                  icon={repository.visibility === 'public' ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}
+                  label="Visibility"
+                  value={
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                        repository.visibility === 'public'
+                          ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
+                          : 'bg-slate-500/12 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {repository.visibility}
+                    </span>
+                  }
+                />
+                <MetaCard
+                  icon={<ShieldCheck size={14} aria-hidden="true" />}
+                  label="My role"
+                  value={
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${roleBadgeClassName(repository.myRole)}`}
+                    >
+                      {repository.myRole}
+                    </span>
+                  }
+                />
+              </div>
+            </div>
           </section>
 
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <section className="island-shell rounded-2xl p-5 shadow-sm">
             <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div>
@@ -261,7 +283,7 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                 </p>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[26rem]">
+              <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[40rem]">
                 <label className="space-y-1 text-sm text-[var(--sea-ink-soft)]">
                   <span>Status</span>
                   <select
@@ -283,6 +305,31 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                 </label>
 
                 <label className="space-y-1 text-sm text-[var(--sea-ink-soft)]">
+                  <span>Contributor</span>
+                  <select
+                    value={search.contributorUserId}
+                    onChange={(event) => {
+                      void updateSearch({
+                        contributorUserId: parseContributorUserId(event.target.value),
+                        page: 1,
+                      })
+                    }}
+                    className="theme-select h-9 w-full rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    <option value="">All contributors</option>
+                    {search.contributorUserId &&
+                    !contributors.some((contributor) => contributor.userId === search.contributorUserId) ? (
+                      <option value={search.contributorUserId}>{search.contributorUserId}</option>
+                    ) : null}
+                    {contributors.map((contributor) => (
+                      <option key={contributor.userId} value={contributor.userId}>
+                        {contributor.displayName || contributor.userId}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="space-y-1 text-sm text-[var(--sea-ink-soft)]">
                   <span>Sort By</span>
                   <select
                     value={getSortOptionValue(search.sortBy, search.sortOrder)}
@@ -299,6 +346,8 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                     <option value="recorded_at:asc">Oldest first</option>
                     <option value="duration_sec:desc">Duration: longest first</option>
                     <option value="duration_sec:asc">Duration: shortest first</option>
+                    <option value="size_bytes:desc">Size: largest first</option>
+                    <option value="size_bytes:asc">Size: smallest first</option>
                   </select>
                 </label>
               </div>
@@ -368,7 +417,7 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                             {video.id}
                           </h3>
 
-                          <dl className="mt-4 grid gap-2 text-sm text-[var(--sea-ink-soft)] sm:grid-cols-2">
+                          <dl className="mt-4 grid gap-2 text-sm text-[var(--sea-ink-soft)] sm:grid-cols-2 lg:grid-cols-3">
                             <div>
                               <dt className="font-semibold text-[var(--sea-ink)]">Duration</dt>
                               <dd>{formatDuration(video.durationSec)}</dd>
@@ -378,8 +427,20 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
                               <dd>{formatResolution(video)}</dd>
                             </div>
                             <div>
+                              <dt className="font-semibold text-[var(--sea-ink)]">Codec</dt>
+                              <dd>{video.codec || 'Unavailable'}</dd>
+                            </div>
+                            <div>
                               <dt className="font-semibold text-[var(--sea-ink)]">Recorded at</dt>
                               <dd>{formatDateTime(video.recordedAt)}</dd>
+                            </div>
+                            <div>
+                              <dt className="font-semibold text-[var(--sea-ink)]">Size</dt>
+                              <dd>{formatBytes(video.sizeBytes)}</dd>
+                            </div>
+                            <div>
+                              <dt className="font-semibold text-[var(--sea-ink)]">Contributor</dt>
+                              <dd>{formatContributorName(video)}</dd>
                             </div>
                           </dl>
                         </div>
@@ -423,6 +484,62 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
               </div>
             )}
           </section>
+          <aside className="island-shell rounded-2xl p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-[var(--sea-ink)]">Contributors</h2>
+              <span className="rounded-full border border-[var(--line)] bg-[var(--chip-bg)] px-2.5 py-1 text-xs text-[var(--sea-ink-soft)]">
+                {contributors.length}
+              </span>
+            </div>
+
+            {contributors.length > 0 ? (
+              <div className="space-y-3">
+                {contributors.map((contributor) => {
+                  const isSelected = search.contributorUserId === contributor.userId
+
+                  return (
+                    <button
+                      key={contributor.userId}
+                      type="button"
+                      onClick={() => {
+                        void updateSearch({
+                          contributorUserId: isSelected ? '' : contributor.userId,
+                          page: 1,
+                        })
+                      }}
+                      className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${
+                        isSelected
+                          ? 'border-[color-mix(in_oklab,var(--lagoon-deep)_55%,var(--line))] bg-[color-mix(in_oklab,var(--lagoon-deep)_10%,var(--card))]'
+                          : 'border-[var(--line)] bg-[color-mix(in_oklab,var(--card)_88%,transparent)] hover:bg-[var(--chip-bg)]'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-[var(--sea-ink)]">
+                            {contributor.displayName || contributor.userId}
+                          </div>
+                          <div className="mt-1 truncate text-xs text-[var(--sea-ink-soft)]">
+                            {contributor.userId}
+                          </div>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-[var(--chip-bg)] px-2 py-0.5 text-xs text-[var(--sea-ink-soft)]">
+                          {contributor.videoCount}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-xs text-[var(--sea-ink-soft)]">
+                        Latest {formatDateTime(contributor.latestRecordedAt)}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-[var(--line)] px-4 py-8 text-center text-sm text-[var(--sea-ink-soft)]">
+                No contributors yet.
+              </div>
+            )}
+          </aside>
+          </div>
         </>
       ) : null}
     </main>

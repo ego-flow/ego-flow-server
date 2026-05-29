@@ -3,7 +3,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { apiClient, resolveBackendUrl } from '#/api/client'
 
 export type VideoStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
-export type VideoSortBy = 'recorded_at' | 'duration_sec'
+export type VideoSortBy = 'recorded_at' | 'duration_sec' | 'size_bytes'
 export type SortOrder = 'asc' | 'desc'
 
 export interface VideoListFilters {
@@ -12,6 +12,7 @@ export interface VideoListFilters {
   status?: VideoStatus | 'ALL'
   sortBy?: VideoSortBy
   sortOrder?: SortOrder
+  contributorUserId?: string
 }
 
 interface RepositoryVideoApiRecord {
@@ -26,6 +27,9 @@ interface RepositoryVideoApiRecord {
   fps: number | null
   codec: string | null
   recorded_at: string | null
+  size_bytes: number | null
+  contributor_user_id: string | null
+  contributor_display_name: string | null
   thumbnail_url: string | null
   dashboard_video_url?: string | null
   scene_summary: string | null
@@ -38,6 +42,19 @@ interface VideoListApiResponse {
   page: number
   limit: number
   data: RepositoryVideoApiRecord[]
+  contributors: Array<{
+    user_id: string
+    display_name: string | null
+    video_count: number
+    latest_recorded_at: string | null
+  }>
+}
+
+export interface VideoContributor {
+  userId: string
+  displayName: string | null
+  videoCount: number
+  latestRecordedAt: string | null
 }
 
 export interface VideoRecord {
@@ -52,6 +69,9 @@ export interface VideoRecord {
   fps: number | null
   codec: string | null
   recordedAt: string | null
+  sizeBytes: number | null
+  contributorUserId: string | null
+  contributorDisplayName: string | null
   thumbnailUrl: string | null
   dashboardVideoUrl: string | null
   sceneSummary: string | null
@@ -63,6 +83,7 @@ export interface VideoListResponse {
   total: number
   page: number
   limit: number
+  contributors: VideoContributor[]
   data: VideoRecord[]
 }
 
@@ -156,6 +177,9 @@ function normalizeVideo(video: RepositoryVideoApiRecord): VideoRecord {
     fps: video.fps,
     codec: video.codec,
     recordedAt: video.recorded_at,
+    sizeBytes: video.size_bytes,
+    contributorUserId: video.contributor_user_id,
+    contributorDisplayName: video.contributor_display_name,
     thumbnailUrl: resolveBackendUrl(video.thumbnail_url),
     dashboardVideoUrl: resolveBackendUrl(video.dashboard_video_url ?? null),
     sceneSummary: video.scene_summary,
@@ -175,6 +199,7 @@ export async function requestVideos(repositoryId: string, filters: VideoListFilt
           filters.status && filters.status !== 'ALL' ? filters.status : undefined,
         sort_by: filters.sortBy ?? 'recorded_at',
         sort_order: filters.sortOrder ?? 'desc',
+        contributor_user_id: filters.contributorUserId?.trim() || undefined,
       },
     },
   )
@@ -183,6 +208,12 @@ export async function requestVideos(repositoryId: string, filters: VideoListFilt
     total: response.data.total,
     page: response.data.page,
     limit: response.data.limit,
+    contributors: response.data.contributors.map((contributor) => ({
+      userId: contributor.user_id,
+      displayName: contributor.display_name,
+      videoCount: contributor.video_count,
+      latestRecordedAt: contributor.latest_recorded_at,
+    })),
     data: response.data.data.map(normalizeVideo),
   } satisfies VideoListResponse
 }

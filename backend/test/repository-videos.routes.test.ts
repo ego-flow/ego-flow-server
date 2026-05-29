@@ -187,6 +187,7 @@ test("repo-scoped list uses repository context resolved by repoAccess", { concur
       total: 1,
       page: query.page,
       limit: query.limit,
+      contributors: [],
       data: [],
     };
   }) as typeof videoService.listRepositoryVideos;
@@ -206,6 +207,7 @@ test("repo-scoped list uses repository context resolved by repoAccess", { concur
       total: 1,
       page: 2,
       limit: 5,
+      contributors: [],
       data: [],
     });
   } finally {

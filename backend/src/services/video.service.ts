@@ -11,7 +11,7 @@ import type { AppRepoRole, RepositoryRecord } from "../types/repository";
 import { processingService } from "./processing.service";
 
 type VideoOrderQuery = {
-  sort_by: "created_at" | "recorded_at" | "duration_sec";
+  sort_by: "recorded_at" | "duration_sec" | "size_bytes";
   sort_order: "asc" | "desc";
 };
 
@@ -27,9 +27,20 @@ type RepositoryVideoRecord = {
   recordedAt: Date | null;
   thumbnailPath: string | null;
   dashboardVideoPath: string | null;
+  vlmSizeBytes: bigint | null;
   sceneSummary: string | null;
   clipSegments: Prisma.JsonValue | null;
   createdAt: Date;
+  recordingSession: {
+    userId: string;
+  } | null;
+};
+
+type RepositoryContributor = {
+  userId: string;
+  displayName: string | null;
+  videoCount: number;
+  latestRecordedAt: Date | null;
 };
 
 type VideoRepositoryContext = Pick<RepositoryRecord, "id" | "name" | "ownerId">;
@@ -41,9 +52,10 @@ const buildOrderBy = (query: VideoOrderQuery): Prisma.VideoOrderByWithRelationIn
       return { recordedAt: query.sort_order };
     case "duration_sec":
       return { durationSec: query.sort_order };
-    case "created_at":
+    case "size_bytes":
+      return { vlmSizeBytes: query.sort_order };
     default:
-      return { createdAt: query.sort_order };
+      return { recordedAt: query.sort_order };
   }
 };
 
@@ -72,6 +84,14 @@ const toRepositoryThumbnailUrl = (
 const toRepositoryVideoDownloadUrl = (repositoryId: string, videoId: string) =>
   `/api/v1/repositories/${repositoryId}/videos/${videoId}/download`;
 
+const toSizeBytes = (value: bigint | number | null | undefined) => {
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+
+  return typeof value === "number" ? value : null;
+};
+
 const getManifestArtifactMetadata = (video: {
   id: string;
   vlmSizeBytes: bigint | null;
@@ -91,26 +111,41 @@ const toRepoVideoResponse = (
   targetDirectory: string,
   video: RepositoryVideoRecord,
   repository: VideoRepositoryContext,
+  displayNamesByUserId: Map<string, string | null>,
   options?: { includeDashboardVideoUrl?: boolean },
-) => ({
-  id: video.id,
-  repository_id: repository.id,
-  repository_name: repository.name,
-  owner_id: repository.ownerId,
-  status: video.status,
-  duration_sec: video.durationSec,
-  resolution_width: video.resolutionWidth,
-  resolution_height: video.resolutionHeight,
-  fps: video.fps,
-  codec: video.codec,
-  recorded_at: video.recordedAt ? video.recordedAt.toISOString() : null,
-  thumbnail_url: video.thumbnailPath ? toRepositoryThumbnailUrl(targetDirectory, video) : null,
-  ...(options?.includeDashboardVideoUrl
-    ? { dashboard_video_url: toSignedFileUrl(targetDirectory, video.dashboardVideoPath) }
-    : {}),
-  scene_summary: video.sceneSummary,
-  clip_segments: video.clipSegments,
-  created_at: video.createdAt.toISOString(),
+) => {
+  const contributorUserId = video.recordingSession?.userId ?? null;
+
+  return {
+    id: video.id,
+    repository_id: repository.id,
+    repository_name: repository.name,
+    owner_id: repository.ownerId,
+    status: video.status,
+    duration_sec: video.durationSec,
+    resolution_width: video.resolutionWidth,
+    resolution_height: video.resolutionHeight,
+    fps: video.fps,
+    codec: video.codec,
+    recorded_at: video.recordedAt ? video.recordedAt.toISOString() : null,
+    size_bytes: toSizeBytes(video.vlmSizeBytes),
+    contributor_user_id: contributorUserId,
+    contributor_display_name: contributorUserId ? displayNamesByUserId.get(contributorUserId) ?? null : null,
+    thumbnail_url: video.thumbnailPath ? toRepositoryThumbnailUrl(targetDirectory, video) : null,
+    ...(options?.includeDashboardVideoUrl
+      ? { dashboard_video_url: toSignedFileUrl(targetDirectory, video.dashboardVideoPath) }
+      : {}),
+    scene_summary: video.sceneSummary,
+    clip_segments: video.clipSegments,
+    created_at: video.createdAt.toISOString(),
+  };
+};
+
+const toContributorResponse = (contributor: RepositoryContributor) => ({
+  user_id: contributor.userId,
+  display_name: contributor.displayName,
+  video_count: contributor.videoCount,
+  latest_recorded_at: contributor.latestRecordedAt ? contributor.latestRecordedAt.toISOString() : null,
 });
 
 export class VideoService {
@@ -129,9 +164,15 @@ export class VideoService {
         recordedAt: true,
         thumbnailPath: true,
         dashboardVideoPath: true,
+        vlmSizeBytes: true,
         sceneSummary: true,
         clipSegments: true,
         createdAt: true,
+        recordingSession: {
+          select: {
+            userId: true,
+          },
+        },
       },
     });
 
@@ -198,14 +239,94 @@ export class VideoService {
     );
   }
 
+  private async getUserDisplayNames(userIds: string[]) {
+    const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
+    if (uniqueUserIds.length === 0) {
+      return new Map<string, string | null>();
+    }
+
+    const users = await prisma.user.findMany({
+      where: { id: { in: uniqueUserIds } },
+      select: {
+        id: true,
+        displayName: true,
+      },
+    });
+
+    return new Map(users.map((user) => [user.id, user.displayName]));
+  }
+
+  private async getRepositoryContributors(repositoryId: string): Promise<RepositoryContributor[]> {
+    const contributorVideos = await prisma.video.findMany({
+      where: {
+        repositoryId,
+        recordingSession: { isNot: null },
+      },
+      select: {
+        recordedAt: true,
+        createdAt: true,
+        recordingSession: {
+          select: {
+            userId: true,
+          },
+        },
+      },
+    });
+
+    const contributorsByUserId = new Map<string, Omit<RepositoryContributor, "displayName">>();
+    for (const video of contributorVideos) {
+      const userId = video.recordingSession?.userId;
+      if (!userId) {
+        continue;
+      }
+
+      const latestCandidate = video.recordedAt ?? video.createdAt;
+      const current = contributorsByUserId.get(userId);
+      if (!current) {
+        contributorsByUserId.set(userId, {
+          userId,
+          videoCount: 1,
+          latestRecordedAt: latestCandidate,
+        });
+        continue;
+      }
+
+      current.videoCount += 1;
+      if (
+        latestCandidate &&
+        (!current.latestRecordedAt || latestCandidate.getTime() > current.latestRecordedAt.getTime())
+      ) {
+        current.latestRecordedAt = latestCandidate;
+      }
+    }
+
+    const displayNamesByUserId = await this.getUserDisplayNames(Array.from(contributorsByUserId.keys()));
+
+    return Array.from(contributorsByUserId.values())
+      .map((contributor) => ({
+        ...contributor,
+        displayName: displayNamesByUserId.get(contributor.userId) ?? null,
+      }))
+      .sort((left, right) => right.videoCount - left.videoCount || left.userId.localeCompare(right.userId));
+  }
+
   async listRepositoryVideos(repository: VideoRepositoryContext, query: RepoVideoListQueryInput) {
     const targetDirectory = getTargetDirectory();
     const where: Prisma.VideoWhereInput = {
       repositoryId: repository.id,
       ...(query.status ? { status: query.status } : {}),
+      ...(query.contributor_user_id
+        ? {
+            recordingSession: {
+              is: {
+                userId: query.contributor_user_id,
+              },
+            },
+          }
+        : {}),
     };
 
-    const [total, videos] = await Promise.all([
+    const [total, videos, contributors] = await Promise.all([
       prisma.video.count({ where }),
       prisma.video.findMany({
         where,
@@ -224,25 +345,40 @@ export class VideoService {
           recordedAt: true,
           thumbnailPath: true,
           dashboardVideoPath: true,
+          vlmSizeBytes: true,
           sceneSummary: true,
           clipSegments: true,
           createdAt: true,
+          recordingSession: {
+            select: {
+              userId: true,
+            },
+          },
         },
       }),
+      this.getRepositoryContributors(repository.id),
     ]);
+
+    const displayNamesByUserId = new Map(
+      contributors.map((contributor) => [contributor.userId, contributor.displayName] as const),
+    );
 
     return {
       total,
       page: query.page,
       limit: query.limit,
-      data: videos.map((video) => toRepoVideoResponse(targetDirectory, video, repository)),
+      contributors: contributors.map(toContributorResponse),
+      data: videos.map((video) => toRepoVideoResponse(targetDirectory, video, repository, displayNamesByUserId)),
     };
   }
 
   async getRepositoryVideoDetail(repoId: string, repository: VideoRepositoryContext, videoId: string) {
     const targetDirectory = getTargetDirectory();
     const video = await this.getRepositoryVideoForResponse(repoId, videoId);
-    return toRepoVideoResponse(targetDirectory, video, repository, {
+    const contributorUserId = video.recordingSession?.userId;
+    const displayNamesByUserId = await this.getUserDisplayNames(contributorUserId ? [contributorUserId] : []);
+
+    return toRepoVideoResponse(targetDirectory, video, repository, displayNamesByUserId, {
       includeDashboardVideoUrl: true,
     });
   }

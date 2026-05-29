@@ -1,7 +1,7 @@
 import { VideoStatus } from "@prisma/client";
 import { z } from "zod";
 
-export const repoVideoSortBySchema = z.enum(["created_at", "recorded_at", "duration_sec"]);
+export const repoVideoSortBySchema = z.enum(["recorded_at", "duration_sec", "size_bytes"]);
 
 export const repoVideoRepositoryParamSchema = z.object({
   repoId: z.uuid(),
@@ -16,8 +16,9 @@ export const repoVideoListQuerySchema = z.object({
   status: z.nativeEnum(VideoStatus).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
-  sort_by: repoVideoSortBySchema.default("created_at"),
+  sort_by: repoVideoSortBySchema.default("recorded_at"),
   sort_order: z.enum(["asc", "desc"]).default("desc"),
+  contributor_user_id: z.string().trim().min(1).max(64).optional(),
 });
 
 export type RepoVideoRepositoryParamInput = z.infer<typeof repoVideoRepositoryParamSchema>;

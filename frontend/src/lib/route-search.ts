@@ -10,10 +10,12 @@ export const defaultRepositoryVideosSearch: {
   status: VideoStatus | 'ALL'
   sortBy: VideoSortBy
   sortOrder: SortOrder
+  contributorUserId: string
 } = {
   page: 1,
   limit: 20,
   status: 'ALL',
   sortBy: 'recorded_at',
   sortOrder: 'desc',
+  contributorUserId: '',
 }

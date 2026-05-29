@@ -93,6 +93,23 @@ function RepositorySettingsPage() {
 
   const repository = repositoryQuery.data
 
+  useEffect(() => {
+    if (!repository || repository.myRole === 'admin') {
+      return
+    }
+
+    void navigate({
+      to: '/repositories/$repoId',
+      params: { repoId },
+      search: repositorySearch,
+      replace: true,
+    })
+  }, [navigate, repoId, repository, repositorySearch])
+
+  if (repository && repository.myRole !== 'admin') {
+    return <main className="page-wrap px-4 py-8 sm:py-10" />
+  }
+
   return (
     <main className="page-wrap px-4 py-8 sm:py-10">
       <div className="mb-5">

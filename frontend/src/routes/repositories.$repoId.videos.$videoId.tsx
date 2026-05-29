@@ -10,7 +10,7 @@ import {
 } from '#/api/videos'
 import { getApiErrorMessage } from '#/api/client'
 import { Button } from '#/components/ui/button'
-import { formatDateTime, formatDuration, formatResolution } from '#/lib/format'
+import { formatBytes, formatDateTime, formatDuration, formatResolution } from '#/lib/format'
 import { removeVideoSnapshot } from '#/lib/video-snapshots'
 
 export const Route = createFileRoute('/repositories/$repoId/videos/$videoId')({
@@ -40,6 +40,19 @@ function formatClipSegments(value: unknown) {
   } catch {
     return 'Unavailable'
   }
+}
+
+function formatContributorName(video: {
+  contributorUserId: string | null
+  contributorDisplayName: string | null
+} | null) {
+  if (!video?.contributorUserId) {
+    return 'Unavailable'
+  }
+
+  return video.contributorDisplayName
+    ? `${video.contributorDisplayName} (${video.contributorUserId})`
+    : video.contributorUserId
 }
 
 function RepositoryVideoDetailPage() {
@@ -220,6 +233,22 @@ function RepositoryVideoDetailPage() {
                 <dd>{video ? `${video.ownerId}/${video.repositoryName}` : 'Unavailable'}</dd>
               </div>
               <div>
+                <dt className="font-semibold text-[var(--sea-ink)]">Video ID</dt>
+                <dd className="break-all">{video?.id ?? videoId}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-[var(--sea-ink)]">Status</dt>
+                <dd>{currentStatus}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-[var(--sea-ink)]">Contributor</dt>
+                <dd>{formatContributorName(video)}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-[var(--sea-ink)]">Size</dt>
+                <dd>{formatBytes(video?.sizeBytes ?? null)}</dd>
+              </div>
+              <div>
                 <dt className="font-semibold text-[var(--sea-ink)]">Duration</dt>
                 <dd>{formatDuration(video?.durationSec ?? null)}</dd>
               </div>
@@ -238,6 +267,10 @@ function RepositoryVideoDetailPage() {
               <div>
                 <dt className="font-semibold text-[var(--sea-ink)]">Recorded at</dt>
                 <dd>{formatDateTime(video?.recordedAt ?? null)}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-[var(--sea-ink)]">Created at</dt>
+                <dd>{formatDateTime(video?.createdAt ?? null)}</dd>
               </div>
               <div>
                 <dt className="font-semibold text-[var(--sea-ink)]">Processing started</dt>

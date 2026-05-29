@@ -491,6 +491,9 @@ export const openApiDocument = {
           "fps",
           "codec",
           "recorded_at",
+          "size_bytes",
+          "contributor_user_id",
+          "contributor_display_name",
           "thumbnail_url",
           "scene_summary",
           "clip_segments",
@@ -508,6 +511,9 @@ export const openApiDocument = {
           fps: { type: ["number", "null"] },
           codec: { type: ["string", "null"] },
           recorded_at: { type: ["string", "null"], format: "date-time" },
+          size_bytes: { type: ["integer", "null"], example: 104857600 },
+          contributor_user_id: { type: ["string", "null"], example: "alice" },
+          contributor_display_name: { type: ["string", "null"], example: "Alice Kim" },
           thumbnail_url: { type: ["string", "null"] },
           dashboard_video_url: { type: ["string", "null"] },
           scene_summary: { type: ["string", "null"] },
@@ -517,11 +523,24 @@ export const openApiDocument = {
       },
       RepositoryVideoListResponse: {
         type: "object",
-        required: ["total", "page", "limit", "data"],
+        required: ["total", "page", "limit", "contributors", "data"],
         properties: {
           total: { type: "integer", minimum: 0 },
           page: { type: "integer", minimum: 1 },
           limit: { type: "integer", minimum: 1 },
+          contributors: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["user_id", "display_name", "video_count", "latest_recorded_at"],
+              properties: {
+                user_id: { type: "string", example: "alice" },
+                display_name: { type: ["string", "null"], example: "Alice Kim" },
+                video_count: { type: "integer", minimum: 1 },
+                latest_recorded_at: { type: ["string", "null"], format: "date-time" },
+              },
+            },
+          },
           data: {
             type: "array",
             items: { $ref: "#/components/schemas/RepositoryVideo" },
@@ -1854,12 +1873,17 @@ export const openApiDocument = {
           {
             name: "sort_by",
             in: "query",
-            schema: { type: "string", enum: ["created_at", "recorded_at", "duration_sec"], default: "created_at" },
+            schema: { type: "string", enum: ["recorded_at", "duration_sec", "size_bytes"], default: "recorded_at" },
           },
           {
             name: "sort_order",
             in: "query",
             schema: { type: "string", enum: ["asc", "desc"], default: "desc" },
+          },
+          {
+            name: "contributor_user_id",
+            in: "query",
+            schema: { type: "string", example: "alice" },
           },
         ],
         responses: {
