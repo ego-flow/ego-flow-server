@@ -869,45 +869,41 @@ export class RecordingSessionService {
           hasPublishTicketIssuedAt &&
           (!currentOwner || !ownerMatchesSession || ownerIsStale)
         ) {
-          await prisma.recordingSession.update({
-            where: { id: session.id },
-            data: {
-              status: RecordingSessionStatus.ABORTED,
-              endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
-              finalizedAt: new Date(),
-            },
-          });
-          await this.clearLivePointers(session.id, session.repositoryId, repoName, session.sourceId ?? undefined);
-          console.info("[rtmp-reconcile] pending-claimed-owner-missing-or-stale", {
-            recordingSessionId: session.id,
-            repositoryId: session.repositoryId,
-            repositoryName: repoName,
-            publishTicketIssuedAt: liveCache?.publishTicketIssuedAt ?? null,
-            ownerConnectionId: currentOwner?.connectionId ?? null,
-            ownerGeneration: currentOwner?.generation ?? null,
-            ownerLeaseExpiresAt: currentOwner ? new Date(currentOwner.leaseExpiresAt).toISOString() : null,
-          });
+          const aborted = await this.abortPendingSessionIfStillCurrent(
+            session,
+            RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
+          );
+          if (aborted) {
+            await this.clearLivePointers(session.id, session.repositoryId, repoName, session.sourceId ?? undefined);
+            console.info("[rtmp-reconcile] pending-claimed-owner-missing-or-stale", {
+              recordingSessionId: session.id,
+              repositoryId: session.repositoryId,
+              repositoryName: repoName,
+              publishTicketIssuedAt: liveCache?.publishTicketIssuedAt ?? null,
+              ownerConnectionId: currentOwner?.connectionId ?? null,
+              ownerGeneration: currentOwner?.generation ?? null,
+              ownerLeaseExpiresAt: currentOwner ? new Date(currentOwner.leaseExpiresAt).toISOString() : null,
+            });
+          }
           continue;
         }
 
         const age = now - this.getPendingRegistrationReferenceAt(session).getTime();
         if (age > RECORDING_REGISTRATION_TTL_SECONDS * 1000) {
-          await prisma.recordingSession.update({
-            where: { id: session.id },
-            data: {
-              status: RecordingSessionStatus.ABORTED,
-              endReason: RecordingSessionEndReason.REGISTRATION_TIMEOUT,
-              finalizedAt: new Date(),
-            },
-          });
-          await this.clearLivePointers(session.id, session.repositoryId, repoName, session.sourceId ?? undefined);
-          console.info("[rtmp-reconcile] pending-timeout-aborted", {
-            recordingSessionId: session.id,
-            repositoryId: session.repositoryId,
-            repositoryName: repoName,
-            ageMs: age,
-            registrationTtlSec: RECORDING_REGISTRATION_TTL_SECONDS,
-          });
+          const aborted = await this.abortPendingSessionIfStillCurrent(
+            session,
+            RecordingSessionEndReason.REGISTRATION_TIMEOUT,
+          );
+          if (aborted) {
+            await this.clearLivePointers(session.id, session.repositoryId, repoName, session.sourceId ?? undefined);
+            console.info("[rtmp-reconcile] pending-timeout-aborted", {
+              recordingSessionId: session.id,
+              repositoryId: session.repositoryId,
+              repositoryName: repoName,
+              ageMs: age,
+              registrationTtlSec: RECORDING_REGISTRATION_TTL_SECONDS,
+            });
+          }
         }
         continue;
       }
@@ -1225,6 +1221,31 @@ export class RecordingSessionService {
 
   private getPendingRegistrationReferenceAt(session: { createdAt: Date; updatedAt?: Date | null }) {
     return session.updatedAt ?? session.createdAt;
+  }
+
+  private async abortPendingSessionIfStillCurrent(
+    session: {
+      id: string;
+      createdAt: Date;
+      updatedAt?: Date | null;
+    },
+    endReason: RecordingSessionEndReason,
+  ) {
+    const snapshotUpdatedAt = this.getPendingRegistrationReferenceAt(session);
+    const result = await prisma.recordingSession.updateMany({
+      where: {
+        id: session.id,
+        status: RecordingSessionStatus.PENDING,
+        updatedAt: { lte: snapshotUpdatedAt },
+      },
+      data: {
+        status: RecordingSessionStatus.ABORTED,
+        endReason,
+        finalizedAt: new Date(),
+      },
+    });
+
+    return result.count > 0;
   }
 
   private getFinalizeReferenceAt(session: {

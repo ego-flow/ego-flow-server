@@ -38,6 +38,7 @@ const fakePrisma: any = {
   recordingSession: {
     findUnique: async (_args?: unknown) => null,
     update: async (_args?: unknown) => null,
+    updateMany: async (_args?: unknown) => ({ count: 0 }),
   },
   recordingSegment: {
     count: async (_args?: unknown) => 0,
@@ -117,6 +118,7 @@ beforeEach(() => {
 
   fakePrisma.recordingSession.findUnique = async () => null;
   fakePrisma.recordingSession.update = async () => null;
+  fakePrisma.recordingSession.updateMany = async () => ({ count: 0 });
   fakePrisma.recordingSegment.count = async () => 0;
   fakePrisma.recordingSegment.findFirst = async () => null;
   fakePrisma.recordingSegment.aggregate = async () => ({ _max: { sequence: null } });
@@ -638,6 +640,111 @@ test("reconcile uses the refreshed pending registration timestamp before abortin
   await recordingSessionService.reconcileSessions();
 
   assert.equal(updateCalls.length, 0);
+});
+
+test("reconcile aborts an expired pending registration only when the row was not refreshed", async () => {
+  const staleUpdatedAt = new Date(Date.now() - 10 * 60_000);
+  const session = {
+    id: "session-1",
+    repositoryId: "repo-1",
+    ownerId: "owner-1",
+    userId: "user-1",
+    deviceType: null,
+    streamPath: "live/repo-name",
+    status: RecordingSessionStatus.PENDING,
+    targetDirectory: "/data/raw",
+    sourceId: null,
+    sourceType: null,
+    readyAt: null,
+    stopRequestedAt: null,
+    notReadyAt: null,
+    createdAt: staleUpdatedAt,
+    updatedAt: staleUpdatedAt,
+    endReason: null,
+  };
+  const updateManyCalls: Array<Record<string, unknown>> = [];
+
+  fakePrisma.recordingSession.findMany = async () => [session];
+  fakePrisma.recordingSession.updateMany = async (args: Record<string, unknown>) => {
+    updateManyCalls.push(args);
+    return { count: 1 };
+  };
+
+  await fakeRedis.set(
+    "stream:recording:session-1",
+    JSON.stringify({
+      recordingSessionId: "session-1",
+      repositoryId: "repo-1",
+      repositoryName: "repo-name",
+      userId: "user-1",
+      status: "PENDING",
+    } satisfies RecordingSessionLiveCache),
+  );
+
+  streamOwnershipService.getCurrentOwnerForRepository = async () => null;
+  streamOwnershipService.listConnections = async () => [];
+  (recordingSessionService as any).getActiveRepositoryNames = async () => null;
+
+  await recordingSessionService.reconcileSessions();
+
+  assert.equal(updateManyCalls.length, 1);
+  assert.deepEqual((updateManyCalls[0] as any).where, {
+    id: "session-1",
+    status: RecordingSessionStatus.PENDING,
+    updatedAt: { lte: staleUpdatedAt },
+  });
+  assert.equal((updateManyCalls[0] as any).data.status, RecordingSessionStatus.ABORTED);
+  assert.equal((updateManyCalls[0] as any).data.endReason, RecordingSessionEndReason.REGISTRATION_TIMEOUT);
+  assert.equal(await fakeRedis.get("stream:recording:session-1"), null);
+});
+
+test("reconcile does not abort a pending registration that register refreshed concurrently", async () => {
+  const staleUpdatedAt = new Date(Date.now() - 10 * 60_000);
+  const session = {
+    id: "session-1",
+    repositoryId: "repo-1",
+    ownerId: "owner-1",
+    userId: "user-1",
+    deviceType: null,
+    streamPath: "live/repo-name",
+    status: RecordingSessionStatus.PENDING,
+    targetDirectory: "/data/raw",
+    sourceId: null,
+    sourceType: null,
+    readyAt: null,
+    stopRequestedAt: null,
+    notReadyAt: null,
+    createdAt: staleUpdatedAt,
+    updatedAt: staleUpdatedAt,
+    endReason: null,
+  };
+  const updateManyCalls: Array<Record<string, unknown>> = [];
+
+  fakePrisma.recordingSession.findMany = async () => [session];
+  fakePrisma.recordingSession.updateMany = async (args: Record<string, unknown>) => {
+    updateManyCalls.push(args);
+    return { count: 0 };
+  };
+
+  await fakeRedis.set(
+    "stream:recording:session-1",
+    JSON.stringify({
+      recordingSessionId: "session-1",
+      repositoryId: "repo-1",
+      repositoryName: "repo-name",
+      userId: "user-1",
+      status: "PENDING",
+    } satisfies RecordingSessionLiveCache),
+  );
+
+  streamOwnershipService.getCurrentOwnerForRepository = async () => null;
+  streamOwnershipService.listConnections = async () => [];
+  (recordingSessionService as any).getActiveRepositoryNames = async () => null;
+
+  await recordingSessionService.reconcileSessions();
+
+  assert.equal(updateManyCalls.length, 1);
+  assert.notEqual(await fakeRedis.get("stream:recording:session-1"), null);
 });
 
 test("reconcile releases the current owner before finalizing a broken streaming session", async () => {

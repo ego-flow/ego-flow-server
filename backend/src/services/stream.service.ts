@@ -37,7 +37,7 @@ export class StreamService {
    * 앱에서 POST /api/v1/streams/register 호출 시 진입점.
    * - repository maintain 권한 확인
    * - 아직 publish가 시작되지 않은 같은 사용자/repository/deviceType의 PENDING 세션은 재사용
-   * - timeout이 지난 PENDING 세션은 재사용하지 않고 reconcile이 ABORTED로 정리하도록 둠
+   * - DB에 PENDING으로 남아 있는 세션은 age와 무관하게 재사용하고 updatedAt/Redis TTL을 갱신
    * - RecordingSession을 PENDING 상태로 생성하고 recording cache만 저장
    * - recordingSessionId만 반환하고, 실제 publish credential은 별도 publish-ticket 발급으로 분리함
    */
