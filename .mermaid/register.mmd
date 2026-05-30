@@ -6,42 +6,58 @@ sequenceDiagram
   participant Redis as [Redis]
 
   App->>App: Start Streaming 버튼 클릭
-  App->>Backend: POST /api/v1/streams/register<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/>body: { "repositoryId": "{repository_uuid}", "deviceType": "{optional_device_type}" }
+  App->>Backend: register 요청
+  Note over App,Backend: API<br/>POST /api/v1/streams/register<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>{<br/>  "repositoryId": "{repository_uuid}",<br/>  "deviceType": "{optional_device_type}"<br/>}
 
-  Backend->>Backend: requireAppJwt<br/>Bearer token 추출, App JWT 검증, 사용자 존재 확인<br/>필요 시 X-Refreshed-Token 응답 헤더 설정
-  Backend->>Backend: validate(streamRegisterSchema)<br/>repositoryId: uuid<br/>deviceType: optional string, max 100
+  Backend->>Backend: requireAppJwt
+  Note over Backend: Bearer token 추출<br/>App JWT 검증<br/>사용자 존재 확인<br/>필요 시 X-Refreshed-Token 응답 헤더 설정
+  Backend->>Backend: validate(streamRegisterSchema)
+  Note over Backend: repositoryId: uuid<br/>deviceType: optional string, max 100
 
-  Backend->>DB: repository 접근 정보 조회<br/>repositories: id = repositoryId row<br/>repo_members: repositoryId + userId row
+  Backend->>DB: repository 접근 정보 조회
+  Note over Backend,DB: repositories: id = repositoryId row<br/>repo_members: repositoryId + userId row
   DB-->>Backend: repository 기본 정보 + 사용자의 repository role
-  Backend->>Backend: assertRepositoryAccess(userId, userRole, repositoryId, "maintain")<br/>admin 또는 maintain 이상만 통과
+  Backend->>Backend: repository maintain 권한 검증
+  Note over Backend: assertRepositoryAccess(userId, userRole, repositoryId, "maintain")<br/>admin 또는 maintain 이상만 통과
 
   alt maintain 권한 없음
-    Backend->>DB: 기존 PENDING session 정리<br/>table: recording_sessions<br/>target rows: repository_id = repositoryId, user_id = userId, device_type = deviceType ?? null, status = PENDING<br/>updated fields: status = ABORTED, end_reason = ACCESS_FORBIDDEN, finalized_at = now
+    Backend->>DB: 기존 PENDING session 정리
+    Note over Backend,DB: table: recording_sessions<br/>target rows: repository_id = repositoryId, user_id = userId, device_type = deviceType ?? null, status = PENDING<br/>updated fields: status = ABORTED, end_reason = ACCESS_FORBIDDEN, finalized_at = now
     DB-->>Backend: aborted recordingSessionIds
-    Backend->>Redis: recording cache 삭제<br/>key: stream:recording:{recordingSessionId}<br/>value: deleted<br/>TTL: 즉시 삭제
+    Backend->>Redis: recording cache 삭제
+    Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: deleted<br/>TTL: 즉시 삭제
     Backend-->>App: 403 Forbidden
   else maintain 권한 있음
-    Backend->>DB: 재사용 가능한 PENDING session 조회<br/>recording_sessions 대상 row:<br/>repository_id = repositoryId<br/>user_id = userId<br/>device_type = deviceType ?? null<br/>status = PENDING<br/>created_at 최신 순
+    Backend->>DB: 재사용 가능한 PENDING session 조회
+    Note over Backend,DB: recording_sessions 대상 row<br/>repository_id = repositoryId<br/>user_id = userId<br/>device_type = deviceType ?? null<br/>status = PENDING<br/>created_at 최신 순
     DB-->>Backend: pendingSessions[]
 
     alt 재사용 가능한 PENDING 세션 있음
-      Backend->>Backend: reusableSession = pendingSessions[0]<br/>가장 최근 createdAt 세션 선택
+      Backend->>Backend: 재사용 session 선택
+      Note over Backend: reusableSession = pendingSessions[0]<br/>가장 최근 createdAt 세션 선택
       Note over Backend,DB: register 경로 자체는 PENDING age를 비교하지 않는다.<br/>DB에 PENDING row가 남아 있으면 최신 row를 재사용하고 updatedAt을 갱신한다.<br/>timeout cleanup은 별도 reconcile 루프가 담당한다.
-      Backend->>DB: 기존 PENDING session row 갱신<br/>recording_sessions 대상 row: id = reusableSession.id<br/>status = PENDING 유지<br/>updated_at = now
+      Backend->>DB: 기존 PENDING session row 갱신
+      Note over Backend,DB: recording_sessions 대상 row: id = reusableSession.id<br/>status = PENDING 유지<br/>updated_at = now
       DB-->>Backend: refreshedSession
-      Backend->>Redis: PENDING session cache 저장/갱신<br/>key: stream:recording:{recordingSessionId}<br/>value: {<br/>  "recordingSessionId": "{recordingSessionId}",<br/>  "repositoryId": "{repositoryId}",<br/>  "repositoryName": "{repositoryName}",<br/>  "userId": "{userId}",<br/>  "status": "PENDING",<br/>  "deviceType": "{deviceType}"<br/>}<br/>TTL: 300 seconds
+      Backend->>Redis: PENDING session cache 저장/갱신
+      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: {<br/>  "recordingSessionId": "{recordingSessionId}",<br/>  "repositoryId": "{repositoryId}",<br/>  "repositoryName": "{repositoryName}",<br/>  "userId": "{userId}",<br/>  "status": "PENDING",<br/>  "deviceType": "{deviceType}"<br/>}<br/>TTL: 300 seconds
       Note over Redis: deviceType은 값이 있을 때만 JSON에 포함된다.<br/>DB의 PENDING row가 남아 있으면 Redis key가 만료되어도 이 분기에서 세션 캐시를 복구한다.
       Redis-->>Backend: cache 저장 완료
-      Backend-->>App: 200 OK<br/>{ "recordingSessionId": "{existing_recording_session_id}" }
+      Backend-->>App: 200 OK
+      Note over App,Backend: Response Body<br/>{<br/>  "recordingSessionId": "{existing_recording_session_id}"<br/>}
     else PENDING 세션 없음
-      Backend->>Backend: recordingSessionId = randomUUID()<br/>streamPath = live/{repositoryName}/{recordingSessionId}<br/>targetDirectory = getTargetDirectory()
-      Backend->>DB: 신규 RecordingSession row 생성<br/>recording_sessions 저장 값:<br/>id = recordingSessionId<br/>repository_id = repositoryId<br/>owner_id = repository.ownerId<br/>user_id = userId<br/>device_type = deviceType ?? null<br/>stream_path = live/{repositoryName}/{recordingSessionId}<br/>status = PENDING<br/>target_directory = getTargetDirectory()
+      Backend->>Backend: 신규 session metadata 생성
+      Note over Backend: recordingSessionId = randomUUID()<br/>streamPath = live/{repositoryName}/{recordingSessionId}<br/>targetDirectory = getTargetDirectory()
+      Backend->>DB: 신규 RecordingSession row 생성
+      Note over Backend,DB: recording_sessions 저장 값<br/>id = recordingSessionId<br/>repository_id = repositoryId<br/>owner_id = repository.ownerId<br/>user_id = userId<br/>device_type = deviceType ?? null<br/>stream_path = live/{repositoryName}/{recordingSessionId}<br/>status = PENDING<br/>target_directory = getTargetDirectory()
       Note over DB: recording_sessions 신규 row<br/>end_reason = null<br/>source_id = null<br/>source_type = null<br/>stop_requested_at = null<br/>ready_at = null<br/>not_ready_at = null<br/>finalized_at = null<br/>created_at/updated_at = DB/Prisma 자동 기록
       DB-->>Backend: session
-      Backend->>Redis: PENDING session cache 저장<br/>key: stream:recording:{recordingSessionId}<br/>value: {<br/>  "recordingSessionId": "{recordingSessionId}",<br/>  "repositoryId": "{repositoryId}",<br/>  "repositoryName": "{repositoryName}",<br/>  "userId": "{userId}",<br/>  "status": "PENDING",<br/>  "deviceType": "{deviceType}"<br/>}<br/>TTL: 300 seconds
-      Note over Redis: register 단계에서 생성/갱신하는 세션 key는 stream:recording:{recordingSessionId} 하나다.<br/>stream:repo:{repositoryId}, stream:path:{repositoryName}, stream:active:sessions는<br/>후속 stream-ready 처리에서 STREAMING 전환 시 저장된다.
+      Backend->>Redis: PENDING session cache 저장
+      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: {<br/>  "recordingSessionId": "{recordingSessionId}",<br/>  "repositoryId": "{repositoryId}",<br/>  "repositoryName": "{repositoryName}",<br/>  "userId": "{userId}",<br/>  "status": "PENDING",<br/>  "deviceType": "{deviceType}"<br/>}<br/>TTL: 300 seconds
+      Note over Redis: register 단계에서 생성/갱신하는 세션 key는 stream:recording:{recordingSessionId} 하나다.<br/>stream:active:sessions와 stream:source:{sourceId}는<br/>후속 stream-ready 처리에서 STREAMING 전환 시 저장된다.
       Redis-->>Backend: cache 저장 완료
-      Backend-->>App: 200 OK<br/>{ "recordingSessionId": "{new_recording_session_id}" }
+      Backend-->>App: 200 OK
+      Note over App,Backend: Response Body<br/>{<br/>  "recordingSessionId": "{new_recording_session_id}"<br/>}
     end
   end
 

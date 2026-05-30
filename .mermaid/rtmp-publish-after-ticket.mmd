@@ -1,0 +1,79 @@
+sequenceDiagram
+  autonumber
+  participant App as [Android App]
+  participant MTX as [MediaMTX]
+  participant Backend as [Backend]
+  participant Redis as [Redis]
+  participant DB as [DB]
+  participant Storage as [Raw Storage]
+
+  Note over App,Backend: 이전 단계<br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket 성공<br/><br/>App이 받은 핵심 값<br/>rtmp_publish_base_url = rtmp://{host}:1935/live<br/>stream_path = live/{repositoryName}/{recordingSessionId}<br/>publish_ticket = t_{uuid}
+
+  App->>App: RTMP publish URL 조립
+  Note over App: intended URL<br/>rtmp_publish_base_url + "/" + stream_path에서 "live/" prefix 제거 + "?ticket={publish_ticket}"<br/><br/>결과<br/>rtmp://{host}:1935/live/{repositoryName}/{recordingSessionId}?ticket=t_{uuid}
+
+  App->>MTX: TCP open + RTMP handshake
+  Note over App,MTX: host={host}<br/>port=1935<br/>RTMP app=live<br/>RTMP stream key={repositoryName}/{recordingSessionId}?ticket=t_{uuid}
+
+  App->>MTX: RTMP connect command
+  Note over App,MTX: tcUrl=rtmp://{host}:1935/live<br/>app=live<br/>codec capability 포함<br/>HEVC 요청 시 fourCcList에 hvc1/avc1 후보 포함
+  MTX-->>App: connect _result
+
+  App->>MTX: releaseStream + FCPublish + createStream
+  Note over App,MTX: stream key={repositoryName}/{recordingSessionId}?ticket=t_{uuid}
+  MTX-->>App: createStream _result
+
+  App->>MTX: RTMP publish command
+  Note over App,MTX: publish(streamKey, type=live)
+
+  MTX->>Backend: publish auth callback
+  Note over MTX,Backend: API<br/>POST /api/v1/auth/rtmp<br/><br/>Payload 핵심 값<br/>action=publish<br/>path=live/{repositoryName}/{recordingSessionId}<br/>query=ticket=t_{uuid}
+
+  Backend->>Redis: publish ticket 조회 및 검증
+  Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>checks: exists, status=active, not expired, streamPath == path<br/>TTL: publish-ticket 발급 시점 기준 60 seconds
+
+  alt ticket invalid
+    Backend-->>MTX: 401 Unauthorized
+    MTX-->>App: RTMP publish rejected
+    Note over App,MTX: App은 NetStream.Publish.Start를 받지 못하고<br/>RTMP AUTH/NETWORK 계열 start failure로 처리
+  else ticket valid
+    Note over Backend,Redis: auth 단계에서는 ticket consume, DB update, live cache update를 하지 않는다.
+    Backend-->>MTX: 200 OK
+    MTX-->>App: onStatus NetStream.Publish.Start
+  end
+
+  MTX->>Backend: stream-ready hook
+  Note over MTX,Backend: API<br/>POST /api/v1/hooks/stream-ready<br/><br/>Payload 핵심 값<br/>path=live/{repositoryName}/{recordingSessionId}<br/>query=ticket=t_{uuid}<br/>source_id={sourceId}<br/>source_type={sourceType}
+
+  Backend->>Redis: ticket 재검증 및 consume
+  Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>value.status = consumed<br/>TTL: remaining seconds
+
+  Backend->>DB: RecordingSession STREAMING 전환
+  Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>updated fields: status=STREAMING, ready_at, source_id, source_type
+
+  Backend->>Redis: live session cache 저장
+  Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: { recordingSessionId, repositoryId, repositoryName, userId, status, sourceId, deviceType? }<br/>TTL: 86400 seconds<br/><br/>key: stream:source:{sourceId}<br/>value: { recordingSessionId, repositoryId, sourceId, sourceType }<br/>TTL: 86400 seconds<br/><br/>set: stream:active:sessions<br/>member: recordingSessionId
+
+  loop while RTMP socket is open
+    App->>MTX: RTMP video/audio messages
+    Note over App,MTX: video: H.264/H.265 sequence header 후 encoded samples<br/>audio: AAC sequence header 후 encoded samples<br/>timestamp: App encoder PTS 기준
+    MTX->>Storage: fMP4 recording write
+    Note over MTX,Storage: recordPath=/data/raw/live/{repositoryName}/{recordingSessionId}/{timestamp}<br/>recordFormat=fmp4<br/>recordPartDuration=1s<br/>recordSegmentDuration=12h
+  end
+
+  MTX->>Backend: recording-segment-create hook
+  Note over MTX,Backend: segment_path와 source_id 전달<br/>Backend는 source_id로 recordingSessionId를 찾고<br/>recording_segments row를 WRITING 상태로 생성 또는 갱신
+
+  MTX->>Backend: recording-segment-complete hook
+  Note over MTX,Backend: segment_path, source_id, segment_duration 전달<br/>Backend는 해당 recording_segments row를 COMPLETED로 전환
+
+  App->>MTX: RTMP socket close
+  Note over App,MTX: 사용자가 stop하거나 fatal/network failure가 발생하면 socket이 닫힘
+
+  MTX->>Backend: stream-not-ready hook
+  Note over MTX,Backend: source_id 기반으로 live session 조회<br/>RecordingSession을 FINALIZING으로 전환하고 live Redis key 정리
+
+  Backend->>DB: finalize worker가 Video 생성
+  Note over Backend,DB: completed recording_segments를 기반으로 videos row 생성<br/>recording_sessions row는 COMPLETED/FAILED/ABORTED 중 하나로 종료
+
+  Note over App,Backend: Current Android implementation issue<br/>현재 Android PublishTicketGrant.buildPublishUrl()은 repositoryName만 붙여<br/>rtmp://{host}:1935/live/{repositoryName}?ticket=... 형태를 만든다.<br/>새 서버 구조에서는 recordingSessionId까지 포함한<br/>rtmp://{host}:1935/live/{repositoryName}/{recordingSessionId}?ticket=... 형태가 필요하다.<br/><br/>또한 Android PublishTicketResponse는 connection_id, generation을 아직 필수로 기대하지만<br/>단순화된 backend publish-ticket response에서는 이 값들이 제거됐다.

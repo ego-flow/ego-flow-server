@@ -1,0 +1,27 @@
+sequenceDiagram
+  autonumber
+  participant App as [App]
+  participant Server as [Server]
+
+  App->>App: Start Streaming
+
+  App->>Server: register 요청
+  Note over App,Server: API<br/>POST /api/v1/streams/register<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>{<br/>  "repositoryId": "{repository_uuid}",<br/>  "deviceType": "{optional_device_type}"<br/>}
+  Server-->>App: 200 OK
+  Note over App,Server: Response Body<br/>{<br/>  "recordingSessionId": "{recordingSessionId}"<br/>}
+  App->>App: recordingSessionId 저장
+
+  App->>Server: publish-ticket 요청
+  Note over App,Server: API<br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/><br/>Body<br/>none
+  Server-->>App: 200 OK
+  Note over App,Server: Response Body<br/>{<br/>  "recording_session_id": "{recordingSessionId}",<br/>  "repository_id": "{repositoryId}",<br/>  "repository_name": "{repositoryName}",<br/>  "stream_path": "live/{repositoryName}/{recordingSessionId}",<br/>  "publish_ticket": "t_{uuid}",<br/>  "publish_ticket_expires_at": "{iso_expires_at}",<br/>  "rtmp_publish_base_url": "{rtmp_base_url_without_trailing_slash}",<br/>  "whip_publish_url": "{whip_base_url_without_trailing_slash}/{repositoryName}/whip?ticket=t_{uuid}"<br/>}
+  App->>App: publish_ticket, stream_path, RTMP/WHIP publish endpoint 저장
+
+  Note over App,Server: Error response body 공통 형태<br/>{<br/>  "error": {<br/>    "code": "{ERROR_CODE}",<br/>    "message": "{human_readable_message}",<br/>    "details": "{optional_details}"<br/>  }<br/>}
+
+  Note over App,Server: POST /api/v1/streams/register 에서 받을 수 있는 error<br/>400 VALIDATION_ERROR: repositoryId/deviceType body validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: repository maintain 권한 없음<br/>404 NOT_FOUND: repository 없음<br/>409 CONFLICT: register 처리 중 충돌 상태
+
+  Note over App,Server: POST /api/v1/streams/{recordingSessionId}/publish-ticket 에서 받을 수 있는 error<br/>400 VALIDATION_ERROR: recordingSessionId path validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: recordingSession 생성자와 요청 user가 다름<br/>404 NOT_FOUND: recordingSession 없음<br/>409 CONFLICT: publish-ticket 발급이 허용되지 않는 session 상태
+
+  Note over App,Server: 이 diagram은 publish-ticket 응답 수신까지의 App-Server 통신만 다룬다.<br/>이후 App은 publish_ticket을 사용해 RTMP/WHIP publish를 시작한다.
+  Note over App,Server: App이 중간에 이탈하거나 streaming이 의도치 않게 끊긴 뒤 다시 시작하는 경우<br/>기존 recordingSessionId 또는 publish_ticket을 재사용하지 않는다.<br/>재시작 흐름은 항상 POST /api/v1/streams/register 호출부터 다시 시작한다.
