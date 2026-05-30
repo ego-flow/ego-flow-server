@@ -17,9 +17,7 @@ const configFileSchema = z.object({
     }
   }),
   PUBLIC_HTTP_PORT: z.coerce.number().int().positive().default(80),
-  HLS_PORT: z.coerce.number().int().positive().default(8888),
   WEBRTC_PORT: z.coerce.number().int().positive().default(8889),
-  MEDIAMTX_API_PORT: z.coerce.number().int().positive().default(9997),
   CORS_ORIGIN: z.string().default("*"),
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
   DELETE_RAW_AFTER_PROCESSING: z.boolean().default(true),

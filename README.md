@@ -70,8 +70,8 @@ That helper lives in the parent repository root. It stops the running stack, pul
 | `PUBLIC_HTTP_PORT` | `80` | Public HTTP entrypoint for dashboard, API, Swagger UI, OpenAPI JSON, and `/files/*` |
 | `1935` | fixed | RTMP ingest |
 | `1936` | fixed | Optional RTMPS ingest |
-| `HLS_PORT` | `8888` | HLS playback |
-| `MEDIAMTX_API_PORT` | `9997` | Internal MediaMTX control API port used inside the Docker network |
+| `8888` | fixed | Internal MediaMTX HLS playback |
+| `9997` | fixed | Internal MediaMTX control API |
 
 ## Storage and Target Directory
 
@@ -116,8 +116,6 @@ Only `TARGET_DIRECTORY` is required and does not have a default. Everything else
 {
   "TARGET_DIRECTORY": "~/ego-flow-data",
   "PUBLIC_HTTP_PORT": 80,
-  "HLS_PORT": 8888,
-  "MEDIAMTX_API_PORT": 9997,
   "JWT_EXPIRES_IN": "24h",
   "JWT_REFRESH_THRESHOLD_SECONDS": 21600,
   "CORS_ORIGIN": "*",
@@ -131,8 +129,6 @@ Only `TARGET_DIRECTORY` is required and does not have a default. Everything else
 | --- | --- | --- | --- |
 | `TARGET_DIRECTORY` | Yes | None | Host data root for postgres, redis, raw recordings, and generated datasets. Must be an absolute path or use `~/...` shorthand. |
 | `PUBLIC_HTTP_PORT` | No | `80` | Public HTTP port exposed to users. |
-| `HLS_PORT` | No | `8888` | Port used for HLS live playback output. |
-| `MEDIAMTX_API_PORT` | No | `9997` | Internal MediaMTX control API port. |
 | `JWT_EXPIRES_IN` | No | `24h` | Access-token lifetime. |
 | `JWT_REFRESH_THRESHOLD_SECONDS` | No | `21600` | Remaining-token threshold for issuing a refreshed token in responses. |
 | `SIGNED_FILE_URL_EXPIRES_IN` | No | `6h` | Lifetime for signed `/files/*` playback URLs. |
@@ -152,16 +148,12 @@ JWT_SECRET=replace-this-in-production
 
 # Optional overrides
 DATABASE_URL=postgresql://postgres:postgres@postgres:5432/egoflow?schema=public
-REDIS_URL=redis://redis:6379
 # HF_TOKEN=
 
 # Optional RTMPS overrides
 # RTMPS_ENCRYPTION_MODE=no
 # RTMPS_CERT_PATH=/certs/server.crt
 # RTMPS_KEY_PATH=/certs/server.key
-
-# Optional internal override for MediaMTX API access
-# MEDIAMTX_API_URL=http://mediamtx:9997
 ```
 
 | Key | Required | Default | Description |
@@ -169,12 +161,12 @@ REDIS_URL=redis://redis:6379
 | `ADMIN_DEFAULT_PASSWORD` | Yes | None | Default password for the seeded admin account. |
 | `JWT_SECRET` | Yes | None | Secret key used to sign and verify JWT access tokens. |
 | `DATABASE_URL` | No | `postgresql://postgres:postgres@postgres:5432/egoflow?schema=public` | PostgreSQL connection string override. |
-| `REDIS_URL` | No | `redis://redis:6379` | Redis connection string override. |
 | `HF_TOKEN` | No | None | Hugging Face token used for Hugging Face integration. |
-| `MEDIAMTX_API_URL` | No | `http://mediamtx:{MEDIAMTX_API_PORT}` | Internal MediaMTX API URL override used by the backend. |
 | `RTMPS_ENCRYPTION_MODE` | No | `no` | MediaMTX RTMP encryption mode. |
 | `RTMPS_CERT_PATH` | No | `/certs/server.crt` | MediaMTX RTMPS server certificate path. |
 | `RTMPS_KEY_PATH` | No | `/certs/server.key` | MediaMTX RTMPS private key path. |
+
+Redis and the MediaMTX control API are fixed internal compose endpoints: `redis://redis:6379` and `http://mediamtx:9997`.
 
 ## Commands for run
 

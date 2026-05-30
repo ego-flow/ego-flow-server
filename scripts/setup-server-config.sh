@@ -237,16 +237,11 @@ write_env_file() {
     printf 'POSTGRES_PASSWORD=%s\n' "$(dotenv_value "$POSTGRES_PASSWORD")"
     printf 'POSTGRES_DB=%s\n' "$(dotenv_value "$POSTGRES_DB")"
     printf '\n'
-    printf '# Connection URLs (DATABASE_URL is composed from POSTGRES_* vars in compose.yml)\n'
-    printf 'REDIS_URL=%s\n' "$(dotenv_value "$REDIS_URL")"
     if [[ -n "$HF_TOKEN" ]]; then
       printf 'HF_TOKEN=%s\n' "$(dotenv_value "$HF_TOKEN")"
     else
       printf '# HF_TOKEN=\n'
     fi
-    printf '\n'
-    printf '# Internal MediaMTX API access\n'
-    printf 'MEDIAMTX_API_URL=%s\n' "$(dotenv_value "$MEDIAMTX_API_URL")"
     printf '\n'
     printf '# Enable these only when local RTMPS cert/key are prepared under ./certs\n'
     if [[ -n "$RTMPS_ENCRYPTION_MODE" ]]; then
@@ -268,8 +263,6 @@ write_config_file() {
     printf '{\n'
     printf '  "TARGET_DIRECTORY": %s,\n' "$(json_string "$TARGET_DIRECTORY")"
     printf '  "PUBLIC_HTTP_PORT": %s,\n' "$PUBLIC_HTTP_PORT"
-    printf '  "HLS_PORT": %s,\n' "$HLS_PORT"
-    printf '  "MEDIAMTX_API_PORT": %s,\n' "$MEDIAMTX_API_PORT"
     printf '  "CORS_ORIGIN": %s,\n' "$(json_string "$CORS_ORIGIN")"
     printf '  "WORKER_CONCURRENCY": %s,\n' "$WORKER_CONCURRENCY"
     printf '  "DELETE_RAW_AFTER_PROCESSING": %s,\n' "$DELETE_RAW_AFTER_PROCESSING"
@@ -281,7 +274,7 @@ write_config_file() {
 }
 
 main() {
-  local server_ip default_cors_origin default_public_rtmp_url generated_jwt_secret
+  local server_ip default_cors_origin generated_jwt_secret
 
   server_ip="$(detect_server_ip)"
   generated_jwt_secret="$(generate_jwt_secret)"
@@ -297,8 +290,6 @@ main() {
   echo "[config.json]"
   TARGET_DIRECTORY="$(ask_with_default "TARGET_DIRECTORY" "~/ego-flow/ego-flow-data" "absolute path or ~/...")"
   PUBLIC_HTTP_PORT="$(ask_with_default "PUBLIC_HTTP_PORT" "80" "port number, e.g. 80")"
-  HLS_PORT="$(ask_with_default "HLS_PORT" "8888" "port number, e.g. 8888")"
-  MEDIAMTX_API_PORT="$(ask_with_default "MEDIAMTX_API_PORT" "9997" "port number, e.g. 9997")"
   default_cors_origin="$(http_origin_for "$server_ip" "$PUBLIC_HTTP_PORT")"
   CORS_ORIGIN="$(ask_with_default "CORS_ORIGIN" "$default_cors_origin" "origin URL or *, e.g. http://${server_ip}")"
   WORKER_CONCURRENCY="$(ask_with_default "WORKER_CONCURRENCY" "2" "positive integer")"
@@ -314,9 +305,7 @@ main() {
   POSTGRES_USER="$(ask_with_default "POSTGRES_USER" "postgres" "PostgreSQL username")"
   POSTGRES_PASSWORD="$(ask_secret_with_default "POSTGRES_PASSWORD" "postgres" "PostgreSQL password")"
   POSTGRES_DB="$(ask_with_default "POSTGRES_DB" "egoflow" "PostgreSQL database name")"
-  REDIS_URL="$(ask_with_default "REDIS_URL" "redis://redis:6379" "Redis URL, e.g. redis://redis:6379")"
   HF_TOKEN="$(ask_secret_optional_value "HF_TOKEN" "Hugging Face token, e.g. hf_xxx")"
-  MEDIAMTX_API_URL="$(ask_with_default "MEDIAMTX_API_URL" "http://mediamtx:9997" "URL, e.g. http://mediamtx:9997")"
   RTMPS_ENCRYPTION_MODE="$(ask_optional_value "RTMPS_ENCRYPTION_MODE" "no, optional, or strict")"
   if [[ -n "$RTMPS_ENCRYPTION_MODE" ]]; then
     RTMPS_CERT_PATH="$(ask_with_default "RTMPS_CERT_PATH" "/certs/server.crt" "container path, e.g. /certs/server.crt")"
@@ -328,8 +317,6 @@ main() {
 
   validate_target_directory "$TARGET_DIRECTORY"
   validate_port "PUBLIC_HTTP_PORT" "$PUBLIC_HTTP_PORT"
-  validate_port "HLS_PORT" "$HLS_PORT"
-  validate_port "MEDIAMTX_API_PORT" "$MEDIAMTX_API_PORT"
   validate_boolean "DELETE_RAW_AFTER_PROCESSING" "$DELETE_RAW_AFTER_PROCESSING"
   validate_rtmps_mode "$RTMPS_ENCRYPTION_MODE"
 

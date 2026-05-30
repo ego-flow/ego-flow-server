@@ -7,6 +7,7 @@ COMPOSE_SERVICES=(postgres redis backend worker dashboard proxy mediamtx)
 RUN_STATE_DIR="$ROOT_DIR/.run"
 TARGET_DIRECTORY_STATE_FILE="$RUN_STATE_DIR/target-directory"
 FILE_MOVE_HELPER_IMAGE="redis:7-alpine"
+FIXED_HLS_PORT=8888
 
 # bind-mount config 경로와 그 변경 시 restart 가 필요한 service 매핑.
 # `docker compose up -d --build`는 외부 image 를 쓰는 컨테이너의 bind-mount 파일/디렉터리 변경을
@@ -134,12 +135,10 @@ normalize_target_directory() {
 
 load_runtime_overrides() {
   export PUBLIC_HTTP_PORT
-  export HLS_PORT
   export TARGET_DIRECTORY
   export HOST_HOME
 
   PUBLIC_HTTP_PORT="$(read_config_number "PUBLIC_HTTP_PORT" "80")"
-  HLS_PORT="$(read_config_number "HLS_PORT" "8888")"
   TARGET_DIRECTORY="$(normalize_target_directory "$(read_config_string "TARGET_DIRECTORY")")"
   HOST_HOME="${HOME:-}"
 }
@@ -189,7 +188,7 @@ check_prereqs() {
   echo "HTTP port: ${PUBLIC_HTTP_PORT}"
   echo "RTMP port: 1935"
   echo "RTMPS port: 1936"
-  echo "HLS internal port: ${HLS_PORT}"
+  echo "HLS internal port: ${FIXED_HLS_PORT}"
   echo "Data root: ${TARGET_DIRECTORY}"
   echo "Datasets dir: ${TARGET_DIRECTORY}/datasets"
 }

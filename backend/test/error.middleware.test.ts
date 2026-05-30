@@ -5,7 +5,6 @@ import { Prisma } from "@prisma/client";
 import { ZodError, z } from "zod";
 
 process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egoflow";
-process.env.REDIS_URL ??= "redis://127.0.0.1:6379";
 process.env.JWT_SECRET ??= "replace-this-in-tests-only";
 process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 

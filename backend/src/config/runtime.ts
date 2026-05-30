@@ -1,6 +1,13 @@
 import path from "path";
 
-import { FIXED_RTMP_PORT, FIXED_RTMPS_PORT } from "../constants/config/config-constants";
+import {
+  FIXED_HLS_PORT,
+  FIXED_MEDIAMTX_API_PORT,
+  FIXED_MEDIAMTX_API_URL,
+  FIXED_REDIS_URL,
+  FIXED_RTMP_PORT,
+  FIXED_RTMPS_PORT,
+} from "../constants/config/config-constants";
 import { fileConfig } from "./config.file";
 import { env } from "./env";
 
@@ -12,9 +19,9 @@ export const runtimeConfig = {
   PUBLIC_HTTP_PORT: fileConfig.PUBLIC_HTTP_PORT,
   RTMP_PORT: FIXED_RTMP_PORT,
   RTMPS_PORT: FIXED_RTMPS_PORT,
-  HLS_PORT: fileConfig.HLS_PORT,
+  HLS_PORT: FIXED_HLS_PORT,
   WEBRTC_PORT: fileConfig.WEBRTC_PORT,
-  MEDIAMTX_API_PORT: fileConfig.MEDIAMTX_API_PORT,
+  MEDIAMTX_API_PORT: FIXED_MEDIAMTX_API_PORT,
   CORS_ORIGIN: fileConfig.CORS_ORIGIN,
   WORKER_CONCURRENCY: fileConfig.WORKER_CONCURRENCY,
   DELETE_RAW_AFTER_PROCESSING: fileConfig.DELETE_RAW_AFTER_PROCESSING,
@@ -24,7 +31,7 @@ export const runtimeConfig = {
   ADMIN_DEFAULT_PASSWORD: env.ADMIN_DEFAULT_PASSWORD,
   JWT_SECRET: env.JWT_SECRET,
   DATABASE_URL: env.DATABASE_URL,
-  REDIS_URL: env.REDIS_URL,
+  REDIS_URL: FIXED_REDIS_URL,
   HF_TOKEN: env.HF_TOKEN,
   RTMPS_ENCRYPTION_MODE: env.RTMPS_ENCRYPTION_MODE ?? "no",
   RTMPS_ENABLED: (env.RTMPS_ENCRYPTION_MODE ?? "no") !== "no",
@@ -33,5 +40,5 @@ export const runtimeConfig = {
   HLS_PATH_PREFIX: "/hls",
   WHIP_PATH_PREFIX: "/live",
   WHEP_PATH_PREFIX: "/live",
-  MEDIAMTX_API_URL: env.MEDIAMTX_API_URL ?? `http://mediamtx:${fileConfig.MEDIAMTX_API_PORT}`,
+  MEDIAMTX_API_URL: FIXED_MEDIAMTX_API_URL,
 } as const;

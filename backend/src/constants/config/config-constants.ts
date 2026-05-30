@@ -1,3 +1,7 @@
 export const DEFAULT_CONFIG_FILE_NAME = "config.json";
+export const FIXED_REDIS_URL = "redis://redis:6379";
 export const FIXED_RTMP_PORT = 1935;
 export const FIXED_RTMPS_PORT = 1936;
+export const FIXED_HLS_PORT = 8888;
+export const FIXED_MEDIAMTX_API_PORT = 9997;
+export const FIXED_MEDIAMTX_API_URL = `http://mediamtx:${FIXED_MEDIAMTX_API_PORT}`;

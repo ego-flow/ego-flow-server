@@ -145,9 +145,9 @@ export class AdminService {
           { key: "PUBLIC_HTTP_PORT", value: runtimeConfig.PUBLIC_HTTP_PORT, sourcePath: getConfigFilePath() },
           { key: "RTMP_PORT", value: runtimeConfig.RTMP_PORT },
           { key: "RTMPS_PORT", value: runtimeConfig.RTMPS_PORT },
-          { key: "HLS_PORT", value: runtimeConfig.HLS_PORT, sourcePath: getConfigFilePath() },
+          { key: "HLS_PORT", value: runtimeConfig.HLS_PORT },
           { key: "WEBRTC_PORT", value: runtimeConfig.WEBRTC_PORT, sourcePath: getConfigFilePath() },
-          { key: "MEDIAMTX_API_PORT", value: runtimeConfig.MEDIAMTX_API_PORT, sourcePath: getConfigFilePath() },
+          { key: "MEDIAMTX_API_PORT", value: runtimeConfig.MEDIAMTX_API_PORT },
         ],
       },
       {
@@ -157,7 +157,7 @@ export class AdminService {
           { key: "HLS_PATH_PREFIX", value: runtimeConfig.HLS_PATH_PREFIX },
           { key: "WHIP_PATH_PREFIX", value: runtimeConfig.WHIP_PATH_PREFIX },
           { key: "WHEP_PATH_PREFIX", value: runtimeConfig.WHEP_PATH_PREFIX },
-          { key: "MEDIAMTX_API_URL", value: runtimeConfig.MEDIAMTX_API_URL, sourcePath: getDotenvPath() },
+          { key: "MEDIAMTX_API_URL", value: runtimeConfig.MEDIAMTX_API_URL },
         ],
       },
       {
@@ -187,7 +187,6 @@ export class AdminService {
         description: "Credentials and connection strings (values are masked).",
         entries: [
           { key: "DATABASE_URL", value: maskConnectionUrl(runtimeConfig.DATABASE_URL), sensitive: true, sourcePath: getDotenvPath() },
-          { key: "REDIS_URL", value: maskConnectionUrl(runtimeConfig.REDIS_URL), sensitive: true, sourcePath: getDotenvPath() },
           { key: "JWT_SECRET", value: maskSecretPresence(runtimeConfig.JWT_SECRET), sensitive: true, sourcePath: getDotenvPath() },
           { key: "ADMIN_DEFAULT_PASSWORD", value: maskSecretPresence(runtimeConfig.ADMIN_DEFAULT_PASSWORD), sensitive: true, sourcePath: getDotenvPath() },
           { key: "HF_TOKEN", value: maskSecretPresence(runtimeConfig.HF_TOKEN), sensitive: true, sourcePath: getDotenvPath() },

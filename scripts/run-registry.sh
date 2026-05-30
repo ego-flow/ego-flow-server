@@ -109,12 +109,10 @@ normalize_target_directory() {
 
 load_runtime_overrides() {
   export PUBLIC_HTTP_PORT
-  export HLS_PORT
   export TARGET_DIRECTORY
   export HOST_HOME
 
   PUBLIC_HTTP_PORT="$(read_config_number "PUBLIC_HTTP_PORT" "80")"
-  HLS_PORT="$(read_config_number "HLS_PORT" "8888")"
   TARGET_DIRECTORY="$(normalize_target_directory "$(read_config_string "TARGET_DIRECTORY")")"
   HOST_HOME="${HOME:-}"
 }
