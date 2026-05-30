@@ -35,7 +35,7 @@ export const streamReadyHookSchema = z.object({
   path: z.string().min(1),
   query: z.string().optional(),
   ticket: optionalHookString,
-  source_id: z.string().min(1),
+  source_id: optionalHookString,
   source_type: z.string().min(1),
   mtx_query: optionalHookString,
   mtx_source_id: optionalHookString,
@@ -45,7 +45,7 @@ export const streamReadyHookSchema = z.object({
 
 export const streamNotReadyHookSchema = z.object({
   path: z.string().min(1),
-  source_id: z.string().min(1),
+  source_id: optionalHookString,
   source_type: z.string().min(1),
 });
 

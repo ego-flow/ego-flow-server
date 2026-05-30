@@ -128,8 +128,6 @@ model RecordingSession {
   status          RecordingSessionStatus
   endReason       RecordingSessionEndReason? @map("end_reason")
   targetDirectory String                    @map("target_directory") @db.VarChar(1024)
-  sourceId        String?                   @map("source_id") @db.VarChar(255)
-  sourceType      String?                   @map("source_type") @db.VarChar(50)
   stopRequestedAt DateTime?                 @map("stop_requested_at")
   readyAt         DateTime?                 @map("ready_at")
   notReadyAt      DateTime?                 @map("not_ready_at")
@@ -141,7 +139,6 @@ model RecordingSession {
   video    Video?
 
   @@index([repositoryId, status], map: "idx_recording_sessions_repo_status")
-  @@index([sourceId], map: "idx_recording_sessions_source_id")
   @@index([userId, createdAt], map: "idx_recording_sessions_user_created_at")
   @@map("recording_sessions")
 }

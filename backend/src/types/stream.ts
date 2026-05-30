@@ -5,7 +5,6 @@ export interface RecordingSessionLiveCache {
   userId: string;
   deviceType?: string;
   status: "PENDING" | "STREAMING" | "STOP_REQUESTED" | "FINALIZING";
-  sourceId?: string;
 }
 
 export interface RecordingFinalizeJobData {
@@ -24,20 +23,11 @@ export interface PublishTicketRecord {
   userId: string;
   streamPath: string;
   issuedAt: number;
-  expiresAt: number;
   status: "active" | "consumed";
-}
-
-export interface StreamSourceMapping {
-  recordingSessionId: string;
-  repositoryId: string;
-  sourceId: string;
-  sourceType: string;
 }
 
 export interface SegmentOwnershipMapping {
   recordingSessionId: string;
   repositoryId: string;
-  sourceId?: string;
   segmentPath: string;
 }

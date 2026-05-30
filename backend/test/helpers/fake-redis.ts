@@ -42,13 +42,20 @@ class FakeRedisMulti {
 export class FakeRedis {
   private readonly store = new Map<string, RedisValue>();
   private readonly sets = new Map<string, Set<string>>();
+  private readonly ttlSeconds = new Map<string, number>();
 
   async get(key: string) {
     return this.store.get(key) ?? null;
   }
 
-  async set(key: string, value: RedisValue, ..._args: Array<string | number>) {
+  async set(key: string, value: RedisValue, ...args: Array<string | number>) {
     this.store.set(key, String(value));
+    const exIndex = args.findIndex((value) => String(value).toUpperCase() === "EX");
+    if (exIndex >= 0) {
+      this.ttlSeconds.set(key, Number(args[exIndex + 1]));
+    } else {
+      this.ttlSeconds.delete(key);
+    }
     return "OK";
   }
 
@@ -56,14 +63,19 @@ export class FakeRedis {
     let deleted = 0;
     for (const key of keys) {
       if (this.store.delete(key)) {
+        this.ttlSeconds.delete(key);
         deleted += 1;
       }
     }
     return deleted;
   }
 
-  async expire(key: string, _seconds: number) {
-    return this.store.has(key) ? 1 : 0;
+  async expire(key: string, seconds: number) {
+    if (!this.store.has(key)) {
+      return 0;
+    }
+    this.ttlSeconds.set(key, seconds);
+    return 1;
   }
 
   async mget(...keys: string[]) {
@@ -125,6 +137,7 @@ export class FakeRedis {
   clear() {
     this.store.clear();
     this.sets.clear();
+    this.ttlSeconds.clear();
   }
 
   has(key: string) {
@@ -133,6 +146,7 @@ export class FakeRedis {
 
   setJson(key: string, value: unknown) {
     this.store.set(key, JSON.stringify(value));
+    this.ttlSeconds.delete(key);
   }
 
   getJson<T>(key: string): T | null {
@@ -142,5 +156,9 @@ export class FakeRedis {
     }
 
     return JSON.parse(raw) as T;
+  }
+
+  getTtlSeconds(key: string) {
+    return this.ttlSeconds.get(key) ?? null;
   }
 }

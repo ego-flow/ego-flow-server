@@ -40,6 +40,8 @@ test("issuePublishTicket stores only short-lived ticket metadata", async () => {
   assert.equal(stored?.userId, publishParams.userId);
   assert.equal(stored?.streamPath, publishParams.streamPath);
   assert.equal(stored?.status, "active");
+  assert.equal(Object.hasOwn(stored ?? {}, "expiresAt"), false);
+  assert.equal(fakeRedis.getTtlSeconds(`stream:ticket:${grant.ticket.ticketId}`), 60);
 });
 
 test("validate and consume publish ticket only depend on ticket state and stream path", async () => {
@@ -61,6 +63,7 @@ test("validate and consume publish ticket only depend on ticket state and stream
 
   const consumed = await service.consumePublishTicket(publishParams.streamPath, query);
   assert.equal(consumed.ok, true);
+  assert.equal(fakeRedis.getTtlSeconds(`stream:ticket:${grant.ticket.ticketId}`), 60);
 
   const afterConsume = await service.validatePublishTicket(publishParams.streamPath, query);
   assert.deepEqual(afterConsume, {

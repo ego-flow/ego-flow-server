@@ -16,7 +16,7 @@ const router = Router();
  * [MediaMTX hook: stream-ready]
  * MediaMTX runOnReady hook이 실제 RTMP 송출이 시작되었을 때 호출.
  * RecordingSession을 PENDING → STREAMING으로 전환하고,
- * sourceId/sourceType/readyAt을 기록하며 Redis live pointer를 갱신한다.
+ * readyAt을 기록한 뒤 Redis live cache와 active set을 갱신한다.
  */
 // POST /api/v1/hooks/stream-ready
 router.post(
@@ -35,7 +35,7 @@ router.post(
 /**
  * [MediaMTX hook: stream-not-ready]
  * MediaMTX runOnNotReady hook이 RTMP 연결이 끊어졌을 때 호출.
- * authoritative `stream:source:{sourceId}` mapping으로 세션을 복원하고 FINALIZING으로 전환한다.
+ * stream path의 recordingSessionId로 세션을 복원하고 FINALIZING으로 전환한다.
  */
 // POST /api/v1/hooks/stream-not-ready
 router.post(
@@ -54,7 +54,7 @@ router.post(
 /**
  * [MediaMTX hook: segment-create]
  * MediaMTX가 새 녹화 세그먼트 파일을 생성하기 시작할 때 호출.
- * authoritative `source_id`로 세션을 찾고 segment ownership mapping을 저장한 뒤
+ * stream path의 recordingSessionId로 세션을 찾고 segment ownership mapping을 저장한 뒤
  * RecordingSegment를 WRITING 상태로 upsert한다.
  */
 // POST /api/v1/hooks/recording-segment-create

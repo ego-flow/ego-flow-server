@@ -330,8 +330,6 @@ export const openApiDocument = {
           "user_id",
           "device_type",
           "stream_path",
-          "source_type",
-          "source_id",
           "registered_at",
           "status",
           "playback_ready",
@@ -344,8 +342,6 @@ export const openApiDocument = {
           user_id: { type: "string" },
           device_type: { type: ["string", "null"] },
           stream_path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
-          source_type: { type: ["string", "null"], example: "rtmpConn" },
-          source_id: { type: ["string", "null"] },
           registered_at: { type: "string", format: "date-time" },
           status: { type: "string", enum: ["live"] },
           playback_ready: { type: "boolean" },
@@ -397,37 +393,37 @@ export const openApiDocument = {
       },
       StreamReadyHookRequest: {
         type: "object",
-        required: ["path", "source_id", "source_type"],
-          properties: {
-            path: { type: "string", example: "live/daily_kitchen" },
-            query: { type: "string", example: "ticket=t_opaque" },
-            source_id: { type: "string", example: "publisher-123" },
-            source_type: { type: "string", example: "rtmpConn" },
-          },
+        required: ["path", "source_type"],
+        properties: {
+          path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
+          query: { type: "string", example: "ticket=t_opaque" },
+          source_id: { type: "string", example: "publisher-123" },
+          source_type: { type: "string", example: "rtmpConn" },
+        },
       },
       StreamNotReadyHookRequest: {
         type: "object",
-        required: ["path", "source_id", "source_type"],
+        required: ["path", "source_type"],
         properties: {
-          path: { type: "string", example: "live/daily_kitchen" },
+          path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
           source_id: { type: "string", example: "publisher-123" },
           source_type: { type: "string", example: "rtmpConn" },
         },
       },
       RecordingSegmentCreateHookRequest: {
         type: "object",
-        required: ["path", "source_id", "segment_path"],
+        required: ["path", "segment_path"],
         properties: {
-          path: { type: "string", example: "live/daily_kitchen" },
+          path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
           source_id: { type: "string", example: "publisher-123" },
           segment_path: { type: "string", example: "/data/raw/live/daily_kitchen/2026-03-30_10-20-30-000000" },
         },
       },
       RecordingSegmentCompleteHookRequest: {
         type: "object",
-        required: ["path", "source_id", "segment_path"],
+        required: ["path", "segment_path"],
         properties: {
-          path: { type: "string", example: "live/daily_kitchen" },
+          path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
           source_id: { type: "string", example: "publisher-123" },
           segment_path: { type: "string", example: "/data/raw/live/daily_kitchen/2026-03-30_10-20-30-000000" },
           segment_duration: { type: "number", example: 15.2 },
@@ -1713,7 +1709,7 @@ export const openApiDocument = {
     "/hooks/recording-segment-create": {
       post: {
         tags: ["Hooks"],
-        summary: "Handle MediaMTX recording-segment-create hook with authoritative source mapping",
+        summary: "Handle MediaMTX recording-segment-create hook",
         security: [],
         requestBody: {
           required: true,

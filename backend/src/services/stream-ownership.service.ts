@@ -41,7 +41,6 @@ export class StreamOwnershipService {
   }): Promise<{ ticket: PublishTicketRecord }> {
     const now = Date.now();
     const ticketId = `t_${uuidv4()}`;
-    const expiresAt = now + PUBLISH_TICKET_TTL_SECONDS * 1000;
     const ticket: PublishTicketRecord = {
       ticketId,
       recordingSessionId: params.recordingSessionId,
@@ -49,7 +48,6 @@ export class StreamOwnershipService {
       userId: params.userId,
       streamPath: params.streamPath,
       issuedAt: now,
-      expiresAt,
       status: "active",
     };
 
@@ -96,14 +94,6 @@ export class StreamOwnershipService {
       };
     }
 
-    if (ticket.expiresAt <= Date.now()) {
-      return {
-        ok: false,
-        reason: "ticket-expired",
-        ticketId,
-      };
-    }
-
     if (ticket.streamPath !== streamPath) {
       return {
         ok: false,
@@ -125,7 +115,6 @@ export class StreamOwnershipService {
       return validation;
     }
 
-    const remainingTtlSeconds = this.calculateRemainingTtlSeconds(validation.ticket.expiresAt);
     const nextTicket: PublishTicketRecord = {
       ...validation.ticket,
       status: "consumed",
@@ -135,7 +124,7 @@ export class StreamOwnershipService {
       streamTicketKey(validation.ticket.ticketId),
       JSON.stringify(nextTicket),
       "EX",
-      remainingTtlSeconds,
+      PUBLISH_TICKET_TTL_SECONDS,
     );
 
     return {
@@ -150,9 +139,6 @@ export class StreamOwnershipService {
     return ticketId && ticketId.trim() ? ticketId.trim() : null;
   }
 
-  private calculateRemainingTtlSeconds(expiresAt: number) {
-    return Math.max(1, Math.ceil((expiresAt - Date.now()) / 1000));
-  }
 }
 
 export const streamOwnershipService = new StreamOwnershipService();

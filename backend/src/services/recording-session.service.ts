@@ -1,9 +1,9 @@
 import { RecordingSessionStatus, RecordingSessionEndReason, RecordingSegmentStatus, VideoStatus } from "@prisma/client";
 
 import {
-  RECORDING_ACTIVE_TTL_SECONDS,
   RECORDING_FINALIZE_GRACE_PERIOD_MS,
   RECORDING_FINALIZE_MAX_WAIT_MS,
+  RECORDING_ACTIVE_TTL_SECONDS,
   RECORDING_REGISTRATION_TTL_SECONDS,
   SEGMENT_MAPPING_TTL_SECONDS,
   STREAM_ACTIVE_SET_KEY,
@@ -14,16 +14,11 @@ import { redis } from "../lib/redis";
 import { runtimeConfig as env } from "../config/runtime";
 import { processingService } from "./processing.service";
 import { streamOwnershipService } from "./stream-ownership.service";
-import {
-  streamRecordingKey,
-  streamSegmentKey,
-  streamSourceKey,
-} from "../utils/stream-keys";
+import { streamRecordingKey, streamSegmentKey } from "../utils/stream-keys";
 import type {
   RecordingSessionLiveCache,
   RecordingFinalizeJobData,
   SegmentOwnershipMapping,
-  StreamSourceMapping,
 } from "../types/stream";
 import type {
   StreamReadyHookInput,
@@ -40,14 +35,14 @@ import type {
  *   PENDING → ABORTED (타임아웃)
  *   STREAMING → FINALIZING (비정상 종료)
  *
- * Redis live cache를 통해 실시간 세션 조회 성능을 확보하고,
+ * Redis live/pending cache를 함께 관리하며,
  * MediaMTX hook 이벤트와 reconcile 루프를 통해 상태를 진행시킨다.
  */
 export class RecordingSessionService {
   /**
    * [세션 생성 - PENDING]
    * stream 등록 시 호출. RecordingSession을 PENDING 상태로 DB에 생성하고,
-   * Redis에 recording cache를 5분 TTL로 저장한다.
+   * Redis에 PENDING cache를 5분 TTL로 저장한다.
    * 5분 이내에 첫 RTMP publish가 시작되지 않으면 reconcile에서 ABORTED 처리된다.
    */
   async createSession(params: {
@@ -92,12 +87,9 @@ export class RecordingSessionService {
     session: {
       id: string;
       repositoryId: string;
-      ownerId: string;
       userId: string;
       deviceType: string | null;
       streamPath: string;
-      targetDirectory: string;
-      createdAt: Date;
     },
     ttlSeconds: number,
   ) {
@@ -112,27 +104,29 @@ export class RecordingSessionService {
       liveCache.deviceType = session.deviceType;
     }
 
-    await redis.set(streamRecordingKey(session.id), JSON.stringify(liveCache), "EX", Math.max(1, ttlSeconds));
+    await redis.set(
+      streamRecordingKey(session.id),
+      JSON.stringify(liveCache),
+      "EX",
+      Math.max(1, ttlSeconds),
+    );
 
     console.info("[rtmp-state] pending-cache-refreshed", {
       recordingSessionId: session.id,
       repositoryId: session.repositoryId,
       repositoryName: liveCache.repositoryName,
-      ownerId: session.ownerId,
       userId: session.userId,
-      deviceType: session.deviceType,
-      streamPath: session.streamPath,
-      ttlSec: Math.max(1, ttlSeconds),
+      ttlSec: ttlSeconds,
     });
   }
 
   /**
-   * [stream-ready hook 처리 - PENDING/STREAMING → STREAMING]
+   * [stream-ready hook 처리 - PENDING → STREAMING]
    * MediaMTX가 실제 RTMP 송출 시작을 감지하면 호출.
    * 1. query의 publish ticket을 검증한다.
-   * 2. ticket가 가리키는 PENDING 또는 같은 STREAMING 세션만 DB에서 조회한다.
-   * 3. ticket를 consumed로 전환한 뒤 DB/Redis live cache를 갱신한다.
-   * 4. Redis live cache를 24시간 TTL로 갱신하고 reconnect면 이전 source pointer를 교체한다.
+   * 2. ticket가 가리키는 PENDING 세션만 DB에서 조회한다.
+   * 3. ticket를 consumed로 전환하면서 ticket TTL을 다시 60초로 연장한다.
+   * 4. DB 상태를 갱신하고 Redis live cache 및 active set을 갱신한다.
    */
   async handleStreamReady(input: StreamReadyHookInput) {
     const publishTicketQuery = this.resolvePublishTicketQuery(input.query, input.ticket);
@@ -158,11 +152,7 @@ export class RecordingSessionService {
     const session = await prisma.recordingSession.findUnique({
       where: { id: recordingSessionId },
     });
-    if (
-      !session ||
-      (session.status !== RecordingSessionStatus.PENDING &&
-        session.status !== RecordingSessionStatus.STREAMING)
-    ) {
+    if (!session || session.status !== RecordingSessionStatus.PENDING) {
       console.warn("[rtmp-state] stream-ready-session-not-active", {
         recordingSessionId,
         path: input.path,
@@ -205,23 +195,13 @@ export class RecordingSessionService {
     }
 
     const repoName = this.extractRepositoryName(session.streamPath);
-    const existingLiveCache = await this.getLiveCacheByRecordingSessionId(recordingSessionId);
     const readyAt = session.readyAt ?? new Date();
-    const previousSourceId = existingLiveCache?.sourceId ?? session.sourceId ?? undefined;
-    const sourceMapping: StreamSourceMapping = {
-      recordingSessionId,
-      repositoryId: session.repositoryId,
-      sourceId: input.source_id,
-      sourceType: input.source_type,
-    };
 
     await prisma.recordingSession.update({
       where: { id: recordingSessionId },
       data: {
         status: RecordingSessionStatus.STREAMING,
         ...(session.readyAt ? {} : { readyAt }),
-        sourceId: input.source_id,
-        sourceType: input.source_type,
       },
     });
 
@@ -231,23 +211,20 @@ export class RecordingSessionService {
       repositoryName: repoName,
       userId: session.userId,
       status: "STREAMING",
-      sourceId: input.source_id,
     };
     if (session.deviceType) {
       liveCache.deviceType = session.deviceType;
     }
 
-    const pipeline = redis
-      .multi()
-      .set(streamRecordingKey(recordingSessionId), JSON.stringify(liveCache), "EX", RECORDING_ACTIVE_TTL_SECONDS)
-      .set(streamSourceKey(input.source_id), JSON.stringify(sourceMapping), "EX", RECORDING_ACTIVE_TTL_SECONDS)
-      .sadd(STREAM_ACTIVE_SET_KEY, recordingSessionId);
-
-    if (previousSourceId && previousSourceId !== input.source_id) {
-      pipeline.del(streamSourceKey(previousSourceId));
-    }
-
-    await pipeline.exec();
+    await redis.multi()
+      .set(
+        streamRecordingKey(recordingSessionId),
+        JSON.stringify(liveCache),
+        "EX",
+        RECORDING_ACTIVE_TTL_SECONDS,
+      )
+      .sadd(STREAM_ACTIVE_SET_KEY, recordingSessionId)
+      .exec();
 
     console.info("[rtmp-ticket] consumed", {
       recordingSessionId: consumedTicket.ticket.recordingSessionId,
@@ -258,34 +235,27 @@ export class RecordingSessionService {
       credentialSource,
     });
 
-    console.info(
-      session.status === RecordingSessionStatus.PENDING
-        ? "[rtmp-state] pending-to-streaming"
-        : "[rtmp-state] streaming-source-refreshed",
-      {
-        recordingSessionId,
-        repositoryId: session.repositoryId,
-        repositoryName: repoName,
-        userId: session.userId,
-        previousSourceId: previousSourceId ?? null,
-        sourceId: input.source_id,
-        sourceType: input.source_type,
-        activeTtlSec: RECORDING_ACTIVE_TTL_SECONDS,
-      },
-    );
+    console.info("[rtmp-state] pending-to-streaming", {
+      recordingSessionId,
+      repositoryId: session.repositoryId,
+      repositoryName: repoName,
+      userId: session.userId,
+      hookSourceId: input.source_id,
+      sourceType: input.source_type,
+    });
   }
 
   /**
    * [stream-not-ready hook 처리 - → FINALIZING]
    * MediaMTX가 RTMP 연결 종료를 감지하면 호출.
-   * 1. `stream:source:{sourceId}` authoritative mapping으로 session을 복원한다.
-   * 2. mapping이 가리키는 세션을 FINALIZING으로 전환한다.
-   * 3. mapping miss는 no-op + 경고 로그로 처리한다.
+   * 1. stream path에서 recordingSessionId를 복원한다.
+   * 2. 해당 세션을 FINALIZING으로 전환한다.
+   * 3. path/session miss는 no-op + 경고 로그로 처리한다.
    */
   async handleStreamNotReady(input: StreamNotReadyHookInput) {
-    const sourceMapping = await this.getSourceMapping(input.source_id);
-    if (!sourceMapping) {
-      console.warn("[rtmp-state] stream-not-ready-source-mapping-missing", {
+    const recordingSessionId = this.extractRecordingSessionId(input.path);
+    if (!recordingSessionId) {
+      console.warn("[rtmp-state] stream-not-ready-path-invalid", {
         path: input.path,
         sourceId: input.source_id,
         sourceType: input.source_type,
@@ -293,7 +263,6 @@ export class RecordingSessionService {
       return;
     }
 
-    const recordingSessionId = sourceMapping.recordingSessionId;
     const session = await prisma.recordingSession.findUnique({
       where: { id: recordingSessionId },
     });
@@ -337,7 +306,7 @@ export class RecordingSessionService {
     });
 
     const repoName = this.extractRepositoryName(session.streamPath);
-    await this.clearLivePointers(recordingSessionId, session.repositoryId, repoName, session.sourceId ?? undefined);
+    await this.clearLivePointers(recordingSessionId, session.repositoryId, repoName);
 
     console.info("[rtmp-state] stream-to-finalizing", {
       recordingSessionId,
@@ -345,7 +314,6 @@ export class RecordingSessionService {
       repositoryName: repoName,
       previousStatus: session.status,
       endReason,
-      sourceId: session.sourceId,
       hookSourceId: input.source_id,
     });
 
@@ -355,13 +323,13 @@ export class RecordingSessionService {
   /**
    * [segment-create hook 처리]
    * MediaMTX가 새 녹화 세그먼트 파일 쓰기를 시작할 때 호출.
-   * authoritative source mapping으로 세션을 찾고, `segment:{segmentPath}` 매핑을 저장한 뒤
+   * stream path의 recordingSessionId로 세션을 찾고, `segment:{segmentPath}` 매핑을 저장한 뒤
    * RecordingSegment를 WRITING 상태로 upsert한다.
    */
   async handleSegmentCreate(input: SegmentCreateHookInput) {
-    const sourceMapping = await this.resolveSegmentSourceMapping(input.path, input.source_id);
-    if (!sourceMapping) {
-      console.warn("[rtmp-segment] source-mapping-missing", {
+    const session = await this.resolveSegmentSession(input.path);
+    if (!session) {
+      console.warn("[rtmp-segment] session-missing", {
         path: input.path,
         sourceId: input.source_id ?? null,
         segmentPath: input.segment_path,
@@ -369,11 +337,10 @@ export class RecordingSessionService {
       return;
     }
 
-    const recordingSessionId = sourceMapping.recordingSessionId;
+    const recordingSessionId = session.id;
     const segmentMapping: SegmentOwnershipMapping = {
       recordingSessionId,
-      repositoryId: sourceMapping.repositoryId,
-      sourceId: sourceMapping.sourceId,
+      repositoryId: session.repositoryId,
       segmentPath: input.segment_path,
     };
 
@@ -409,7 +376,7 @@ export class RecordingSessionService {
     console.info("[rtmp-segment] writing-created", {
       recordingSessionId,
       path: input.path,
-      sourceId: sourceMapping.sourceId ?? input.source_id ?? null,
+      sourceId: input.source_id ?? null,
       segmentPath: input.segment_path,
       sequence: nextSequence,
     });
@@ -424,12 +391,11 @@ export class RecordingSessionService {
   async handleSegmentComplete(input: SegmentCompleteHookInput) {
     let segmentMapping = await this.getSegmentMapping(input.segment_path);
     if (!segmentMapping) {
-      const sourceMapping = await this.resolveSegmentSourceMapping(input.path, input.source_id);
-      if (sourceMapping) {
+      const session = await this.resolveSegmentSession(input.path);
+      if (session) {
         segmentMapping = {
-          recordingSessionId: sourceMapping.recordingSessionId,
-          repositoryId: sourceMapping.repositoryId,
-          sourceId: sourceMapping.sourceId,
+          recordingSessionId: session.id,
+          repositoryId: session.repositoryId,
           segmentPath: input.segment_path,
         };
       }
@@ -474,7 +440,7 @@ export class RecordingSessionService {
       console.info("[rtmp-segment] completed-created", {
         recordingSessionId,
         path: input.path,
-        sourceId: input.source_id ?? segmentMapping.sourceId ?? null,
+        sourceId: input.source_id ?? null,
         segmentPath: input.segment_path,
         sequence: nextSequence,
         durationSec: input.segment_duration ?? null,
@@ -501,7 +467,7 @@ export class RecordingSessionService {
     console.info("[rtmp-segment] completed", {
       recordingSessionId: segment.recordingSessionId,
       path: input.path,
-      sourceId: input.source_id ?? segmentMapping.sourceId ?? null,
+      sourceId: input.source_id ?? null,
       segmentPath: input.segment_path,
       sequence: segment.sequence,
       durationSec: input.segment_duration ?? null,
@@ -520,7 +486,6 @@ export class RecordingSessionService {
    * 앱에서 POST /api/v1/recordings/:id/stop 호출 시 진입.
    * PENDING 또는 STREAMING 상태의 세션을 STOP_REQUESTED로 전환하고,
    * endReason(USER_STOP/GLASSES_STOP)과 stopRequestedAt을 기록한다.
-   * Redis live cache의 status도 갱신한다.
    * 이후 MediaMTX가 RTMP 연결 종료를 감지하면 stream-not-ready hook이 호출되어 FINALIZING으로 진행한다.
    */
   async requestStop(recordingSessionId: string, reason: string) {
@@ -551,15 +516,15 @@ export class RecordingSessionService {
       },
     });
 
-    const cachedStr = await redis.get(streamRecordingKey(recordingSessionId));
-    if (cachedStr) {
-      try {
-        const cached = JSON.parse(cachedStr) as RecordingSessionLiveCache;
-        cached.status = "STOP_REQUESTED";
-        await redis.set(streamRecordingKey(recordingSessionId), JSON.stringify(cached), "EX", RECORDING_ACTIVE_TTL_SECONDS);
-      } catch (_error) {
-        // Ignore parse failures.
-      }
+    const cached = await this.getLiveCacheByRecordingSessionId(recordingSessionId);
+    if (cached) {
+      cached.status = "STOP_REQUESTED";
+      await redis.set(
+        streamRecordingKey(recordingSessionId),
+        JSON.stringify(cached),
+        "EX",
+        RECORDING_ACTIVE_TTL_SECONDS,
+      );
     }
 
     console.info("[rtmp-state] stop-requested", {
@@ -747,7 +712,7 @@ export class RecordingSessionService {
    * 5초 간격으로 실행. hook 누락이나 비정상 종료로 인한 상태 불일치를 보정한다.
    * - FINALIZING: finalize enqueue 재시도
    * - PENDING: register timeout 시 ABORTED
-   * - STREAMING/STOP_REQUESTED: active path 또는 source mapping이 없을 때 FINALIZING 전환 후 finalize 시도
+   * - STREAMING/STOP_REQUESTED: active path가 없을 때 FINALIZING 전환 후 finalize 시도
    */
   async reconcileSessions() {
     const activeSessions = await prisma.recordingSession.findMany({
@@ -785,7 +750,7 @@ export class RecordingSessionService {
             RecordingSessionEndReason.REGISTRATION_TIMEOUT,
           );
           if (aborted) {
-            await this.clearLivePointers(session.id, session.repositoryId, repoName, session.sourceId ?? undefined);
+            await this.clearLivePointers(session.id, session.repositoryId, repoName);
             console.info("[rtmp-reconcile] pending-timeout-aborted", {
               recordingSessionId: session.id,
               repositoryId: session.repositoryId,
@@ -799,26 +764,22 @@ export class RecordingSessionService {
       }
 
       const activePathMissing = activeStreamPaths ? !activeStreamPaths.has(this.normalizeStreamPath(session.streamPath)) : false;
-      const sourceMappingPresent = session.sourceId ? Boolean(await this.getSourceMapping(session.sourceId)) : false;
-      const shouldFinalize = activePathMissing || !sourceMappingPresent;
+      const shouldFinalize = activePathMissing;
 
       if (shouldFinalize) {
-        const reconcileReason = activePathMissing
-          ? "missing-active-path-finalizing"
-          : "missing-source-mapping-finalizing";
+        const reconcileReason = "missing-active-path-finalizing";
         await this.transitionSessionToFinalizing(session, reconcileReason, {
           repositoryName: repoName,
           activeStreamPaths: activeStreamPaths ? Array.from(activeStreamPaths.values()) : null,
-          sourceMappingPresent,
         });
       }
     }
   }
 
   /**
-   * [Redis live cache 조회]
-   * stream path에서 recordingSessionId를 추출하여 recording cache를 조회한다.
-   * RTMP/HLS/WHEP 인증과 source_id 없는 segment hook fallback에서 사용된다.
+   * [Live session 조회]
+   * stream path에서 recordingSessionId를 추출하여 Redis live/pending cache를 조회한다.
+   * RTMP/HLS/WHEP 인증에서 사용된다.
    */
   async getLiveCacheByPath(streamPath: string): Promise<RecordingSessionLiveCache | null> {
     const recordingSessionId = this.extractRecordingSessionId(streamPath);
@@ -830,16 +791,9 @@ export class RecordingSessionService {
   }
 
   async getLiveCacheByRecordingSessionId(recordingSessionId: string): Promise<RecordingSessionLiveCache | null> {
-    const cachedStr = await redis.get(streamRecordingKey(recordingSessionId));
-    if (!cachedStr) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(cachedStr) as RecordingSessionLiveCache;
-    } catch (_error) {
-      return null;
-    }
+    return this.parseRedisRecord<RecordingSessionLiveCache>(
+      await redis.get(streamRecordingKey(recordingSessionId)),
+    );
   }
 
   private async transitionSessionToFinalizing(
@@ -849,7 +803,6 @@ export class RecordingSessionService {
       streamPath: string;
       status: RecordingSessionStatus;
       endReason: RecordingSessionEndReason | null;
-      sourceId: string | null;
     },
     reconcileReason: string,
     details: Record<string, unknown> = {},
@@ -864,7 +817,7 @@ export class RecordingSessionService {
     });
 
     const repoName = this.extractRepositoryName(session.streamPath);
-    await this.clearLivePointers(session.id, session.repositoryId, repoName, session.sourceId ?? undefined);
+    await this.clearLivePointers(session.id, session.repositoryId, repoName);
 
     console.info(`[rtmp-reconcile] ${reconcileReason}`, {
       recordingSessionId: session.id,
@@ -880,72 +833,55 @@ export class RecordingSessionService {
   /**
    * [Redis live pointer 삭제]
    * 스트림 종료(not-ready) 또는 reconcile 시 호출.
-   * recording/source 키를 삭제하여 해당 세션의 live 상태를 해제한다.
+   * active set 후보와 live/pending cache를 함께 제거한다.
    */
   private async clearLivePointers(
     recordingSessionId: string,
     repositoryId: string,
     repositoryName: string,
-    sourceId?: string,
   ) {
-    const keys = [streamRecordingKey(recordingSessionId)];
-    if (sourceId) {
-      keys.push(streamSourceKey(sourceId));
-    }
+    const recordingKey = streamRecordingKey(recordingSessionId);
+    const results = await redis.multi()
+      .del(recordingKey)
+      .srem(STREAM_ACTIVE_SET_KEY, recordingSessionId)
+      .exec();
+    const deleted = Number(results?.[0]?.[1] ?? 0);
+    const removed = Number(results?.[1]?.[1] ?? 0);
 
-    const clearedKeys: string[] = [];
-    for (const key of keys) {
-      const value = await redis.get(key);
-      if (key === streamSourceKey(sourceId ?? "")) {
-        const sourceMapping = this.parseRedisRecord<StreamSourceMapping>(value);
-        if (sourceMapping?.recordingSessionId === recordingSessionId) {
-          await redis.del(key);
-          clearedKeys.push(key);
-        }
-      } else if (key === streamRecordingKey(recordingSessionId)) {
-        await redis.del(key);
-        clearedKeys.push(key);
-      }
-    }
-
-    await redis.srem(STREAM_ACTIVE_SET_KEY, recordingSessionId);
-
-    if (clearedKeys.length > 0) {
+    if (deleted > 0 || removed > 0) {
       console.info("[rtmp-state] live-pointers-cleared", {
         recordingSessionId,
         repositoryId,
         repositoryName,
-        sourceId: sourceId ?? null,
-        clearedKeys,
+        recordingKey,
+        activeSetKey: STREAM_ACTIVE_SET_KEY,
       });
     }
-  }
-
-  async getSourceMapping(sourceId: string): Promise<StreamSourceMapping | null> {
-    return this.parseRedisRecord<StreamSourceMapping>(await redis.get(streamSourceKey(sourceId)));
   }
 
   async getSegmentMapping(segmentPath: string): Promise<SegmentOwnershipMapping | null> {
     return this.parseRedisRecord<SegmentOwnershipMapping>(await redis.get(streamSegmentKey(segmentPath)));
   }
 
-  private async resolveSegmentSourceMapping(
-    streamPath: string,
-    sourceId?: string,
-  ): Promise<StreamSourceMapping | null> {
-    if (sourceId) {
-      const sourceMapping = await this.getSourceMapping(sourceId);
-      if (sourceMapping) {
-        return sourceMapping;
-      }
-    }
-
-    const liveCache = await this.getLiveCacheByPath(streamPath);
-    if (!liveCache?.sourceId) {
+  private async resolveSegmentSession(streamPath: string) {
+    const recordingSessionId = this.extractRecordingSessionId(streamPath);
+    if (!recordingSessionId) {
       return null;
     }
-
-    return this.getSourceMapping(liveCache.sourceId);
+    const session = await prisma.recordingSession.findUnique({
+      where: { id: recordingSessionId },
+    });
+    if (
+      !session ||
+      (
+        session.status !== RecordingSessionStatus.STREAMING &&
+        session.status !== RecordingSessionStatus.STOP_REQUESTED &&
+        session.status !== RecordingSessionStatus.FINALIZING
+      )
+    ) {
+      return null;
+    }
+    return session;
   }
 
   /**

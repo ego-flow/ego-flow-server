@@ -24,8 +24,8 @@ sequenceDiagram
     Backend->>DB: 기존 PENDING session 정리
     Note over Backend,DB: table: recording_sessions<br/>target rows: repository_id = repositoryId, user_id = userId, device_type = deviceType ?? null, status = PENDING<br/>updated fields: status = ABORTED, end_reason = ACCESS_FORBIDDEN, finalized_at = now
     DB-->>Backend: aborted recordingSessionIds
-    Backend->>Redis: recording cache 삭제
-    Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: deleted<br/>TTL: 즉시 삭제
+    Backend->>Redis: aborted PENDING cache 삭제
+    Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>action: delete for each aborted recordingSessionId
     Backend-->>App: 403 Forbidden
   else maintain 권한 있음
     Backend->>DB: 재사용 가능한 PENDING session 조회
@@ -39,10 +39,8 @@ sequenceDiagram
       Backend->>DB: 기존 PENDING session row 갱신
       Note over Backend,DB: recording_sessions 대상 row: id = reusableSession.id<br/>status = PENDING 유지<br/>updated_at = now
       DB-->>Backend: refreshedSession
-      Backend->>Redis: PENDING session cache 저장/갱신
-      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: {<br/>  "recordingSessionId": "{recordingSessionId}",<br/>  "repositoryId": "{repositoryId}",<br/>  "repositoryName": "{repositoryName}",<br/>  "userId": "{userId}",<br/>  "status": "PENDING",<br/>  "deviceType": "{deviceType}"<br/>}<br/>TTL: 300 seconds
-      Note over Redis: deviceType은 값이 있을 때만 JSON에 포함된다.<br/>DB의 PENDING row가 남아 있으면 Redis key가 만료되어도 이 분기에서 세션 캐시를 복구한다.
-      Redis-->>Backend: cache 저장 완료
+      Backend->>Redis: PENDING session cache 갱신
+      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: {<br/>  "recordingSessionId": "{existing_recording_session_id}",<br/>  "repositoryId": "{repository_uuid}",<br/>  "repositoryName": "{repository_name}",<br/>  "userId": "{user_id}",<br/>  "deviceType": "{optional_device_type}",<br/>  "status": "PENDING"<br/>}<br/>TTL: 300 seconds
       Backend-->>App: 200 OK
       Note over App,Backend: Response Body<br/>{<br/>  "recordingSessionId": "{existing_recording_session_id}"<br/>}
     else PENDING 세션 없음
@@ -50,12 +48,10 @@ sequenceDiagram
       Note over Backend: recordingSessionId = randomUUID()<br/>streamPath = live/{repositoryName}/{recordingSessionId}<br/>targetDirectory = getTargetDirectory()
       Backend->>DB: 신규 RecordingSession row 생성
       Note over Backend,DB: recording_sessions 저장 값<br/>id = recordingSessionId<br/>repository_id = repositoryId<br/>owner_id = repository.ownerId<br/>user_id = userId<br/>device_type = deviceType ?? null<br/>stream_path = live/{repositoryName}/{recordingSessionId}<br/>status = PENDING<br/>target_directory = getTargetDirectory()
-      Note over DB: recording_sessions 신규 row<br/>end_reason = null<br/>source_id = null<br/>source_type = null<br/>stop_requested_at = null<br/>ready_at = null<br/>not_ready_at = null<br/>finalized_at = null<br/>created_at/updated_at = DB/Prisma 자동 기록
+      Note over DB: recording_sessions 신규 row<br/>end_reason = null<br/>stop_requested_at = null<br/>ready_at = null<br/>not_ready_at = null<br/>finalized_at = null<br/>created_at/updated_at = DB/Prisma 자동 기록
       DB-->>Backend: session
       Backend->>Redis: PENDING session cache 저장
-      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: {<br/>  "recordingSessionId": "{recordingSessionId}",<br/>  "repositoryId": "{repositoryId}",<br/>  "repositoryName": "{repositoryName}",<br/>  "userId": "{userId}",<br/>  "status": "PENDING",<br/>  "deviceType": "{deviceType}"<br/>}<br/>TTL: 300 seconds
-      Note over Redis: register 단계에서 생성/갱신하는 세션 key는 stream:recording:{recordingSessionId} 하나다.<br/>stream:active:sessions와 stream:source:{sourceId}는<br/>후속 stream-ready 처리에서 STREAMING 전환 시 저장된다.
-      Redis-->>Backend: cache 저장 완료
+      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: {<br/>  "recordingSessionId": "{new_recording_session_id}",<br/>  "repositoryId": "{repository_uuid}",<br/>  "repositoryName": "{repository_name}",<br/>  "userId": "{user_id}",<br/>  "deviceType": "{optional_device_type}",<br/>  "status": "PENDING"<br/>}<br/>TTL: 300 seconds<br/><br/>stream:active:sessions는 후속 stream-ready 처리에서만 갱신된다.
       Backend-->>App: 200 OK
       Note over App,Backend: Response Body<br/>{<br/>  "recordingSessionId": "{new_recording_session_id}"<br/>}
     end

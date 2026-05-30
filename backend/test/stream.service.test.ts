@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { RecordingSessionEndReason, RecordingSessionStatus } from "@prisma/client";
 import { after, beforeEach, test } from "node:test";
 
-import type { RecordingSessionLiveCache } from "../src/types/stream";
 import { FakeRedis } from "./helpers/fake-redis";
+import type { RecordingSessionLiveCache } from "../src/types/stream";
 
 const moduleLoader = require("node:module") as typeof import("node:module") & {
   _load: (request: string, parent: unknown, isMain: boolean) => unknown;
@@ -70,8 +70,6 @@ const createSessionFromArgs = (args: { data: Record<string, any> }) => ({
   streamPath: args.data.streamPath,
   status: args.data.status,
   targetDirectory: args.data.targetDirectory,
-  sourceId: null,
-  sourceType: null,
   stopRequestedAt: null,
   readyAt: null,
   notReadyAt: null,
@@ -98,7 +96,7 @@ beforeEach(() => {
   repositoryService.listAccessibleRepositoryIds = originalListAccessibleRepositoryIds;
 });
 
-test("registerSession creates a unique MediaMTX path and only stores recording cache", async () => {
+test("registerSession creates a unique MediaMTX path and caches pending metadata", async () => {
   const createCalls: Array<{ data: Record<string, any> }> = [];
   fakePrisma.recordingSession.create = async (args: { data: Record<string, any> }) => {
     createCalls.push(args);
@@ -114,10 +112,8 @@ test("registerSession creates a unique MediaMTX path and only stores recording c
   assert.equal(response.recordingSessionId, createCalls[0]!.data.id);
   assert.equal(createCalls[0]!.data.streamPath, `live/test2/${response.recordingSessionId}`);
 
-  const stored = fakeRedis.getJson<RecordingSessionLiveCache>(
-    `stream:recording:${response.recordingSessionId}`,
-  );
-  assert.deepEqual(stored, {
+  const cache = fakeRedis.getJson<RecordingSessionLiveCache>(`stream:recording:${response.recordingSessionId}`);
+  assert.deepEqual(cache, {
     recordingSessionId: response.recordingSessionId,
     repositoryId: repository.id,
     repositoryName: repository.name,
@@ -125,6 +121,7 @@ test("registerSession creates a unique MediaMTX path and only stores recording c
     deviceType: "phone_android",
     status: "PENDING",
   });
+  assert.equal(fakeRedis.getTtlSeconds(`stream:recording:${response.recordingSessionId}`), 300);
 });
 
 test("registerSession reuses a non-expired pending session for the same user repository and device", async () => {
@@ -175,6 +172,7 @@ test("registerSession reuses a non-expired pending session for the same user rep
     deviceType: "phone_android",
     status: "PENDING",
   });
+  assert.equal(fakeRedis.getTtlSeconds(`stream:recording:${existingSession.id}`), 300);
 });
 
 test("registerSession reuses pending sessions regardless of age and leaves cleanup to reconcile", async () => {
@@ -217,9 +215,10 @@ test("registerSession reuses pending sessions regardless of age and leaves clean
   assert.ok((updateCalls[0] as any).data.updatedAt instanceof Date);
   assert.equal(updateManyCalls.length, 0);
   assert.equal(response.recordingSessionId, expiredSession.id);
+  assert.equal(fakeRedis.getJson<RecordingSessionLiveCache>(`stream:recording:${expiredSession.id}`)?.status, "PENDING");
 });
 
-test("registerSession aborts pending sessions and clears recording cache when maintain access is forbidden", async () => {
+test("registerSession aborts pending sessions when maintain access is forbidden", async () => {
   const existingSession = {
     id: "33333333-3333-4333-8333-333333333333",
     repositoryId: repository.id,
@@ -246,7 +245,7 @@ test("registerSession aborts pending sessions and clears recording cache when ma
     updateManyCalls.push(args);
     return { count: 1 };
   };
-  await fakeRedis.setJson(`stream:recording:${existingSession.id}`, {
+  fakeRedis.setJson(`stream:recording:${existingSession.id}`, {
     recordingSessionId: existingSession.id,
     repositoryId: repository.id,
     repositoryName: repository.name,
@@ -292,8 +291,6 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
     streamPath: "live/test2/44444444-4444-4444-8444-444444444444",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data",
-    sourceId: null,
-    sourceType: null,
     stopRequestedAt: null,
     readyAt: null,
     notReadyAt: null,
@@ -331,23 +328,53 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
   assert.equal(await fakeRedis.get(`stream:recording:${stalePendingSession.id}`), null);
 });
 
-test("listLiveStreams reads active stream metadata from Redis only", async () => {
+test("issuePublishTicket only allows PENDING recording sessions", async () => {
+  const streamingSession = {
+    id: "55555555-5555-4555-8555-555555555555",
+    repositoryId: repository.id,
+    ownerId: repository.ownerId,
+    userId: "maintainer-1",
+    deviceType: "phone_android",
+    streamPath: "live/test2/55555555-5555-4555-8555-555555555555",
+    status: RecordingSessionStatus.STREAMING,
+    targetDirectory: "/data",
+    stopRequestedAt: null,
+    readyAt: new Date(),
+    notReadyAt: null,
+    finalizedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  fakePrisma.recordingSession.findUnique = async () => streamingSession;
+
+  await assert.rejects(
+    () => streamService.issuePublishTicket("maintainer-1", "user", streamingSession.id),
+    (error: any) =>
+      error?.code === "CONFLICT" &&
+      error?.message === "Recording session is already in STREAMING state.",
+  );
+
+  const [_cursor, ticketKeys] = (await fakeRedis.scan("0", "MATCH", "stream:ticket:*")) as [string, string[]];
+  assert.deepEqual(ticketKeys, []);
+});
+
+test("listLiveStreams reads active ids and live metadata from Redis", async () => {
   fakePrisma.recordingSession.findMany = async () => {
-    throw new Error("listLiveStreams should not query recordingSession.");
+    throw new Error("listLiveStreams should not query recording_sessions");
   };
   repositoryService.listAccessibleRepositoryIds = async () => new Set([repository.id]);
 
   await fakeRedis.sadd("stream:active:sessions", "session-1", "session-pending", "session-hidden");
-  await fakeRedis.setJson("stream:recording:session-1", {
+  fakeRedis.setJson("stream:recording:session-1", {
     recordingSessionId: "session-1",
     repositoryId: repository.id,
     repositoryName: repository.name,
     userId: "maintainer-1",
     deviceType: "phone_android",
     status: "STREAMING",
-    sourceId: "source-1",
   } satisfies RecordingSessionLiveCache);
-  await fakeRedis.setJson("stream:recording:session-pending", {
+  fakeRedis.setJson("stream:recording:session-pending", {
     recordingSessionId: "session-pending",
     repositoryId: repository.id,
     repositoryName: repository.name,
@@ -355,7 +382,7 @@ test("listLiveStreams reads active stream metadata from Redis only", async () =>
     deviceType: "phone_android",
     status: "PENDING",
   } satisfies RecordingSessionLiveCache);
-  await fakeRedis.setJson("stream:recording:session-hidden", {
+  fakeRedis.setJson("stream:recording:session-hidden", {
     recordingSessionId: "session-hidden",
     repositoryId: "99999999-9999-4999-8999-999999999999",
     repositoryName: "hidden",

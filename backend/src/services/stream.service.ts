@@ -15,10 +15,10 @@ import { runtimeConfig as env } from "../config/runtime";
 import type { AppUserRole } from "../types/auth";
 import type { StreamRegisterInput } from "../schemas/stream.schema";
 import type { RecordingSessionLiveCache } from "../types/stream";
+import { streamRecordingKey } from "../utils/stream-keys";
 import { repositoryService } from "./repository.service";
 import { recordingSessionService } from "./recording-session.service";
 import { streamOwnershipService } from "./stream-ownership.service";
-import { streamRecordingKey } from "../utils/stream-keys";
 
 /**
  * 스트리밍 세션의 등록, 활성 조회, RTMP 인증 보조, reconcile 루프를 관리하는 서비스.
@@ -37,7 +37,7 @@ export class StreamService {
    * - repository maintain 권한 확인
    * - 아직 publish가 시작되지 않은 같은 사용자/repository/deviceType의 PENDING 세션은 재사용
    * - DB에 PENDING으로 남아 있는 세션은 age와 무관하게 재사용하고 updatedAt/Redis TTL을 갱신
-   * - RecordingSession을 PENDING 상태로 생성하고 recording cache만 저장
+   * - RecordingSession을 PENDING 상태로 생성하고 PENDING cache를 저장
    * - recordingSessionId만 반환하고, 실제 publish credential은 별도 publish-ticket 발급으로 분리함
    */
   async registerSession(
@@ -161,9 +161,7 @@ export class StreamService {
       return;
     }
 
-    await redis.del(
-      ...abortedSessionIds.map((recordingSessionId) => streamRecordingKey(recordingSessionId)),
-    );
+    await redis.del(...abortedSessionIds.map(streamRecordingKey));
 
     console.info("[rtmp-register] forbidden-pending-aborted", {
       repositoryId,
@@ -202,8 +200,10 @@ export class StreamService {
         updatedAt: new Date(),
       },
     });
-    await recordingSessionService.cachePendingSession(refreshedSession, RECORDING_REGISTRATION_TTL_SECONDS);
-
+    await recordingSessionService.cachePendingSession(
+      refreshedSession,
+      RECORDING_REGISTRATION_TTL_SECONDS,
+    );
     return refreshedSession;
   }
 
@@ -224,10 +224,7 @@ export class StreamService {
       throw Forbidden("Only the session owner can request a publish ticket.");
     }
 
-    if (
-      session.status !== RecordingSessionStatus.PENDING &&
-      session.status !== RecordingSessionStatus.STREAMING
-    ) {
+    if (session.status !== RecordingSessionStatus.PENDING) {
       throw Conflict(`Recording session is already in ${session.status} state.`);
     }
 
@@ -244,7 +241,7 @@ export class StreamService {
       userId: session.userId,
       streamPath: session.streamPath,
       ticketId: ticketGrant.ticket.ticketId,
-      ticketExpiresAt: new Date(ticketGrant.ticket.expiresAt).toISOString(),
+      ticketTtlSec: streamOwnershipService.getPublishTicketTtlSeconds(),
     });
 
     return {
@@ -275,13 +272,13 @@ export class StreamService {
 
   /**
    * [Live stream 목록 - Redis read-only]
-   * Redis active set + live cache만 읽어 응답을 만든다. DB / MediaMTX는 조회하지 않는다.
+   * Redis active set으로 live 후보를 좁힌 뒤 stream:recording cache로 응답을 만든다.
    * 1. 요청자가 접근 가능한 repository id set 계산 (admin이면 null)
    * 2. SMEMBERS stream:active:sessions
-   * 3. 각 id를 stream:recording:{id}로 MGET
-   * 4. status === STREAMING + 접근 가능 repo만 응답에 포함
+   * 3. MGET stream:recording:{recordingSessionId}
+   * 4. 접근 가능 repo만 응답에 포함
    *
-   * cache가 없거나 깨졌거나 STREAMING이 아닌 entry는 무시만 한다 (cleanup은 hook/reconcile이 담당).
+   * active set의 stale id는 hook/reconcile이 정리한다.
    */
   async listLiveStreams(requestUserId: string, requestUserRole: AppUserRole) {
     const accessibleRepoIds = await repositoryService.listAccessibleRepositoryIds(requestUserId, requestUserRole);
@@ -291,39 +288,27 @@ export class StreamService {
       return [];
     }
 
-    const cacheKeys = activeIds.map((id) => streamRecordingKey(id));
-    const cachedRaw = await redis.mget(...cacheKeys);
+    const cacheRecords = await redis.mget(...activeIds.map(streamRecordingKey));
+    const liveCaches = cacheRecords
+      .map((record) => this.parseLiveCache(record))
+      .filter((cache): cache is RecordingSessionLiveCache => cache?.status === "STREAMING");
 
-    const entries: RecordingSessionLiveCache[] = [];
-    for (const raw of cachedRaw) {
-      if (!raw) {
-        continue;
-      }
-      let parsed: RecordingSessionLiveCache;
-      try {
-        parsed = JSON.parse(raw) as RecordingSessionLiveCache;
-      } catch (_error) {
-        continue;
-      }
-      if (parsed.status !== "STREAMING") {
-        continue;
-      }
-      if (accessibleRepoIds && !accessibleRepoIds.has(parsed.repositoryId)) {
-        continue;
-      }
-      entries.push(parsed);
-    }
+    const visibleCaches = liveCaches.filter(
+      (cache) => !accessibleRepoIds || accessibleRepoIds.has(cache.repositoryId),
+    );
 
-    const streams = entries.map((entry) => ({
-      stream_id: entry.recordingSessionId,
-      repository_id: entry.repositoryId,
-      repository_name: entry.repositoryName,
-      user_id: entry.userId,
-      device_type: entry.deviceType ?? null,
-      status: "live" as const,
-      hls_path: this.buildHlsPath(entry.repositoryName, entry.recordingSessionId),
-      whep_path: this.buildWhepPath(entry.repositoryName, entry.recordingSessionId),
-    }));
+    const streams = visibleCaches.map((cache) => {
+      return {
+        stream_id: cache.recordingSessionId,
+        repository_id: cache.repositoryId,
+        repository_name: cache.repositoryName,
+        user_id: cache.userId,
+        device_type: cache.deviceType ?? null,
+        status: "live" as const,
+        hls_path: this.buildHlsPath(cache.repositoryName, cache.recordingSessionId),
+        whep_path: this.buildWhepPath(cache.repositoryName, cache.recordingSessionId),
+      };
+    });
 
     if (streams.length > 0) {
       console.info("[live-streams.list] generated", {
@@ -366,8 +351,6 @@ export class StreamService {
       user_id: session.userId,
       device_type: session.deviceType ?? null,
       stream_path: session.streamPath,
-      source_type: session.sourceType ?? null,
-      source_id: session.sourceId ?? null,
       registered_at: session.createdAt.toISOString(),
       status: "live" as const,
       playback_ready: playbackReady,
@@ -377,7 +360,7 @@ export class StreamService {
   /**
    * [RTMP 인증 보조: live session 조회]
    * RTMP publish/read 인증 시 auth.service에서 호출.
-   * Redis에서 stream path로 live cache를 조회하여 활성 세션 정보를 반환한다.
+   * stream path의 recordingSessionId로 Redis live cache를 조회한다.
    * FINALIZING 상태인 세션은 이미 종료된 것이므로 null을 반환한다.
    */
   async findLiveSessionByStreamPath(streamPath: string): Promise<RecordingSessionLiveCache | null> {
@@ -386,7 +369,7 @@ export class StreamService {
       return null;
     }
 
-    if (cache.status === "FINALIZING") {
+    if (cache.status !== "STREAMING" && cache.status !== "STOP_REQUESTED") {
       return null;
     }
 
@@ -457,6 +440,18 @@ export class StreamService {
 
   private normalizeStreamPath(streamPath: string) {
     return streamPath.trim().replace(/^\/+|\/+$/g, "");
+  }
+
+  private parseLiveCache(raw: string | null): RecordingSessionLiveCache | null {
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(raw) as RecordingSessionLiveCache;
+    } catch (_error) {
+      return null;
+    }
   }
 }
 
