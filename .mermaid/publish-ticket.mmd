@@ -46,13 +46,15 @@ sequenceDiagram
         Note over Backend,Redis: publish-ticket 단계에서 Redis에 쓰는 값은 stream:ticket:{ticketId} 하나다.<br/>stream:recording:{recordingSessionId} live cache는 갱신하지 않는다.
 
         Backend-->>App: 200 OK
-        Note over App,Backend: Response Body<br/>{<br/>  "recording_session_id": "{recordingSessionId}",<br/>  "repository_id": "{repositoryId}",<br/>  "stream_path": "live/{repositoryName}/{recordingSessionId}",<br/>  "publish_ticket": "t_{uuid}",<br/>  "rtmp_publish_base_url": "rtmp://{host}:1935/live",<br/>  "whip_publish_url": "http://{host}/live/{repositoryName}/{recordingSessionId}/whip?ticket=t_{uuid}"<br/>}
+        Note over App,Backend: Response Body<br/>{<br/>  "recording_session_id": "{recordingSessionId}",<br/>  "repository_id": "{repositoryId}",<br/>  "stream_path": "live/{repositoryName}/{recordingSessionId}",<br/>  "publish_ticket": "t_{uuid}"<br/>}
       end
     end
   end
 
   App->>App: RTMP publish URL 조립
-  Note over App: rtmp_publish_base_url + "/" + stream_path에서 "live/" prefix를 제거한 값 + "?ticket={publish_ticket}"
+  Note over App: host = URL(backendBaseUrl).hostname<br/>"rtmp://" + host + ":1935/" + stream_path + "?ticket=" + publish_ticket
+  App->>App: WHIP publish URL 조립
+  Note over App: origin = new URL(backendBaseUrl).origin<br/>origin + "/" + stream_path + "/whip?ticket=" + encodeURIComponent(publish_ticket)
   App->>MTX: RTMP publish 시작
   Note over App,MTX: URL<br/>rtmp://{host}:1935/live/{repositoryName}/{recordingSessionId}?ticket=t_{uuid}
   MTX->>Backend: RTMP auth 요청

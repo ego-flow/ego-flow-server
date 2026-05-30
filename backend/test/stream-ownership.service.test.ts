@@ -29,13 +29,6 @@ beforeEach(() => {
   fakeRedis.clear();
 });
 
-test("buildWhipPublishUrl uses the MediaMTX native WHIP path shape", () => {
-  assert.equal(
-    service.buildWhipPublishUrl("https://streams.example.com/live/", "live/repo-name/session-1", "ticket value"),
-    "https://streams.example.com/live/repo-name/session-1/whip?ticket=ticket%20value",
-  );
-});
-
 test("issuePublishTicket stores only short-lived ticket metadata", async () => {
   const grant = await service.issuePublishTicket(publishParams);
   const stored = fakeRedis.getJson<PublishTicketRecord>(`stream:ticket:${grant.ticket.ticketId}`);

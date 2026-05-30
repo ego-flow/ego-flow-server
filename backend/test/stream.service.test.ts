@@ -315,9 +315,11 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
   assert.equal(response.repository_id, repository.id);
   assert.equal(response.stream_path, stalePendingSession.streamPath);
   assert.ok(response.publish_ticket.startsWith("t_"));
-  assert.ok(response.whip_publish_url.endsWith(`/test2/${stalePendingSession.id}/whip?ticket=${response.publish_ticket}`));
   assert.equal(Object.hasOwn(response, "repository_name"), false);
   assert.equal(Object.hasOwn(response, "publish_ticket_expires_at"), false);
+  assert.equal(Object.hasOwn(response, "rtmp_publish_base_url"), false);
+  assert.equal(Object.hasOwn(response, "rtmp_publish_host"), false);
+  assert.equal(Object.hasOwn(response, "whip_publish_url"), false);
 
   const ticket = fakeRedis.getJson<Record<string, unknown>>(`stream:ticket:${response.publish_ticket}`);
   assert.equal(ticket?.recordingSessionId, stalePendingSession.id);

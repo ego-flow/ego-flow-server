@@ -1,5 +1,6 @@
 import path from "path";
 
+import { FIXED_RTMP_PORT, FIXED_RTMPS_PORT } from "../constants/config/config-constants";
 import { fileConfig } from "./config.file";
 import { env } from "./env";
 
@@ -9,8 +10,8 @@ export const runtimeConfig = {
   DATA_ROOT: fileConfig.TARGET_DIRECTORY,
   TARGET_DIRECTORY: path.join(fileConfig.TARGET_DIRECTORY, "datasets"),
   PUBLIC_HTTP_PORT: fileConfig.PUBLIC_HTTP_PORT,
-  RTMP_PORT: fileConfig.RTMP_PORT,
-  RTMPS_PORT: fileConfig.RTMPS_PORT,
+  RTMP_PORT: FIXED_RTMP_PORT,
+  RTMPS_PORT: FIXED_RTMPS_PORT,
   HLS_PORT: fileConfig.HLS_PORT,
   WEBRTC_PORT: fileConfig.WEBRTC_PORT,
   MEDIAMTX_API_PORT: fileConfig.MEDIAMTX_API_PORT,
@@ -29,9 +30,6 @@ export const runtimeConfig = {
   RTMPS_ENABLED: (env.RTMPS_ENCRYPTION_MODE ?? "no") !== "no",
   RTMPS_CERT_PATH: env.RTMPS_CERT_PATH ?? "/certs/server.crt",
   RTMPS_KEY_PATH: env.RTMPS_KEY_PATH ?? "/certs/server.key",
-  RTMP_BASE_URL: env.PUBLIC_RTMP_BASE_URL ?? `rtmp://127.0.0.1:${fileConfig.RTMP_PORT}/live`,
-  WHIP_BASE_URL: env.PUBLIC_WHIP_BASE_URL ?? `http://127.0.0.1:${fileConfig.PUBLIC_HTTP_PORT}/live`,
-  WHEP_BASE_URL: env.PUBLIC_WHEP_BASE_URL ?? `http://127.0.0.1:${fileConfig.PUBLIC_HTTP_PORT}/live`,
   HLS_PATH_PREFIX: "/hls",
   WHIP_PATH_PREFIX: "/live",
   WHEP_PATH_PREFIX: "/live",

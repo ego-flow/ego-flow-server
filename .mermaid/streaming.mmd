@@ -14,8 +14,9 @@ sequenceDiagram
   App->>Server: publish-ticket 요청
   Note over App,Server: API<br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/><br/>Body<br/>none
   Server-->>App: 200 OK
-  Note over App,Server: Response Body<br/>{<br/>  "recording_session_id": "{recordingSessionId}",<br/>  "repository_id": "{repositoryId}",<br/>  "repository_name": "{repositoryName}",<br/>  "stream_path": "live/{repositoryName}/{recordingSessionId}",<br/>  "publish_ticket": "t_{uuid}",<br/>  "publish_ticket_expires_at": "{iso_expires_at}",<br/>  "rtmp_publish_base_url": "{rtmp_base_url_without_trailing_slash}",<br/>  "whip_publish_url": "{whip_base_url_without_trailing_slash}/{repositoryName}/whip?ticket=t_{uuid}"<br/>}
-  App->>App: publish_ticket, stream_path, RTMP/WHIP publish endpoint 저장
+  Note over App,Server: Response Body<br/>{<br/>  "recording_session_id": "{recordingSessionId}",<br/>  "repository_id": "{repositoryId}",<br/>  "stream_path": "live/{repositoryName}/{recordingSessionId}",<br/>  "publish_ticket": "t_{uuid}"<br/>}
+  App->>App: publish_ticket, stream_path 저장
+  Note over App: RTMP URL<br/>"rtmp://" + URL(backendBaseUrl).hostname + ":1935/" + stream_path + "?ticket=" + publish_ticket<br/><br/>WHIP URL<br/>new URL(backendBaseUrl).origin + "/" + stream_path + "/whip?ticket=" + encodeURIComponent(publish_ticket)
 
   Note over App,Server: Error response body 공통 형태<br/>{<br/>  "error": {<br/>    "code": "{ERROR_CODE}",<br/>    "message": "{human_readable_message}",<br/>    "details": "{optional_details}"<br/>  }<br/>}
 

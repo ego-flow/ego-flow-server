@@ -143,8 +143,8 @@ export class AdminService {
         description: "Public-facing service ports.",
         entries: [
           { key: "PUBLIC_HTTP_PORT", value: runtimeConfig.PUBLIC_HTTP_PORT, sourcePath: getConfigFilePath() },
-          { key: "RTMP_PORT", value: runtimeConfig.RTMP_PORT, sourcePath: getConfigFilePath() },
-          { key: "RTMPS_PORT", value: runtimeConfig.RTMPS_PORT, sourcePath: getConfigFilePath() },
+          { key: "RTMP_PORT", value: runtimeConfig.RTMP_PORT },
+          { key: "RTMPS_PORT", value: runtimeConfig.RTMPS_PORT },
           { key: "HLS_PORT", value: runtimeConfig.HLS_PORT, sourcePath: getConfigFilePath() },
           { key: "WEBRTC_PORT", value: runtimeConfig.WEBRTC_PORT, sourcePath: getConfigFilePath() },
           { key: "MEDIAMTX_API_PORT", value: runtimeConfig.MEDIAMTX_API_PORT, sourcePath: getConfigFilePath() },
@@ -154,9 +154,6 @@ export class AdminService {
         title: "Streaming",
         description: "Endpoints handed out to publishers and players.",
         entries: [
-          { key: "RTMP_BASE_URL", value: runtimeConfig.RTMP_BASE_URL, sourcePath: getDotenvPath() },
-          { key: "WHIP_BASE_URL", value: runtimeConfig.WHIP_BASE_URL, sourcePath: getDotenvPath() },
-          { key: "WHEP_BASE_URL", value: runtimeConfig.WHEP_BASE_URL, sourcePath: getDotenvPath() },
           { key: "HLS_PATH_PREFIX", value: runtimeConfig.HLS_PATH_PREFIX },
           { key: "WHIP_PATH_PREFIX", value: runtimeConfig.WHIP_PATH_PREFIX },
           { key: "WHEP_PATH_PREFIX", value: runtimeConfig.WHEP_PATH_PREFIX },

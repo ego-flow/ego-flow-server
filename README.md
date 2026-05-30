@@ -44,9 +44,9 @@ Using that HTTP base URL, the stack exposes:
 - Swagger UI: `{PUBLIC_HTTP_BASE}/api-docs`
 - OpenAPI JSON: `{PUBLIC_HTTP_BASE}/api/v1/openapi.json`
 - Dashboard: `{PUBLIC_HTTP_BASE}`
-- RTMP ingest: `rtmp://localhost:{RTMP_PORT}/live`
-- RTMPS ingest: `rtmps://localhost:{RTMPS_PORT}/live`
-- HLS output: `http://localhost:{HLS_PORT}`
+- RTMP ingest: `rtmp://localhost:1935/live`
+- RTMPS ingest: `rtmps://localhost:1936/live`
+- HLS output: `{PUBLIC_HTTP_BASE}/hls`
 
 Current seeded dashboard login:
 
@@ -68,8 +68,8 @@ That helper lives in the parent repository root. It stops the running stack, pul
 | Port | Default | Purpose |
 | --- | --- | --- |
 | `PUBLIC_HTTP_PORT` | `80` | Public HTTP entrypoint for dashboard, API, Swagger UI, OpenAPI JSON, and `/files/*` |
-| `RTMP_PORT` | `1935` | RTMP ingest |
-| `RTMPS_PORT` | `1936` | Optional RTMPS ingest |
+| `1935` | fixed | RTMP ingest |
+| `1936` | fixed | Optional RTMPS ingest |
 | `HLS_PORT` | `8888` | HLS playback |
 | `MEDIAMTX_API_PORT` | `9997` | Internal MediaMTX control API port used inside the Docker network |
 
@@ -116,8 +116,6 @@ Only `TARGET_DIRECTORY` is required and does not have a default. Everything else
 {
   "TARGET_DIRECTORY": "~/ego-flow-data",
   "PUBLIC_HTTP_PORT": 80,
-  "RTMP_PORT": 1935,
-  "RTMPS_PORT": 1936,
   "HLS_PORT": 8888,
   "MEDIAMTX_API_PORT": 9997,
   "JWT_EXPIRES_IN": "24h",
@@ -133,8 +131,6 @@ Only `TARGET_DIRECTORY` is required and does not have a default. Everything else
 | --- | --- | --- | --- |
 | `TARGET_DIRECTORY` | Yes | None | Host data root for postgres, redis, raw recordings, and generated datasets. Must be an absolute path or use `~/...` shorthand. |
 | `PUBLIC_HTTP_PORT` | No | `80` | Public HTTP port exposed to users. |
-| `RTMP_PORT` | No | `1935` | Port used for RTMP ingest from the app or AR glasses. |
-| `RTMPS_PORT` | No | `1936` | Port used for RTMPS ingest when enabled. |
 | `HLS_PORT` | No | `8888` | Port used for HLS live playback output. |
 | `MEDIAMTX_API_PORT` | No | `9997` | Internal MediaMTX control API port. |
 | `JWT_EXPIRES_IN` | No | `24h` | Access-token lifetime. |
@@ -159,8 +155,7 @@ DATABASE_URL=postgresql://postgres:postgres@postgres:5432/egoflow?schema=public
 REDIS_URL=redis://redis:6379
 # HF_TOKEN=
 
-# Optional public URL overrides
-# PUBLIC_RTMP_BASE_URL=rtmp://your-host:1935/live
+# Optional RTMPS overrides
 # RTMPS_ENCRYPTION_MODE=no
 # RTMPS_CERT_PATH=/certs/server.crt
 # RTMPS_KEY_PATH=/certs/server.key
@@ -176,7 +171,6 @@ REDIS_URL=redis://redis:6379
 | `DATABASE_URL` | No | `postgresql://postgres:postgres@postgres:5432/egoflow?schema=public` | PostgreSQL connection string override. |
 | `REDIS_URL` | No | `redis://redis:6379` | Redis connection string override. |
 | `HF_TOKEN` | No | None | Hugging Face token used for Hugging Face integration. |
-| `PUBLIC_RTMP_BASE_URL` | No | `rtmp://127.0.0.1:{RTMP_PORT}/live` | Public RTMP base URL returned to clients. Set it explicitly on any machine that other devices connect to. |
 | `MEDIAMTX_API_URL` | No | `http://mediamtx:{MEDIAMTX_API_PORT}` | Internal MediaMTX API URL override used by the backend. |
 | `RTMPS_ENCRYPTION_MODE` | No | `no` | MediaMTX RTMP encryption mode. |
 | `RTMPS_CERT_PATH` | No | `/certs/server.crt` | MediaMTX RTMPS server certificate path. |

@@ -134,15 +134,11 @@ normalize_target_directory() {
 
 load_runtime_overrides() {
   export PUBLIC_HTTP_PORT
-  export RTMP_PORT
-  export RTMPS_PORT
   export HLS_PORT
   export TARGET_DIRECTORY
   export HOST_HOME
 
   PUBLIC_HTTP_PORT="$(read_config_number "PUBLIC_HTTP_PORT" "80")"
-  RTMP_PORT="$(read_config_number "RTMP_PORT" "1935")"
-  RTMPS_PORT="$(read_config_number "RTMPS_PORT" "1936")"
   HLS_PORT="$(read_config_number "HLS_PORT" "8888")"
   TARGET_DIRECTORY="$(normalize_target_directory "$(read_config_string "TARGET_DIRECTORY")")"
   HOST_HOME="${HOME:-}"
@@ -191,8 +187,8 @@ check_prereqs() {
   echo "Docker OK: $(docker --version)"
   echo "Compose OK: $(docker compose version --short)"
   echo "HTTP port: ${PUBLIC_HTTP_PORT}"
-  echo "RTMP port: ${RTMP_PORT}"
-  echo "RTMPS port: ${RTMPS_PORT}"
+  echo "RTMP port: 1935"
+  echo "RTMPS port: 1936"
   echo "HLS internal port: ${HLS_PORT}"
   echo "Data root: ${TARGET_DIRECTORY}"
   echo "Datasets dir: ${TARGET_DIRECTORY}/datasets"
@@ -513,8 +509,8 @@ up_stack() {
   echo "Backend health: ${http_base}/api/v1/health"
   echo "Swagger UI:     ${http_base}/api-docs"
   echo "Dashboard:      ${http_base}"
-  echo "RTMP ingest:    rtmp://localhost:${RTMP_PORT}/live"
-  echo "RTMPS ingest:   rtmps://localhost:${RTMPS_PORT}/live"
+  echo "RTMP ingest:    rtmp://localhost:1935/live"
+  echo "RTMPS ingest:   rtmps://localhost:1936/live"
   echo "HLS output:     ${http_base}/hls"
 }
 

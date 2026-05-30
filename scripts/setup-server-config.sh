@@ -245,9 +245,6 @@ write_env_file() {
       printf '# HF_TOKEN=\n'
     fi
     printf '\n'
-    printf '# Public stream URL returned to clients\n'
-    printf 'PUBLIC_RTMP_BASE_URL=%s\n' "$(dotenv_value "$PUBLIC_RTMP_BASE_URL")"
-    printf '\n'
     printf '# Internal MediaMTX API access\n'
     printf 'MEDIAMTX_API_URL=%s\n' "$(dotenv_value "$MEDIAMTX_API_URL")"
     printf '\n'
@@ -271,8 +268,6 @@ write_config_file() {
     printf '{\n'
     printf '  "TARGET_DIRECTORY": %s,\n' "$(json_string "$TARGET_DIRECTORY")"
     printf '  "PUBLIC_HTTP_PORT": %s,\n' "$PUBLIC_HTTP_PORT"
-    printf '  "RTMP_PORT": %s,\n' "$RTMP_PORT"
-    printf '  "RTMPS_PORT": %s,\n' "$RTMPS_PORT"
     printf '  "HLS_PORT": %s,\n' "$HLS_PORT"
     printf '  "MEDIAMTX_API_PORT": %s,\n' "$MEDIAMTX_API_PORT"
     printf '  "CORS_ORIGIN": %s,\n' "$(json_string "$CORS_ORIGIN")"
@@ -302,8 +297,6 @@ main() {
   echo "[config.json]"
   TARGET_DIRECTORY="$(ask_with_default "TARGET_DIRECTORY" "~/ego-flow/ego-flow-data" "absolute path or ~/...")"
   PUBLIC_HTTP_PORT="$(ask_with_default "PUBLIC_HTTP_PORT" "80" "port number, e.g. 80")"
-  RTMP_PORT="$(ask_with_default "RTMP_PORT" "1935" "port number, e.g. 1935")"
-  RTMPS_PORT="$(ask_with_default "RTMPS_PORT" "1936" "port number, e.g. 1936")"
   HLS_PORT="$(ask_with_default "HLS_PORT" "8888" "port number, e.g. 8888")"
   MEDIAMTX_API_PORT="$(ask_with_default "MEDIAMTX_API_PORT" "9997" "port number, e.g. 9997")"
   default_cors_origin="$(http_origin_for "$server_ip" "$PUBLIC_HTTP_PORT")"
@@ -323,8 +316,6 @@ main() {
   POSTGRES_DB="$(ask_with_default "POSTGRES_DB" "egoflow" "PostgreSQL database name")"
   REDIS_URL="$(ask_with_default "REDIS_URL" "redis://redis:6379" "Redis URL, e.g. redis://redis:6379")"
   HF_TOKEN="$(ask_secret_optional_value "HF_TOKEN" "Hugging Face token, e.g. hf_xxx")"
-  default_public_rtmp_url="rtmp://${server_ip}:${RTMP_PORT}/live"
-  PUBLIC_RTMP_BASE_URL="$(ask_with_default "PUBLIC_RTMP_BASE_URL" "$default_public_rtmp_url" "RTMP URL, e.g. rtmp://${server_ip}:${RTMP_PORT}/live")"
   MEDIAMTX_API_URL="$(ask_with_default "MEDIAMTX_API_URL" "http://mediamtx:9997" "URL, e.g. http://mediamtx:9997")"
   RTMPS_ENCRYPTION_MODE="$(ask_optional_value "RTMPS_ENCRYPTION_MODE" "no, optional, or strict")"
   if [[ -n "$RTMPS_ENCRYPTION_MODE" ]]; then
@@ -337,8 +328,6 @@ main() {
 
   validate_target_directory "$TARGET_DIRECTORY"
   validate_port "PUBLIC_HTTP_PORT" "$PUBLIC_HTTP_PORT"
-  validate_port "RTMP_PORT" "$RTMP_PORT"
-  validate_port "RTMPS_PORT" "$RTMPS_PORT"
   validate_port "HLS_PORT" "$HLS_PORT"
   validate_port "MEDIAMTX_API_PORT" "$MEDIAMTX_API_PORT"
   validate_boolean "DELETE_RAW_AFTER_PROCESSING" "$DELETE_RAW_AFTER_PROCESSING"

@@ -252,12 +252,6 @@ export class StreamService {
       repository_id: session.repositoryId,
       stream_path: session.streamPath,
       publish_ticket: ticketGrant.ticket.ticketId,
-      rtmp_publish_base_url: streamOwnershipService.getPublishBaseUrl(env.RTMP_BASE_URL),
-      whip_publish_url: streamOwnershipService.buildWhipPublishUrl(
-        env.WHIP_BASE_URL,
-        session.streamPath,
-        ticketGrant.ticket.ticketId,
-      ),
     };
   }
 

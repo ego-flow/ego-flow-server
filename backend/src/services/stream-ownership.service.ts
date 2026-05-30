@@ -33,22 +33,6 @@ export class StreamOwnershipService {
     return PUBLISH_TICKET_TTL_SECONDS;
   }
 
-  getPublishBaseUrl(baseUrl: string) {
-    return baseUrl.replace(/\/+$/, "");
-  }
-
-  buildPublishUrl(baseUrl: string, streamPath: string, publishTicket: string) {
-    const normalizedBaseUrl = this.getPublishBaseUrl(baseUrl);
-    const suffix = this.toPublishPathSuffix(streamPath);
-    return `${normalizedBaseUrl}/${suffix}?ticket=${encodeURIComponent(publishTicket)}`;
-  }
-
-  buildWhipPublishUrl(baseUrl: string, streamPath: string, publishTicket: string) {
-    const normalizedBaseUrl = this.getPublishBaseUrl(baseUrl);
-    const suffix = this.toPublishPathSuffix(streamPath);
-    return `${normalizedBaseUrl}/${suffix}/whip?ticket=${encodeURIComponent(publishTicket)}`;
-  }
-
   async issuePublishTicket(params: {
     recordingSessionId: string;
     repositoryId: string;
@@ -164,11 +148,6 @@ export class StreamOwnershipService {
     const queryParams = new URLSearchParams(query ?? "");
     const ticketId = queryParams.get("ticket");
     return ticketId && ticketId.trim() ? ticketId.trim() : null;
-  }
-
-  private toPublishPathSuffix(streamPath: string) {
-    const normalized = streamPath.trim().replace(/^\/+|\/+$/g, "");
-    return normalized.startsWith("live/") ? normalized.slice("live/".length) : normalized;
   }
 
   private calculateRemainingTtlSeconds(expiresAt: number) {

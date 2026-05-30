@@ -279,16 +279,12 @@ export const openApiDocument = {
           "repository_id",
           "stream_path",
           "publish_ticket",
-          "rtmp_publish_base_url",
-          "whip_publish_url",
         ],
         properties: {
           recording_session_id: { type: "string", format: "uuid" },
           repository_id: { type: "string", format: "uuid" },
           stream_path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
           publish_ticket: { type: "string", example: "t_0d87967b-903e-4f69-af58-24fdd6dd2a82" },
-          rtmp_publish_base_url: { type: "string", example: "rtmp://127.0.0.1:1935/live" },
-          whip_publish_url: { type: "string", example: "http://127.0.0.1/live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620/whip?ticket=t_0d87967b-903e-4f69-af58-24fdd6dd2a82" },
         },
       },
       LiveStreamSummary: {

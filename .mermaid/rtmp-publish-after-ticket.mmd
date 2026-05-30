@@ -7,10 +7,10 @@ sequenceDiagram
   participant DB as [DB]
   participant Storage as [Raw Storage]
 
-  Note over App,Backend: 이전 단계<br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket 성공<br/><br/>App이 받은 핵심 값<br/>rtmp_publish_base_url = rtmp://{host}:1935/live<br/>stream_path = live/{repositoryName}/{recordingSessionId}<br/>publish_ticket = t_{uuid}
+  Note over App,Backend: 이전 단계<br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket 성공<br/><br/>App이 받은 핵심 값<br/>stream_path = live/{repositoryName}/{recordingSessionId}<br/>publish_ticket = t_{uuid}<br/><br/>App이 이미 알고 있는 값<br/>backendBaseUrl = http://{host}
 
   App->>App: RTMP publish URL 조립
-  Note over App: intended URL<br/>rtmp_publish_base_url + "/" + stream_path에서 "live/" prefix 제거 + "?ticket={publish_ticket}"<br/><br/>결과<br/>rtmp://{host}:1935/live/{repositoryName}/{recordingSessionId}?ticket=t_{uuid}
+  Note over App: URL construction rule<br/>host = URL(backendBaseUrl).hostname<br/>"rtmp://" + host + ":1935/" + stream_path + "?ticket=" + publish_ticket<br/><br/>결과<br/>rtmp://{host}:1935/live/{repositoryName}/{recordingSessionId}?ticket=t_{uuid}
 
   App->>MTX: TCP open + RTMP handshake
   Note over App,MTX: host={host}<br/>port=1935<br/>RTMP app=live<br/>RTMP stream key={repositoryName}/{recordingSessionId}?ticket=t_{uuid}
@@ -76,4 +76,4 @@ sequenceDiagram
   Backend->>DB: finalize worker가 Video 생성
   Note over Backend,DB: completed recording_segments를 기반으로 videos row 생성<br/>recording_sessions row는 COMPLETED/FAILED/ABORTED 중 하나로 종료
 
-  Note over App,Backend: Current Android implementation issue<br/>현재 Android PublishTicketGrant.buildPublishUrl()은 repositoryName만 붙여<br/>rtmp://{host}:1935/live/{repositoryName}?ticket=... 형태를 만든다.<br/>새 서버 구조에서는 recordingSessionId까지 포함한<br/>rtmp://{host}:1935/live/{repositoryName}/{recordingSessionId}?ticket=... 형태가 필요하다.<br/><br/>또한 Android PublishTicketResponse는 connection_id, generation을 아직 필수로 기대하지만<br/>단순화된 backend publish-ticket response에서는 이 값들이 제거됐다.
+  Note over App,Backend: Android implementation update point<br/>Android는 기존 backendBaseUrl의 hostname과 publish-ticket response의 stream_path, publish_ticket으로<br/>rtmp://{host}:1935/{stream_path}?ticket={publish_ticket} 형태를 조립해야 한다.<br/><br/>scheme은 rtmp:// 고정, port는 1935 고정이며<br/>server는 더 이상 rtmp_publish_base_url, rtmp_publish_host, whip_publish_url을 반환하지 않는다.
