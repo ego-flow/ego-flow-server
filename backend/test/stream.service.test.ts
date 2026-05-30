@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { RecordingSessionStatus } from "@prisma/client";
+import { RecordingSessionEndReason, RecordingSessionStatus } from "@prisma/client";
 import { after, beforeEach, test } from "node:test";
 
 import type { RecordingSessionLiveCache } from "../src/types/stream";
@@ -46,6 +46,7 @@ const { streamService } =
   require("../src/services/stream.service") as typeof import("../src/services/stream.service");
 const { repositoryService } =
   require("../src/services/repository.service") as typeof import("../src/services/repository.service");
+const { Forbidden } = require("../src/lib/errors") as typeof import("../src/lib/errors");
 
 const originalAssertRepositoryAccess = repositoryService.assertRepositoryAccess;
 const originalListAccessibleRepositoryIds = repositoryService.listAccessibleRepositoryIds;
@@ -220,6 +221,69 @@ test("registerSession reuses pending sessions regardless of age and leaves clean
   assert.ok((updateCalls[0] as any).data.updatedAt instanceof Date);
   assert.equal(updateManyCalls.length, 0);
   assert.equal(response.recordingSessionId, expiredSession.id);
+});
+
+test("registerSession aborts pending sessions and clears recording cache when maintain access is forbidden", async () => {
+  const existingSession = {
+    id: "33333333-3333-4333-8333-333333333333",
+    repositoryId: repository.id,
+    ownerId: repository.ownerId,
+    userId: "maintainer-1",
+    deviceType: "phone_android",
+    streamPath: "live/test2/33333333-3333-4333-8333-333333333333",
+    status: RecordingSessionStatus.PENDING,
+    targetDirectory: "/data",
+    createdAt: new Date(Date.now() - 60_000),
+    updatedAt: new Date(Date.now() - 60_000),
+  };
+  const findManyCalls: Array<Record<string, unknown>> = [];
+  const updateManyCalls: Array<Record<string, unknown>> = [];
+
+  repositoryService.assertRepositoryAccess = async () => {
+    throw Forbidden("You do not have permission for this repository action.");
+  };
+  fakePrisma.recordingSession.findMany = async (args: Record<string, unknown>) => {
+    findManyCalls.push(args);
+    return [existingSession];
+  };
+  fakePrisma.recordingSession.updateMany = async (args: Record<string, unknown>) => {
+    updateManyCalls.push(args);
+    return { count: 1 };
+  };
+  await fakeRedis.setJson(`stream:recording:${existingSession.id}`, {
+    recordingSessionId: existingSession.id,
+    repositoryId: repository.id,
+    repositoryName: repository.name,
+    userId: "maintainer-1",
+    deviceType: "phone_android",
+    status: "PENDING",
+  } satisfies RecordingSessionLiveCache);
+
+  await assert.rejects(
+    () =>
+      streamService.registerSession("maintainer-1", "user", {
+        repositoryId: repository.id,
+        deviceType: "phone_android",
+      }),
+    (error: any) => error?.code === "FORBIDDEN",
+  );
+
+  assert.equal(findManyCalls.length, 1);
+  assert.deepEqual((findManyCalls[0] as any).where, {
+    repositoryId: repository.id,
+    userId: "maintainer-1",
+    deviceType: "phone_android",
+    status: RecordingSessionStatus.PENDING,
+  });
+  assert.equal(updateManyCalls.length, 1);
+  assert.deepEqual((updateManyCalls[0] as any).where, {
+    id: existingSession.id,
+    status: RecordingSessionStatus.PENDING,
+  });
+  assert.equal((updateManyCalls[0] as any).data.status, RecordingSessionStatus.ABORTED);
+  assert.equal((updateManyCalls[0] as any).data.endReason, RecordingSessionEndReason.ACCESS_FORBIDDEN);
+  assert.ok((updateManyCalls[0] as any).data.finalizedAt instanceof Date);
+  assert.equal(await fakeRedis.get(`stream:recording:${existingSession.id}`), null);
 });
 
 test("listLiveStreams reads active stream metadata from Redis only", async () => {

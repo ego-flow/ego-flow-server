@@ -414,7 +414,7 @@ export const openApiDocument = {
           },
           end_reason: {
             oneOf: [
-              { type: "string", enum: ["USER_STOP", "GLASSES_STOP", "UNEXPECTED_DISCONNECT", "REGISTRATION_TIMEOUT", "INTERNAL_ERROR"] },
+              { type: "string", enum: ["USER_STOP", "GLASSES_STOP", "UNEXPECTED_DISCONNECT", "REGISTRATION_TIMEOUT", "ACCESS_FORBIDDEN", "INTERNAL_ERROR"] },
               { type: "null" },
             ],
           },

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { RecordingSessionStatus } from "@prisma/client";
+import { RecordingSessionEndReason, RecordingSessionStatus } from "@prisma/client";
 
 import {
   FIRST_PUBLISH_DEADLINE_MS,
@@ -8,7 +8,7 @@ import {
   STREAM_ACTIVE_SET_KEY,
   STREAM_RECONCILE_INTERVAL_MS,
 } from "../constants/stream/stream-constants";
-import { Conflict, ErrorCode, Forbidden, NotFound } from "../lib/errors";
+import { AppError, Conflict, ErrorCode, Forbidden, NotFound } from "../lib/errors";
 import { redis } from "../lib/redis";
 import { getTargetDirectory } from "../lib/storage";
 import { prisma } from "../lib/prisma";
@@ -46,7 +46,20 @@ export class StreamService {
     userRole: AppUserRole,
     input: StreamRegisterInput,
   ) {
-    const access = await repositoryService.assertRepositoryAccess(userId, userRole, input.repositoryId, "maintain");
+    let access: Awaited<ReturnType<typeof repositoryService.assertRepositoryAccess>>;
+    try {
+      access = await repositoryService.assertRepositoryAccess(userId, userRole, input.repositoryId, "maintain");
+    } catch (error) {
+      if (this.isForbiddenError(error)) {
+        await this.abortPendingSessionsAfterForbiddenAccess(
+          input.repositoryId,
+          userId,
+          input.deviceType ?? null,
+        );
+      }
+      throw error;
+    }
+
     const existingSession = await this.findReusablePendingSession(
       access.repository.id,
       userId,
@@ -100,6 +113,66 @@ export class StreamService {
 
   private buildStreamPath(repositoryName: string, recordingSessionId: string) {
     return `live/${repositoryName}/${recordingSessionId}`;
+  }
+
+  private isForbiddenError(error: unknown) {
+    return error instanceof AppError && error.code === ErrorCode.FORBIDDEN;
+  }
+
+  private async abortPendingSessionsAfterForbiddenAccess(
+    repositoryId: string,
+    userId: string,
+    deviceType: string | null,
+  ) {
+    const pendingSessions = await prisma.recordingSession.findMany({
+      where: {
+        repositoryId,
+        userId,
+        deviceType,
+        status: RecordingSessionStatus.PENDING,
+      },
+      select: { id: true },
+    });
+
+    if (pendingSessions.length === 0) {
+      return;
+    }
+
+    const abortedSessionIds: string[] = [];
+    const finalizedAt = new Date();
+    for (const session of pendingSessions) {
+      const result = await prisma.recordingSession.updateMany({
+        where: {
+          id: session.id,
+          status: RecordingSessionStatus.PENDING,
+        },
+        data: {
+          status: RecordingSessionStatus.ABORTED,
+          endReason: RecordingSessionEndReason.ACCESS_FORBIDDEN,
+          finalizedAt,
+        },
+      });
+
+      if (result.count > 0) {
+        abortedSessionIds.push(session.id);
+      }
+    }
+
+    if (abortedSessionIds.length === 0) {
+      return;
+    }
+
+    await redis.del(
+      ...abortedSessionIds.map((recordingSessionId) => streamRecordingKey(recordingSessionId)),
+    );
+
+    console.info("[rtmp-register] forbidden-pending-aborted", {
+      repositoryId,
+      userId,
+      deviceType,
+      recordingSessionIds: abortedSessionIds,
+      endReason: RecordingSessionEndReason.ACCESS_FORBIDDEN,
+    });
   }
 
   private async findReusablePendingSession(
