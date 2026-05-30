@@ -31,15 +31,6 @@ export const publishTicketParamsSchema = z.object({
   recordingSessionId: z.string().uuid(),
 });
 
-export const streamConnectionHeartbeatParamsSchema = z.object({
-  recordingSessionId: z.string().uuid(),
-  connectionId: z.string().min(1),
-});
-
-export const streamConnectionHeartbeatBodySchema = z.object({
-  generation: z.coerce.number().int().nonnegative(),
-});
-
 export const streamReadyHookSchema = z.object({
   path: z.string().min(1),
   query: z.string().optional(),
@@ -81,8 +72,6 @@ export const recordingStopBodySchema = z.object({
 
 export type StreamRegisterInput = z.infer<typeof streamRegisterSchema>;
 export type PublishTicketParams = z.infer<typeof publishTicketParamsSchema>;
-export type StreamConnectionHeartbeatParams = z.infer<typeof streamConnectionHeartbeatParamsSchema>;
-export type StreamConnectionHeartbeatBody = z.infer<typeof streamConnectionHeartbeatBodySchema>;
 export type StreamReadyHookInput = z.infer<typeof streamReadyHookSchema>;
 export type StreamNotReadyHookInput = z.infer<typeof streamNotReadyHookSchema>;
 export type SegmentCreateHookInput = z.infer<typeof segmentCreateHookSchema>;

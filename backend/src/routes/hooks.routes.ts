@@ -35,8 +35,7 @@ router.post(
 /**
  * [MediaMTX hook: stream-not-ready]
  * MediaMTX runOnNotReady hook이 RTMP 연결이 끊어졌을 때 호출.
- * authoritative `stream:source:{sourceId}` mapping으로 connection/generation을 복원하고,
- * generation match release가 성공한 경우에만 해당 세션을 FINALIZING으로 전환한다.
+ * authoritative `stream:source:{sourceId}` mapping으로 세션을 복원하고 FINALIZING으로 전환한다.
  */
 // POST /api/v1/hooks/stream-not-ready
 router.post(

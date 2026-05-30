@@ -1,11 +1,10 @@
 import fs from "fs/promises";
 import path from "path";
 
-import { Prisma, RepoRole, RepoVisibility } from "@prisma/client";
+import { Prisma, RecordingSessionStatus, RepoRole, RepoVisibility } from "@prisma/client";
 
 import { BadRequest, Conflict, Forbidden, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
-import { redis } from "../lib/redis";
 import { getTargetDirectory } from "../lib/storage";
 import type {
   CreateRepositoryInput,
@@ -17,7 +16,6 @@ import type { AppUserRole } from "../types/auth";
 import type { AppRepoRole, RepositoryAccessContext, RepositoryRecord } from "../types/repository";
 import { movePath, pathExists } from "../utils/file-system";
 import { remapPathWithinDirectory } from "../utils/path-mapping";
-import { streamPathKey, streamRepoKey } from "../utils/stream-keys";
 import { refreshRepositoryContributors } from "./repository-contributors.service";
 
 const REPO_ROLE_RANK: Record<AppRepoRole, number> = {
@@ -669,13 +667,23 @@ export class RepositoryService {
     }
   }
 
-  private async ensureRepositoryIsIdle(repositoryId: string, repositoryName: string) {
-    const [sessionById, sessionByPath] = await Promise.all([
-      redis.get(streamRepoKey(repositoryId)),
-      redis.get(streamPathKey(repositoryName)),
-    ]);
+  private async ensureRepositoryIsIdle(repositoryId: string, _repositoryName: string) {
+    const activeSession = await prisma.recordingSession.findFirst({
+      where: {
+        repositoryId,
+        status: {
+          in: [
+            RecordingSessionStatus.PENDING,
+            RecordingSessionStatus.STREAMING,
+            RecordingSessionStatus.STOP_REQUESTED,
+            RecordingSessionStatus.FINALIZING,
+          ],
+        },
+      },
+      select: { id: true },
+    });
 
-    if (sessionById || sessionByPath) {
+    if (activeSession) {
       throw Conflict("Repository cannot be modified while a stream is active.");
     }
   }

@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { RecordingSessionEndReason, RecordingSessionStatus } from "@prisma/client";
 
 import {
-  FIRST_PUBLISH_DEADLINE_MS,
   RECORDING_REGISTRATION_TTL_SECONDS,
   STREAM_ACTIVE_SET_KEY,
   STREAM_RECONCILE_INTERVAL_MS,
@@ -208,13 +207,9 @@ export class StreamService {
     return refreshedSession;
   }
 
-  private getPendingRegistrationReferenceAt(session: { createdAt: Date; updatedAt?: Date | null }) {
-    return session.updatedAt ?? session.createdAt;
-  }
-
   async issuePublishTicket(
     requestUserId: string,
-    requestUserRole: AppUserRole,
+    _requestUserRole: AppUserRole,
     recordingSessionId: string,
   ) {
     const session = await prisma.recordingSession.findUnique({
@@ -224,8 +219,6 @@ export class StreamService {
     if (!session) {
       throw NotFound("Recording session not found.");
     }
-
-    await repositoryService.assertRepositoryAccess(requestUserId, requestUserRole, session.repositoryId, "maintain");
 
     if (session.userId !== requestUserId) {
       throw Forbidden("Only the session owner can request a publish ticket.");
@@ -238,219 +231,52 @@ export class StreamService {
       throw Conflict(`Recording session is already in ${session.status} state.`);
     }
 
-    const firstPublishDeadlineMs = this.getPendingRegistrationReferenceAt(session).getTime() + FIRST_PUBLISH_DEADLINE_MS;
-    if (session.status === RecordingSessionStatus.PENDING && Date.now() > firstPublishDeadlineMs) {
-      throw Conflict(
-        "Recording session registration expired before publish started.",
-        ErrorCode.REGISTRATION_TIMEOUT,
-      );
-    }
-
-    const repositoryName = recordingSessionService.extractRepositoryName(session.streamPath);
-
-    try {
-      const ticketGrant = await streamOwnershipService.issuePublishTicket({
-        recordingSessionId: session.id,
-        repositoryId: session.repositoryId,
-        repositoryName,
-        userId: session.userId,
-        streamPath: session.streamPath,
-      });
-
-      if (ticketGrant.revokedTicket) {
-        console.info("[rtmp-ticket] revoked", {
-          recordingSessionId: ticketGrant.revokedTicket.recordingSessionId,
-          repositoryId: ticketGrant.revokedTicket.repositoryId,
-          repositoryName: ticketGrant.revokedTicket.repositoryName,
-          userId: ticketGrant.revokedTicket.userId,
-          streamPath: ticketGrant.revokedTicket.streamPath,
-          ticketId: ticketGrant.revokedTicket.ticketId,
-          connectionId: ticketGrant.revokedTicket.connectionId,
-          generation: ticketGrant.revokedTicket.generation,
-          reason: "superseded-by-new-publish-ticket",
-        });
-      }
-
-      console.info(
-        ticketGrant.ownerOutcome === "takeover" ? "[rtmp-ticket] takeover-issued" : "[rtmp-ticket] issued",
-        {
-          recordingSessionId: session.id,
-          repositoryId: session.repositoryId,
-          repositoryName,
-          userId: session.userId,
-          streamPath: session.streamPath,
-          ticketId: ticketGrant.ticket.ticketId,
-          connectionId: ticketGrant.ticket.connectionId,
-          generation: ticketGrant.ticket.generation,
-          ticketExpiresAt: new Date(ticketGrant.ticket.expiresAt).toISOString(),
-          ownerLeaseExpiresAt: new Date(ticketGrant.owner.leaseExpiresAt).toISOString(),
-        },
-      );
-
-      await recordingSessionService.markPublishTicketIssued(session.id);
-
-      return {
-        recording_session_id: session.id,
-        repository_id: session.repositoryId,
-        repository_name: repositoryName,
-        stream_path: session.streamPath,
-        connection_id: ticketGrant.ticket.connectionId,
-        generation: ticketGrant.ticket.generation,
-        publish_ticket: ticketGrant.ticket.ticketId,
-        publish_ticket_expires_at: new Date(ticketGrant.ticket.expiresAt).toISOString(),
-        rtmp_publish_base_url: streamOwnershipService.getPublishBaseUrl(env.RTMP_BASE_URL),
-        whip_publish_url: streamOwnershipService.buildWhipPublishUrl(
-          env.WHIP_BASE_URL,
-          repositoryName,
-          ticketGrant.ticket.ticketId,
-        ),
-      };
-    } catch (error) {
-      if (
-        typeof error === "object" &&
-        error !== null &&
-        "outcome" in error &&
-        error.outcome === "rejected" &&
-        "existing" in error
-      ) {
-        const existing = error.existing as {
-          generation?: number;
-          recordingSessionId?: string;
-          connectionId?: string;
-          userId?: string;
-          leaseExpiresAt?: number;
-        };
-        console.warn("[rtmp-ticket] rejected", {
-          recordingSessionId: session.id,
-          repositoryId: session.repositoryId,
-          repositoryName,
-          userId: session.userId,
-          streamPath: session.streamPath,
-          existingGeneration: existing.generation ?? null,
-          existingRecordingSessionId: existing.recordingSessionId ?? null,
-          existingConnectionId: existing.connectionId ?? null,
-          existingUserId: existing.userId ?? null,
-          existingLeaseExpiresAt: existing.leaseExpiresAt
-            ? new Date(existing.leaseExpiresAt).toISOString()
-            : null,
-          reason: "healthy-owner-exists",
-        });
-        throw Conflict("Repository already has a healthy active publisher.");
-      }
-
-      throw error;
-    }
-  }
-
-  async refreshPublishConnectionLease(
-    requestUserId: string,
-    requestUserRole: AppUserRole,
-    recordingSessionId: string,
-    connectionId: string,
-    generation: number,
-  ) {
-    const session = await prisma.recordingSession.findUnique({
-      where: { id: recordingSessionId },
-    });
-
-    if (!session) {
-      throw NotFound("Recording session not found.");
-    }
-
-    await repositoryService.assertRepositoryAccess(requestUserId, requestUserRole, session.repositoryId, "maintain");
-
-    if (session.userId !== requestUserId) {
-      throw Forbidden("Only the session owner can refresh the publish heartbeat.");
-    }
-
-    if (
-      session.status === RecordingSessionStatus.FINALIZING ||
-      session.status === RecordingSessionStatus.COMPLETED ||
-      session.status === RecordingSessionStatus.FAILED ||
-      session.status === RecordingSessionStatus.ABORTED
-    ) {
-      throw Conflict(`Recording session is already in ${session.status} state.`);
-    }
-
-    if (session.status === RecordingSessionStatus.STOP_REQUESTED) {
-      throw Conflict(
-        "Recording session is stopping; the current publish connection is no longer refreshable.",
-        ErrorCode.STALE_PUBLISH_CONNECTION,
-      );
-    }
-
-    const refreshResult = await streamOwnershipService.refreshConnectionLease({
-      repositoryId: session.repositoryId,
-      recordingSessionId: session.id,
-      connectionId,
-      generation,
-      ...(session.sourceId ? { sourceId: session.sourceId } : {}),
-      ...(session.sourceType ? { sourceType: session.sourceType } : {}),
-    });
-
-    if (refreshResult.outcome === "rejected") {
-      const logPayload = {
-        recordingSessionId: session.id,
-        repositoryId: session.repositoryId,
-        repositoryName: recordingSessionService.extractRepositoryName(session.streamPath),
-        userId: session.userId,
-        connectionId,
-        generation,
-        reason: refreshResult.reason,
-      };
-
-      if (refreshResult.reason === "owner-missing" || refreshResult.reason === "connection-missing") {
-        console.warn("[rtmp-owner] heartbeat-rejected", logPayload);
-        throw Conflict(
-          "Publish ownership metadata is missing; request a new publish ticket before reconnecting.",
-          ErrorCode.OWNER_LEASE_MISSING,
-        );
-      }
-
-      console.warn("[rtmp-owner] generation-mismatch", logPayload);
-      throw Conflict(
-        "Publish connection is stale; request a new publish ticket before reconnecting.",
-        ErrorCode.STALE_PUBLISH_CONNECTION,
-      );
-    }
-
-    console.info("[rtmp-owner] heartbeat-refreshed", {
+    const ticketGrant = await streamOwnershipService.issuePublishTicket({
       recordingSessionId: session.id,
       repositoryId: session.repositoryId,
-      repositoryName: recordingSessionService.extractRepositoryName(session.streamPath),
       userId: session.userId,
-      connectionId,
-      generation,
-      ownerStatus: refreshResult.owner.status,
-      leaseExpiresAt: new Date(refreshResult.owner.leaseExpiresAt).toISOString(),
+      streamPath: session.streamPath,
+    });
+
+    console.info("[rtmp-ticket] issued", {
+      recordingSessionId: session.id,
+      repositoryId: session.repositoryId,
+      userId: session.userId,
+      streamPath: session.streamPath,
+      ticketId: ticketGrant.ticket.ticketId,
+      ticketExpiresAt: new Date(ticketGrant.ticket.expiresAt).toISOString(),
     });
 
     return {
-      ok: true,
       recording_session_id: session.id,
-      connection_id: connectionId,
-      generation,
-      lease_expires_at: new Date(refreshResult.owner.leaseExpiresAt).toISOString(),
-      owner_status: refreshResult.owner.status,
+      repository_id: session.repositoryId,
+      stream_path: session.streamPath,
+      publish_ticket: ticketGrant.ticket.ticketId,
+      rtmp_publish_base_url: streamOwnershipService.getPublishBaseUrl(env.RTMP_BASE_URL),
+      whip_publish_url: streamOwnershipService.buildWhipPublishUrl(
+        env.WHIP_BASE_URL,
+        session.streamPath,
+        ticketGrant.ticket.ticketId,
+      ),
     };
   }
 
   /**
    * [HLS playback path 조립]
-   * `/hls/live/{repository_name}/index.m3u8` 형태의 origin-relative path를 만든다.
+   * `/hls/live/{repository_name}/{recording_session_id}/index.m3u8` 형태의 origin-relative path를 만든다.
    */
-  buildHlsPath(repoName: string) {
+  buildHlsPath(repoName: string, recordingSessionId: string) {
     const hlsBase = env.HLS_PATH_PREFIX.replace(/\/+$/, "");
-    return `${hlsBase}/live/${repoName}/index.m3u8`;
+    return `${hlsBase}/live/${repoName}/${recordingSessionId}/index.m3u8`;
   }
 
   /**
    * [WHEP playback path 조립]
-   * MediaMTX native WHEP path인 `/live/{repository_name}/whep` 형태의 origin-relative path를 만든다.
+   * MediaMTX native WHEP path인 `/live/{repository_name}/{recording_session_id}/whep` 형태의 origin-relative path를 만든다.
    */
-  buildWhepPath(repoName: string) {
+  buildWhepPath(repoName: string, recordingSessionId: string) {
     const whepBase = env.WHEP_PATH_PREFIX.replace(/\/+$/, "");
-    return `${whepBase}/${repoName}/whep`;
+    return `${whepBase}/${repoName}/${recordingSessionId}/whep`;
   }
 
   /**
@@ -501,8 +327,8 @@ export class StreamService {
       user_id: entry.userId,
       device_type: entry.deviceType ?? null,
       status: "live" as const,
-      hls_path: this.buildHlsPath(entry.repositoryName),
-      whep_path: this.buildWhepPath(entry.repositoryName),
+      hls_path: this.buildHlsPath(entry.repositoryName, entry.recordingSessionId),
+      whep_path: this.buildWhepPath(entry.repositoryName, entry.recordingSessionId),
     }));
 
     if (streams.length > 0) {
@@ -535,8 +361,8 @@ export class StreamService {
     }
 
     const repoName = recordingSessionService.extractRepositoryName(session.streamPath);
-    const activeRepoNames = await this.getActiveRepositoryNames();
-    const playbackReady = activeRepoNames ? activeRepoNames.has(repoName) : true;
+    const activeStreamPaths = await this.getActiveStreamPaths();
+    const playbackReady = activeStreamPaths ? activeStreamPaths.has(this.normalizeStreamPath(session.streamPath)) : true;
 
     return {
       stream_id: session.id,
@@ -599,10 +425,10 @@ export class StreamService {
   /**
    * [MediaMTX active path 조회]
    * MediaMTX REST API(/v3/paths/list)를 호출하여 현재 실제로 송출 중인
-   * repository 이름(live/{repoName} 에서 추출) 집합을 반환한다.
+   * stream path 집합을 반환한다.
    * API 호출 실패 시 null을 반환하여 필터링을 건너뛰게 한다.
    */
-  private async getActiveRepositoryNames(): Promise<Set<string> | null> {
+  private async getActiveStreamPaths(): Promise<Set<string> | null> {
     const baseUrl = env.MEDIAMTX_API_URL.replace(/\/+$/, "");
 
     try {
@@ -613,26 +439,30 @@ export class StreamService {
       }
 
       const payload = (await response.json()) as { items?: Array<{ name?: unknown }> };
-      const activeRepositoryNames = new Set<string>();
+      const activeStreamPaths = new Set<string>();
 
       for (const item of payload.items ?? []) {
         if (typeof item.name !== "string") {
           continue;
         }
 
-        try {
-          activeRepositoryNames.add(recordingSessionService.extractRepositoryName(item.name));
-        } catch (_error) {
-          // Ignore non-live paths.
+        const normalized = this.normalizeStreamPath(item.name);
+        const parts = normalized.split("/");
+        if (parts.length >= 3 && parts[0] === "live" && parts[1] && parts[2]) {
+          activeStreamPaths.add(normalized);
         }
       }
 
-      return activeRepositoryNames;
+      return activeStreamPaths;
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown error";
       console.warn(`[streams] failed to query MediaMTX active paths: ${message}`);
       return null;
     }
+  }
+
+  private normalizeStreamPath(streamPath: string) {
+    return streamPath.trim().replace(/^\/+|\/+$/g, "");
   }
 }
 

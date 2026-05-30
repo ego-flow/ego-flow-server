@@ -277,52 +277,18 @@ export const openApiDocument = {
         required: [
           "recording_session_id",
           "repository_id",
-          "repository_name",
           "stream_path",
-          "connection_id",
-          "generation",
           "publish_ticket",
-          "publish_ticket_expires_at",
           "rtmp_publish_base_url",
           "whip_publish_url",
         ],
         properties: {
           recording_session_id: { type: "string", format: "uuid" },
           repository_id: { type: "string", format: "uuid" },
-          repository_name: { type: "string", example: "daily_kitchen" },
-          stream_path: { type: "string", example: "live/daily_kitchen" },
-          connection_id: { type: "string", example: "conn_3f8f9ec5-7cbc-4a0d-9d30-e25b085b1a47" },
-          generation: { type: "integer", example: 1 },
+          stream_path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
           publish_ticket: { type: "string", example: "t_0d87967b-903e-4f69-af58-24fdd6dd2a82" },
-          publish_ticket_expires_at: { type: "string", format: "date-time" },
           rtmp_publish_base_url: { type: "string", example: "rtmp://127.0.0.1:1935/live" },
-          whip_publish_url: { type: "string", example: "http://127.0.0.1/live/daily_kitchen/whip?ticket=t_0d87967b-903e-4f69-af58-24fdd6dd2a82" },
-        },
-      },
-      StreamConnectionHeartbeatRequest: {
-        type: "object",
-        required: ["generation"],
-        properties: {
-          generation: { type: "integer", example: 1 },
-        },
-      },
-      StreamConnectionHeartbeatResponse: {
-        type: "object",
-        required: [
-          "ok",
-          "recording_session_id",
-          "connection_id",
-          "generation",
-          "lease_expires_at",
-          "owner_status",
-        ],
-        properties: {
-          ok: { type: "boolean", example: true },
-          recording_session_id: { type: "string", format: "uuid" },
-          connection_id: { type: "string", example: "conn_3f8f9ec5-7cbc-4a0d-9d30-e25b085b1a47" },
-          generation: { type: "integer", example: 1 },
-          lease_expires_at: { type: "string", format: "date-time" },
-          owner_status: { type: "string", enum: ["claimed", "publishing"], example: "publishing" },
+          whip_publish_url: { type: "string", example: "http://127.0.0.1/live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620/whip?ticket=t_0d87967b-903e-4f69-af58-24fdd6dd2a82" },
         },
       },
       LiveStreamSummary: {
@@ -344,8 +310,8 @@ export const openApiDocument = {
           user_id: { type: "string" },
           device_type: { type: ["string", "null"] },
           status: { type: "string", enum: ["live"] },
-          hls_path: { type: "string", example: "/hls/live/daily_kitchen/index.m3u8" },
-          whep_path: { type: "string", example: "/live/daily_kitchen/whep" },
+          hls_path: { type: "string", example: "/hls/live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620/index.m3u8" },
+          whep_path: { type: "string", example: "/live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620/whep" },
         },
       },
       LiveStreamListResponse: {
@@ -381,7 +347,7 @@ export const openApiDocument = {
           owner_id: { type: "string" },
           user_id: { type: "string" },
           device_type: { type: ["string", "null"] },
-          stream_path: { type: "string", example: "live/daily_kitchen" },
+          stream_path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
           source_type: { type: ["string", "null"], example: "rtmpConn" },
           source_id: { type: ["string", "null"] },
           registered_at: { type: "string", format: "date-time" },
@@ -1567,49 +1533,6 @@ export const openApiDocument = {
         },
       },
     },
-    "/streams/{recordingSessionId}/connections/{connectionId}/heartbeat": {
-      post: {
-        tags: ["Streams"],
-        summary: "Refresh the owner lease for the active publish connection",
-        parameters: [
-          {
-            name: "recordingSessionId",
-            in: "path",
-            required: true,
-            schema: { type: "string", format: "uuid" },
-          },
-          {
-            name: "connectionId",
-            in: "path",
-            required: true,
-            schema: { type: "string" },
-          },
-        ],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/StreamConnectionHeartbeatRequest" },
-            },
-          },
-        },
-        responses: {
-          "200": {
-            description: "Owner lease refreshed",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/StreamConnectionHeartbeatResponse" },
-              },
-            },
-          },
-          "400": { $ref: "#/components/responses/BadRequest" },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
-          "404": { $ref: "#/components/responses/NotFound" },
-          "409": { $ref: "#/components/responses/Conflict" },
-        },
-      },
-    },
     "/live-streams": {
       get: {
         tags: ["Live Streams"],
@@ -1664,7 +1587,7 @@ export const openApiDocument = {
             name: "path",
             in: "query",
             required: true,
-            schema: { type: "string", example: "/hls/live/daily_kitchen/index.m3u8" },
+            schema: { type: "string", example: "/hls/live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620/index.m3u8" },
           },
         ],
         responses: {

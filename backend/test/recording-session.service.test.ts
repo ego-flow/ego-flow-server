@@ -5,8 +5,6 @@ import { beforeEach, test } from "node:test";
 import type {
   PublishTicketRecord,
   RecordingSessionLiveCache,
-  StreamConnectionMetadata,
-  StreamOwnerLease,
 } from "../src/types/stream";
 import { FakeRedis } from "./helpers/fake-redis";
 
@@ -62,55 +60,18 @@ const originalGetLiveCacheByRecordingSessionId = recordingSessionService.getLive
 const originalTryEnqueueFinalize = recordingSessionService.tryEnqueueFinalize;
 const originalValidatePublishTicket = streamOwnershipService.validatePublishTicket;
 const originalConsumePublishTicket = streamOwnershipService.consumePublishTicket;
-const originalRefreshConnectionLease = streamOwnershipService.refreshConnectionLease;
-const originalReleaseConnectionLease = streamOwnershipService.releaseConnectionLease;
-const originalGetCurrentOwnerForRepository = streamOwnershipService.getCurrentOwnerForRepository;
-const originalListConnections = streamOwnershipService.listConnections;
-const originalGetActiveRepositoryNames = (recordingSessionService as any).getActiveRepositoryNames;
+const originalGetActiveStreamPaths = (recordingSessionService as any).getActiveStreamPaths;
 
 const now = Date.now();
 const ticket: PublishTicketRecord = {
   ticketId: "ticket-1",
-  streamId: "repository:repo-1",
   recordingSessionId: "session-1",
-  connectionId: "conn-2",
-  generation: 2,
   repositoryId: "repo-1",
-  repositoryName: "repo-name",
   userId: "user-1",
-  streamPath: "live/repo-name",
+  streamPath: "live/repo-name/session-1",
   issuedAt: now,
   expiresAt: now + 60_000,
   status: "active",
-};
-
-const claimedOwner: StreamOwnerLease = {
-  streamId: ticket.streamId,
-  recordingSessionId: ticket.recordingSessionId,
-  connectionId: ticket.connectionId,
-  generation: ticket.generation,
-  status: "claimed",
-  repositoryId: ticket.repositoryId,
-  repositoryName: ticket.repositoryName,
-  userId: ticket.userId,
-  streamPath: ticket.streamPath,
-  lastHeartbeatAt: now,
-  leaseExpiresAt: now + 60_000,
-};
-
-const claimedConnection: StreamConnectionMetadata = {
-  streamId: ticket.streamId,
-  recordingSessionId: ticket.recordingSessionId,
-  connectionId: ticket.connectionId,
-  generation: ticket.generation,
-  repositoryId: ticket.repositoryId,
-  repositoryName: ticket.repositoryName,
-  userId: ticket.userId,
-  streamPath: ticket.streamPath,
-  status: "claimed",
-  createdAt: now,
-  lastHeartbeatAt: now,
-  leaseExpiresAt: now + 60_000,
 };
 
 beforeEach(() => {
@@ -130,11 +91,7 @@ beforeEach(() => {
   recordingSessionService.tryEnqueueFinalize = originalTryEnqueueFinalize;
   streamOwnershipService.validatePublishTicket = originalValidatePublishTicket;
   streamOwnershipService.consumePublishTicket = originalConsumePublishTicket;
-  streamOwnershipService.refreshConnectionLease = originalRefreshConnectionLease;
-  streamOwnershipService.releaseConnectionLease = originalReleaseConnectionLease;
-  streamOwnershipService.getCurrentOwnerForRepository = originalGetCurrentOwnerForRepository;
-  streamOwnershipService.listConnections = originalListConnections;
-  (recordingSessionService as any).getActiveRepositoryNames = originalGetActiveRepositoryNames;
+  (recordingSessionService as any).getActiveStreamPaths = originalGetActiveStreamPaths;
 });
 
 test("handleStreamReady accepts same-session reconnects and replaces the source pointer", async () => {
@@ -145,7 +102,7 @@ test("handleStreamReady accepts same-session reconnects and replaces the source 
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
-    streamPath: "live/repo-name",
+    streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.STREAMING,
     targetDirectory: "/data/raw",
     sourceId: "old-source",
@@ -176,7 +133,6 @@ test("handleStreamReady accepts same-session reconnects and replaces the source 
     userId: "user-1",
     status: "STREAMING",
     sourceId: "old-source",
-    publishTicketIssuedAt: "2026-04-09T00:00:05.000Z",
   };
 
   recordingSessionService.getLiveCacheByRecordingSessionId = async () => existingLiveCache;
@@ -184,8 +140,6 @@ test("handleStreamReady accepts same-session reconnects and replaces the source 
     ok: true,
     ticket,
     ticketId: ticket.ticketId,
-    owner: claimedOwner,
-    connection: claimedConnection,
   });
   streamOwnershipService.consumePublishTicket = async () => ({
     ok: true,
@@ -194,28 +148,11 @@ test("handleStreamReady accepts same-session reconnects and replaces the source 
       status: "consumed",
     },
   });
-  streamOwnershipService.refreshConnectionLease = async () => ({
-    outcome: "refreshed",
-    owner: {
-      ...claimedOwner,
-      status: "publishing",
-      sourceId: "new-source",
-      sourceType: "rtmp",
-      leaseExpiresAt: Date.now() + 30_000,
-    },
-    connection: {
-      ...claimedConnection,
-      status: "publishing",
-      sourceId: "new-source",
-      sourceType: "rtmp",
-      leaseExpiresAt: Date.now() + 30_000,
-    },
-  });
 
   await fakeRedis.set("stream:source:old-source", "session-1");
 
   await recordingSessionService.handleStreamReady({
-    path: "live/repo-name",
+    path: "live/repo-name/session-1",
     query: "ticket=ticket-1",
     source_id: "new-source",
     source_type: "rtmp",
@@ -232,8 +169,6 @@ test("handleStreamReady accepts same-session reconnects and replaces the source 
     {
       recordingSessionId: "session-1",
       repositoryId: "repo-1",
-      connectionId: "conn-2",
-      generation: 2,
       sourceId: "new-source",
       sourceType: "rtmp",
     },
@@ -247,18 +182,17 @@ test("handleStreamReady accepts same-session reconnects and replaces the source 
     userId: "user-1",
     status: "STREAMING",
     sourceId: "new-source",
-    publishTicketIssuedAt: existingLiveCache.publishTicketIssuedAt,
   });
 });
 
-test("handleStreamReady leaves DB and Redis untouched when owner publishing refresh is rejected", async () => {
+test("handleStreamReady leaves DB and Redis untouched when ticket consume is rejected", async () => {
   const session = {
     id: "session-1",
     repositoryId: "repo-1",
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
-    streamPath: "live/repo-name",
+    streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data/raw",
     sourceId: null,
@@ -279,23 +213,15 @@ test("handleStreamReady leaves DB and Redis untouched when owner publishing refr
     ok: true,
     ticket,
     ticketId: ticket.ticketId,
-    owner: claimedOwner,
-    connection: claimedConnection,
   });
   streamOwnershipService.consumePublishTicket = async () => ({
-    ok: true,
-    ticket: {
-      ...ticket,
-      status: "consumed",
-    },
-  });
-  streamOwnershipService.refreshConnectionLease = async () => ({
-    outcome: "rejected",
-    reason: "generation-mismatch",
+    ok: false,
+    reason: "ticket-status-consumed",
+    ticketId: ticket.ticketId,
   });
 
   await recordingSessionService.handleStreamReady({
-    path: "live/repo-name",
+    path: "live/repo-name/session-1",
     query: "ticket=ticket-1",
     source_id: "new-source",
     source_type: "rtmp",
@@ -313,7 +239,7 @@ test("handleStreamReady accepts an explicit ticket field when hook query is empt
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
-    streamPath: "live/repo-name",
+    streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data/raw",
     sourceId: null,
@@ -338,8 +264,6 @@ test("handleStreamReady accepts an explicit ticket field when hook query is empt
       ok: true,
       ticket,
       ticketId: ticket.ticketId,
-      owner: claimedOwner,
-      connection: claimedConnection,
     };
   };
   streamOwnershipService.consumePublishTicket = async (_path: string, query?: string) => {
@@ -352,26 +276,9 @@ test("handleStreamReady accepts an explicit ticket field when hook query is empt
       },
     };
   };
-  streamOwnershipService.refreshConnectionLease = async () => ({
-    outcome: "refreshed",
-    owner: {
-      ...claimedOwner,
-      status: "publishing",
-      sourceId: "new-source",
-      sourceType: "rtmp",
-      leaseExpiresAt: Date.now() + 30_000,
-    },
-    connection: {
-      ...claimedConnection,
-      status: "publishing",
-      sourceId: "new-source",
-      sourceType: "rtmp",
-      leaseExpiresAt: Date.now() + 30_000,
-    },
-  });
 
   await recordingSessionService.handleStreamReady({
-    path: "live/repo-name",
+    path: "live/repo-name/session-1",
     query: "",
     ticket: "ticket-1",
     source_id: "new-source",
@@ -391,7 +298,7 @@ test("handleStreamNotReady finalizes only the authoritative source mapping", asy
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
-    streamPath: "live/repo-name",
+    streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.STREAMING,
     targetDirectory: "/data/raw",
     sourceId: "source-1",
@@ -410,12 +317,6 @@ test("handleStreamNotReady finalizes only the authoritative source mapping", asy
     };
   };
 
-  streamOwnershipService.releaseConnectionLease = async () => ({
-    outcome: "released",
-    releasedOwner: true,
-    releasedConnection: true,
-  });
-
   recordingSessionService.tryEnqueueFinalize = async () => true;
 
   await fakeRedis.set(
@@ -423,17 +324,12 @@ test("handleStreamNotReady finalizes only the authoritative source mapping", asy
     JSON.stringify({
       recordingSessionId: "session-1",
       repositoryId: "repo-1",
-      connectionId: "conn-2",
-      generation: 2,
       sourceId: "source-1",
       sourceType: "rtmp",
     }),
   );
-  await fakeRedis.set("stream:repo:repo-1", "session-1");
-  await fakeRedis.set("stream:path:repo-name", "session-1");
-
   await recordingSessionService.handleStreamNotReady({
-    path: "live/repo-name",
+    path: "live/repo-name/session-1",
     source_id: "source-1",
     source_type: "rtmp",
   });
@@ -457,34 +353,30 @@ test("handleSegmentCreate stores authoritative segment ownership mapping", async
     JSON.stringify({
       recordingSessionId: "session-1",
       repositoryId: "repo-1",
-      connectionId: "conn-2",
-      generation: 2,
       sourceId: "source-1",
       sourceType: "rtmp",
     }),
   );
 
   await recordingSessionService.handleSegmentCreate({
-    path: "live/repo-name",
+    path: "live/repo-name/session-1",
     source_id: "source-1",
-    segment_path: "/data/raw/live/repo-name/segment-0001.mp4",
+    segment_path: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
   });
 
   assert.equal(upsertCalls.length, 1);
   assert.deepEqual(
-    fakeRedis.getJson("segment:/data/raw/live/repo-name/segment-0001.mp4"),
+    fakeRedis.getJson("segment:/data/raw/live/repo-name/session-1/segment-0001.mp4"),
     {
       recordingSessionId: "session-1",
       repositoryId: "repo-1",
-      connectionId: "conn-2",
-      generation: 2,
       sourceId: "source-1",
-      segmentPath: "/data/raw/live/repo-name/segment-0001.mp4",
+      segmentPath: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
     },
   );
 });
 
-test("handleSegmentCreate falls back to the live path pointer when source_id is omitted", async () => {
+test("handleSegmentCreate falls back to the live recording cache when source_id is omitted", async () => {
   const upsertCalls: Array<Record<string, unknown>> = [];
 
   fakePrisma.recordingSegment.aggregate = async () => ({ _max: { sequence: 1 } });
@@ -504,47 +396,42 @@ test("handleSegmentCreate falls back to the live path pointer when source_id is 
       sourceId: "source-1",
     } satisfies RecordingSessionLiveCache),
   );
-  await fakeRedis.set("stream:path:repo-name", "session-1");
   await fakeRedis.set(
     "stream:source:source-1",
     JSON.stringify({
       recordingSessionId: "session-1",
       repositoryId: "repo-1",
-      connectionId: "conn-2",
-      generation: 2,
       sourceId: "source-1",
       sourceType: "rtmp",
     }),
   );
 
   await recordingSessionService.handleSegmentCreate({
-    path: "live/repo-name",
+    path: "live/repo-name/session-1",
     source_id: undefined,
-    segment_path: "/data/raw/live/repo-name/segment-0002.mp4",
+    segment_path: "/data/raw/live/repo-name/session-1/segment-0002.mp4",
   });
 
   assert.equal(upsertCalls.length, 1);
   assert.deepEqual(
-    fakeRedis.getJson("segment:/data/raw/live/repo-name/segment-0002.mp4"),
+    fakeRedis.getJson("segment:/data/raw/live/repo-name/session-1/segment-0002.mp4"),
     {
       recordingSessionId: "session-1",
       repositoryId: "repo-1",
-      connectionId: "conn-2",
-      generation: 2,
       sourceId: "source-1",
-      segmentPath: "/data/raw/live/repo-name/segment-0002.mp4",
+      segmentPath: "/data/raw/live/repo-name/session-1/segment-0002.mp4",
     },
   );
 });
 
-test("reconcile keeps a pending claimed owner alive until the initial lease actually expires", async () => {
+test("reconcile keeps a recent pending registration until timeout", async () => {
   const session = {
     id: "session-1",
     repositoryId: "repo-1",
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
-    streamPath: "live/repo-name",
+    streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data/raw",
     sourceId: null,
@@ -574,18 +461,10 @@ test("reconcile keeps a pending claimed owner alive until the initial lease actu
       repositoryName: "repo-name",
       userId: "user-1",
       status: "PENDING",
-      publishTicketIssuedAt: new Date(Date.now() - 20_000).toISOString(),
     } satisfies RecordingSessionLiveCache),
   );
 
-  streamOwnershipService.getCurrentOwnerForRepository = async () => ({
-    ...claimedOwner,
-    status: "claimed",
-    leaseExpiresAt: Date.now() + 40_000,
-    lastHeartbeatAt: Date.now() - 20_000,
-  });
-  streamOwnershipService.listConnections = async () => [];
-  (recordingSessionService as any).getActiveRepositoryNames = async () => null;
+  (recordingSessionService as any).getActiveStreamPaths = async () => null;
 
   await recordingSessionService.reconcileSessions();
 
@@ -599,7 +478,7 @@ test("reconcile uses the refreshed pending registration timestamp before abortin
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
-    streamPath: "live/repo-name",
+    streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data/raw",
     sourceId: null,
@@ -633,9 +512,7 @@ test("reconcile uses the refreshed pending registration timestamp before abortin
     } satisfies RecordingSessionLiveCache),
   );
 
-  streamOwnershipService.getCurrentOwnerForRepository = async () => null;
-  streamOwnershipService.listConnections = async () => [];
-  (recordingSessionService as any).getActiveRepositoryNames = async () => null;
+  (recordingSessionService as any).getActiveStreamPaths = async () => null;
 
   await recordingSessionService.reconcileSessions();
 
@@ -650,7 +527,7 @@ test("reconcile aborts an expired pending registration only when the row was not
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
-    streamPath: "live/repo-name",
+    streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data/raw",
     sourceId: null,
@@ -681,9 +558,7 @@ test("reconcile aborts an expired pending registration only when the row was not
     } satisfies RecordingSessionLiveCache),
   );
 
-  streamOwnershipService.getCurrentOwnerForRepository = async () => null;
-  streamOwnershipService.listConnections = async () => [];
-  (recordingSessionService as any).getActiveRepositoryNames = async () => null;
+  (recordingSessionService as any).getActiveStreamPaths = async () => null;
 
   await recordingSessionService.reconcileSessions();
 
@@ -706,7 +581,7 @@ test("reconcile does not abort a pending registration that register refreshed co
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
-    streamPath: "live/repo-name",
+    streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data/raw",
     sourceId: null,
@@ -737,9 +612,7 @@ test("reconcile does not abort a pending registration that register refreshed co
     } satisfies RecordingSessionLiveCache),
   );
 
-  streamOwnershipService.getCurrentOwnerForRepository = async () => null;
-  streamOwnershipService.listConnections = async () => [];
-  (recordingSessionService as any).getActiveRepositoryNames = async () => null;
+  (recordingSessionService as any).getActiveStreamPaths = async () => null;
 
   await recordingSessionService.reconcileSessions();
 
@@ -747,14 +620,14 @@ test("reconcile does not abort a pending registration that register refreshed co
   assert.notEqual(await fakeRedis.get("stream:recording:session-1"), null);
 });
 
-test("reconcile releases the current owner before finalizing a broken streaming session", async () => {
+test("reconcile finalizes a broken streaming session when active path is missing", async () => {
   const session = {
     id: "session-1",
     repositoryId: "repo-1",
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
-    streamPath: "live/repo-name",
+    streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.STREAMING,
     targetDirectory: "/data/raw",
     sourceId: "source-1",
@@ -766,7 +639,6 @@ test("reconcile releases the current owner before finalizing a broken streaming 
     endReason: null,
   };
   const updateCalls: Array<Record<string, unknown>> = [];
-  const releaseCalls: Array<Record<string, unknown>> = [];
 
   fakePrisma.recordingSession.findMany = async () => [session];
   fakePrisma.recordingSession.update = async (args: { data: Record<string, unknown> }) => {
@@ -777,8 +649,6 @@ test("reconcile releases the current owner before finalizing a broken streaming 
     };
   };
 
-  await fakeRedis.set("stream:repo:repo-1", "session-1");
-  await fakeRedis.set("stream:path:repo-name", "session-1");
   await fakeRedis.set(
     "stream:recording:session-1",
     JSON.stringify({
@@ -795,41 +665,16 @@ test("reconcile releases the current owner before finalizing a broken streaming 
     JSON.stringify({
       recordingSessionId: "session-1",
       repositoryId: "repo-1",
-      connectionId: "conn-2",
-      generation: 2,
       sourceId: "source-1",
       sourceType: "rtmp",
     }),
   );
 
-  streamOwnershipService.getCurrentOwnerForRepository = async () => ({
-    ...claimedOwner,
-    status: "publishing",
-    sourceId: "source-1",
-    sourceType: "rtmp",
-    leaseExpiresAt: Date.now() + 30_000,
-    lastHeartbeatAt: Date.now(),
-  });
-  streamOwnershipService.releaseConnectionLease = async (args: {
-    repositoryId: string;
-    recordingSessionId: string;
-    connectionId: string;
-    generation: number;
-  }) => {
-    releaseCalls.push(args);
-    return {
-      outcome: "released",
-      releasedOwner: true,
-      releasedConnection: true,
-    };
-  };
-  streamOwnershipService.listConnections = async () => [];
   recordingSessionService.tryEnqueueFinalize = async () => true;
-  (recordingSessionService as any).getActiveRepositoryNames = async () => new Set<string>();
+  (recordingSessionService as any).getActiveStreamPaths = async () => new Set<string>();
 
   await recordingSessionService.reconcileSessions();
 
-  assert.equal(releaseCalls.length, 1);
   assert.equal(updateCalls.length, 1);
   assert.equal(updateCalls[0]?.status, RecordingSessionStatus.FINALIZING);
 });
@@ -843,7 +688,7 @@ test("tryEnqueueFinalize aborts an empty USER_STOP session instead of failing", 
   fakePrisma.recordingSession.findUnique = async () => ({
     id: "session-empty",
     repositoryId: "repo-1",
-    streamPath: "live/repo-name",
+    streamPath: "live/repo-name/session-empty",
     status: RecordingSessionStatus.FINALIZING,
     endReason: RecordingSessionEndReason.USER_STOP,
     createdAt: new Date(Date.now() - 60_000),

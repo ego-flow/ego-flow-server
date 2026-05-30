@@ -15,10 +15,7 @@ import { runtimeConfig as env } from "../config/runtime";
 import { processingService } from "./processing.service";
 import { streamOwnershipService } from "./stream-ownership.service";
 import {
-  streamPathKey,
   streamRecordingKey,
-  streamRepoKey,
-  streamConnectionKey,
   streamSegmentKey,
   streamSourceKey,
 } from "../utils/stream-keys";
@@ -132,9 +129,9 @@ export class RecordingSessionService {
   /**
    * [stream-ready hook 처리 - PENDING/STREAMING → STREAMING]
    * MediaMTX가 실제 RTMP 송출 시작을 감지하면 호출.
-   * 1. query의 publish ticket와 현재 owner/connection lease를 먼저 검증한다.
+   * 1. query의 publish ticket을 검증한다.
    * 2. ticket가 가리키는 PENDING 또는 같은 STREAMING 세션만 DB에서 조회한다.
-   * 3. ticket를 consumed로 전환한 뒤 owner refresh가 성공할 때만 DB/Redis를 갱신한다.
+   * 3. ticket를 consumed로 전환한 뒤 DB/Redis live cache를 갱신한다.
    * 4. Redis live cache를 24시간 TTL로 갱신하고 reconnect면 이전 source pointer를 교체한다.
    */
   async handleStreamReady(input: StreamReadyHookInput) {
@@ -207,38 +204,13 @@ export class RecordingSessionService {
       return;
     }
 
-    const repoName = ticketValidation.ticket.repositoryName;
+    const repoName = this.extractRepositoryName(session.streamPath);
     const existingLiveCache = await this.getLiveCacheByRecordingSessionId(recordingSessionId);
-    const ownerRefresh = await streamOwnershipService.refreshConnectionLease({
-      repositoryId: session.repositoryId,
-      recordingSessionId,
-      connectionId: consumedTicket.ticket.connectionId,
-      generation: consumedTicket.ticket.generation,
-      sourceId: input.source_id,
-      sourceType: input.source_type,
-    });
-
-    if (ownerRefresh.outcome === "rejected") {
-      console.warn("[rtmp-owner] stream-ready-publishing-refresh-rejected", {
-        recordingSessionId,
-        repositoryId: session.repositoryId,
-        repositoryName: repoName,
-        connectionId: consumedTicket.ticket.connectionId,
-        generation: consumedTicket.ticket.generation,
-        reason: ownerRefresh.reason,
-        sourceId: input.source_id,
-        sourceType: input.source_type,
-      });
-      return;
-    }
-
     const readyAt = session.readyAt ?? new Date();
     const previousSourceId = existingLiveCache?.sourceId ?? session.sourceId ?? undefined;
     const sourceMapping: StreamSourceMapping = {
       recordingSessionId,
       repositoryId: session.repositoryId,
-      connectionId: consumedTicket.ticket.connectionId,
-      generation: consumedTicket.ticket.generation,
       sourceId: input.source_id,
       sourceType: input.source_type,
     };
@@ -260,9 +232,6 @@ export class RecordingSessionService {
       userId: session.userId,
       status: "STREAMING",
       sourceId: input.source_id,
-      ...(existingLiveCache?.publishTicketIssuedAt
-        ? { publishTicketIssuedAt: existingLiveCache.publishTicketIssuedAt }
-        : {}),
     };
     if (session.deviceType) {
       liveCache.deviceType = session.deviceType;
@@ -271,8 +240,6 @@ export class RecordingSessionService {
     const pipeline = redis
       .multi()
       .set(streamRecordingKey(recordingSessionId), JSON.stringify(liveCache), "EX", RECORDING_ACTIVE_TTL_SECONDS)
-      .set(streamRepoKey(session.repositoryId), recordingSessionId, "EX", RECORDING_ACTIVE_TTL_SECONDS)
-      .set(streamPathKey(repoName), recordingSessionId, "EX", RECORDING_ACTIVE_TTL_SECONDS)
       .set(streamSourceKey(input.source_id), JSON.stringify(sourceMapping), "EX", RECORDING_ACTIVE_TTL_SECONDS)
       .sadd(STREAM_ACTIVE_SET_KEY, recordingSessionId);
 
@@ -285,11 +252,9 @@ export class RecordingSessionService {
     console.info("[rtmp-ticket] consumed", {
       recordingSessionId: consumedTicket.ticket.recordingSessionId,
       repositoryId: consumedTicket.ticket.repositoryId,
-      repositoryName: consumedTicket.ticket.repositoryName,
+      repositoryName: repoName,
       userId: consumedTicket.ticket.userId,
       ticketId: consumedTicket.ticket.ticketId,
-      connectionId: consumedTicket.ticket.connectionId,
-      generation: consumedTicket.ticket.generation,
       credentialSource,
     });
 
@@ -305,8 +270,6 @@ export class RecordingSessionService {
         previousSourceId: previousSourceId ?? null,
         sourceId: input.source_id,
         sourceType: input.source_type,
-        connectionId: consumedTicket.ticket.connectionId,
-        generation: consumedTicket.ticket.generation,
         activeTtlSec: RECORDING_ACTIVE_TTL_SECONDS,
       },
     );
@@ -315,9 +278,9 @@ export class RecordingSessionService {
   /**
    * [stream-not-ready hook 처리 - → FINALIZING]
    * MediaMTX가 RTMP 연결 종료를 감지하면 호출.
-   * 1. `stream:source:{sourceId}` authoritative mapping으로 connection/generation/session을 복원한다.
-   * 2. generation match release가 성공한 경우에만 해당 세션을 FINALIZING으로 전환한다.
-   * 3. mapping miss 또는 generation mismatch는 no-op + 경고 로그로 처리한다.
+   * 1. `stream:source:{sourceId}` authoritative mapping으로 session을 복원한다.
+   * 2. mapping이 가리키는 세션을 FINALIZING으로 전환한다.
+   * 3. mapping miss는 no-op + 경고 로그로 처리한다.
    */
   async handleStreamNotReady(input: StreamNotReadyHookInput) {
     const sourceMapping = await this.getSourceMapping(input.source_id);
@@ -340,8 +303,6 @@ export class RecordingSessionService {
         path: input.path,
         sourceId: input.source_id,
         sourceType: input.source_type,
-        connectionId: sourceMapping.connectionId,
-        generation: sourceMapping.generation,
       });
       return;
     }
@@ -356,30 +317,7 @@ export class RecordingSessionService {
         repositoryName: this.extractRepositoryName(session.streamPath),
         sourceId: input.source_id,
         sourceType: input.source_type,
-        connectionId: sourceMapping.connectionId,
-        generation: sourceMapping.generation,
         status: session.status,
-      });
-      return;
-    }
-
-    const releaseResult = await streamOwnershipService.releaseConnectionLease({
-      repositoryId: session.repositoryId,
-      recordingSessionId: sourceMapping.recordingSessionId,
-      connectionId: sourceMapping.connectionId,
-      generation: sourceMapping.generation,
-    });
-
-    if (releaseResult.outcome !== "released") {
-      console.warn("[rtmp-owner] generation-mismatch", {
-        recordingSessionId: sourceMapping.recordingSessionId,
-        repositoryId: session.repositoryId,
-        repositoryName: this.extractRepositoryName(session.streamPath),
-        sourceId: input.source_id,
-        sourceType: input.source_type,
-        connectionId: sourceMapping.connectionId,
-        generation: sourceMapping.generation,
-        reason: releaseResult.reason,
       });
       return;
     }
@@ -409,8 +347,6 @@ export class RecordingSessionService {
       endReason,
       sourceId: session.sourceId,
       hookSourceId: input.source_id,
-      connectionId: sourceMapping.connectionId,
-      generation: sourceMapping.generation,
     });
 
     await this.tryEnqueueFinalize(recordingSessionId);
@@ -437,8 +373,6 @@ export class RecordingSessionService {
     const segmentMapping: SegmentOwnershipMapping = {
       recordingSessionId,
       repositoryId: sourceMapping.repositoryId,
-      connectionId: sourceMapping.connectionId,
-      generation: sourceMapping.generation,
       sourceId: sourceMapping.sourceId,
       segmentPath: input.segment_path,
     };
@@ -477,8 +411,6 @@ export class RecordingSessionService {
       path: input.path,
       sourceId: sourceMapping.sourceId ?? input.source_id ?? null,
       segmentPath: input.segment_path,
-      connectionId: sourceMapping.connectionId,
-      generation: sourceMapping.generation,
       sequence: nextSequence,
     });
   }
@@ -497,8 +429,6 @@ export class RecordingSessionService {
         segmentMapping = {
           recordingSessionId: sourceMapping.recordingSessionId,
           repositoryId: sourceMapping.repositoryId,
-          connectionId: sourceMapping.connectionId,
-          generation: sourceMapping.generation,
           sourceId: sourceMapping.sourceId,
           segmentPath: input.segment_path,
         };
@@ -546,8 +476,6 @@ export class RecordingSessionService {
         path: input.path,
         sourceId: input.source_id ?? segmentMapping.sourceId ?? null,
         segmentPath: input.segment_path,
-        connectionId: segmentMapping.connectionId,
-        generation: segmentMapping.generation,
         sequence: nextSequence,
         durationSec: input.segment_duration ?? null,
       });
@@ -575,8 +503,6 @@ export class RecordingSessionService {
       path: input.path,
       sourceId: input.source_id ?? segmentMapping.sourceId ?? null,
       segmentPath: input.segment_path,
-      connectionId: segmentMapping.connectionId,
-      generation: segmentMapping.generation,
       sequence: segment.sequence,
       durationSec: input.segment_duration ?? null,
     });
@@ -820,9 +746,8 @@ export class RecordingSessionService {
    * [상태 정합성 보정 - reconcile]
    * 5초 간격으로 실행. hook 누락이나 비정상 종료로 인한 상태 불일치를 보정한다.
    * - FINALIZING: finalize enqueue 재시도
-   * - PENDING: register timeout 또는 claimed owner lease 만료 시 ABORTED
-   * - STREAMING/STOP_REQUESTED: owner lease stale, owner mismatch, active path 없음일 때 FINALIZING 전환 후 finalize 시도
-   * - orphan connection metadata: current owner와 연결되지 않은 conn:* key 정리
+   * - PENDING: register timeout 시 ABORTED
+   * - STREAMING/STOP_REQUESTED: active path 또는 source mapping이 없을 때 FINALIZING 전환 후 finalize 시도
    */
   async reconcileSessions() {
     const activeSessions = await prisma.recordingSession.findMany({
@@ -838,13 +763,11 @@ export class RecordingSessionService {
       },
     });
 
-    const now = Date.now();
     if (activeSessions.length === 0) {
-      await this.cleanupOrphanConnections([], now);
       return;
     }
 
-    const activeRepoNames = await this.getActiveRepositoryNames();
+    const activeStreamPaths = await this.getActiveStreamPaths();
 
     for (const session of activeSessions) {
       const repoName = this.extractRepositoryName(session.streamPath);
@@ -854,41 +777,8 @@ export class RecordingSessionService {
         continue;
       }
 
-      let currentOwner = await streamOwnershipService.getCurrentOwnerForRepository(session.repositoryId);
-      let ownerMatchesSession = currentOwner?.recordingSessionId === session.id;
-      let ownerIsStale = currentOwner ? streamOwnershipService.isStaleOwner(currentOwner, now) : true;
-
       if (session.status === RecordingSessionStatus.PENDING) {
-        const liveCache = await this.getLiveCacheByRecordingSessionId(session.id);
-        const publishTicketIssuedAtMs = liveCache?.publishTicketIssuedAt
-          ? Date.parse(liveCache.publishTicketIssuedAt)
-          : Number.NaN;
-        const hasPublishTicketIssuedAt = Number.isFinite(publishTicketIssuedAtMs);
-
-        if (
-          hasPublishTicketIssuedAt &&
-          (!currentOwner || !ownerMatchesSession || ownerIsStale)
-        ) {
-          const aborted = await this.abortPendingSessionIfStillCurrent(
-            session,
-            RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
-          );
-          if (aborted) {
-            await this.clearLivePointers(session.id, session.repositoryId, repoName, session.sourceId ?? undefined);
-            console.info("[rtmp-reconcile] pending-claimed-owner-missing-or-stale", {
-              recordingSessionId: session.id,
-              repositoryId: session.repositoryId,
-              repositoryName: repoName,
-              publishTicketIssuedAt: liveCache?.publishTicketIssuedAt ?? null,
-              ownerConnectionId: currentOwner?.connectionId ?? null,
-              ownerGeneration: currentOwner?.generation ?? null,
-              ownerLeaseExpiresAt: currentOwner ? new Date(currentOwner.leaseExpiresAt).toISOString() : null,
-            });
-          }
-          continue;
-        }
-
-        const age = now - this.getPendingRegistrationReferenceAt(session).getTime();
+        const age = Date.now() - this.getPendingRegistrationReferenceAt(session).getTime();
         if (age > RECORDING_REGISTRATION_TTL_SECONDS * 1000) {
           const aborted = await this.abortPendingSessionIfStillCurrent(
             session,
@@ -908,136 +798,30 @@ export class RecordingSessionService {
         continue;
       }
 
-      if (currentOwner && ownerMatchesSession && (session.status === RecordingSessionStatus.STOP_REQUESTED || ownerIsStale)) {
-        const releaseReason =
-          session.status === RecordingSessionStatus.STOP_REQUESTED
-            ? "stop-requested-owner-cleanup"
-            : "stale-owner-cleanup";
-        const releaseResult = await streamOwnershipService.releaseConnectionLease({
-          repositoryId: session.repositoryId,
-          recordingSessionId: session.id,
-          connectionId: currentOwner.connectionId,
-          generation: currentOwner.generation,
-        });
-
-        if (releaseResult.outcome === "released") {
-          console.info(`[rtmp-reconcile] ${releaseReason}`, {
-            recordingSessionId: session.id,
-            repositoryId: session.repositoryId,
-            repositoryName: repoName,
-            connectionId: currentOwner.connectionId,
-            generation: currentOwner.generation,
-            previousStatus: session.status,
-            ownerLeaseExpired: currentOwner.leaseExpiresAt <= now,
-          });
-          currentOwner = null;
-          ownerMatchesSession = false;
-          ownerIsStale = true;
-        } else {
-          console.warn("[rtmp-owner] generation-mismatch", {
-            recordingSessionId: session.id,
-            repositoryId: session.repositoryId,
-            repositoryName: repoName,
-            connectionId: currentOwner.connectionId,
-            generation: currentOwner.generation,
-            previousStatus: session.status,
-            reason: releaseResult.reason,
-          });
-          currentOwner = await streamOwnershipService.getCurrentOwnerForRepository(session.repositoryId);
-          ownerMatchesSession = currentOwner?.recordingSessionId === session.id;
-          ownerIsStale = currentOwner ? streamOwnershipService.isStaleOwner(currentOwner, now) : true;
-        }
-      }
-
-      const activePathMissing = activeRepoNames ? !activeRepoNames.has(repoName) : false;
+      const activePathMissing = activeStreamPaths ? !activeStreamPaths.has(this.normalizeStreamPath(session.streamPath)) : false;
       const sourceMappingPresent = session.sourceId ? Boolean(await this.getSourceMapping(session.sourceId)) : false;
-      const missingOrForeignOwner = !currentOwner || !ownerMatchesSession;
-      const shouldFinalize =
-        activePathMissing ||
-        missingOrForeignOwner ||
-        !sourceMappingPresent ||
-        ownerIsStale;
+      const shouldFinalize = activePathMissing || !sourceMappingPresent;
 
       if (shouldFinalize) {
-        if (currentOwner && ownerMatchesSession) {
-          const releaseResult = await streamOwnershipService.releaseConnectionLease({
-            repositoryId: session.repositoryId,
-            recordingSessionId: session.id,
-            connectionId: currentOwner.connectionId,
-            generation: currentOwner.generation,
-          });
-
-          if (releaseResult.outcome === "released") {
-            console.info("[rtmp-reconcile] finalize-owner-release", {
-              recordingSessionId: session.id,
-              repositoryId: session.repositoryId,
-              repositoryName: repoName,
-              connectionId: currentOwner.connectionId,
-              generation: currentOwner.generation,
-              previousStatus: session.status,
-            });
-            currentOwner = null;
-            ownerMatchesSession = false;
-            ownerIsStale = true;
-          } else {
-            console.warn("[rtmp-owner] generation-mismatch", {
-              recordingSessionId: session.id,
-              repositoryId: session.repositoryId,
-              repositoryName: repoName,
-              connectionId: currentOwner.connectionId,
-              generation: currentOwner.generation,
-              previousStatus: session.status,
-              reason: releaseResult.reason,
-            });
-            currentOwner = await streamOwnershipService.getCurrentOwnerForRepository(session.repositoryId);
-            ownerMatchesSession = currentOwner?.recordingSessionId === session.id;
-            ownerIsStale = currentOwner ? streamOwnershipService.isStaleOwner(currentOwner, now) : true;
-
-            if (currentOwner && ownerMatchesSession && !ownerIsStale) {
-              console.info("[rtmp-reconcile] finalize-deferred-owner-still-attached", {
-                recordingSessionId: session.id,
-                repositoryId: session.repositoryId,
-                repositoryName: repoName,
-                connectionId: currentOwner.connectionId,
-                generation: currentOwner.generation,
-                previousStatus: session.status,
-              });
-              continue;
-            }
-          }
-        }
-
         const reconcileReason = activePathMissing
           ? "missing-active-path-finalizing"
-          : !sourceMappingPresent
-            ? "missing-source-mapping-finalizing"
-            : missingOrForeignOwner
-            ? "owner-mismatch-finalizing"
-            : "stale-owner-finalizing";
+          : "missing-source-mapping-finalizing";
         await this.transitionSessionToFinalizing(session, reconcileReason, {
           repositoryName: repoName,
-          activeRepoNames: activeRepoNames ? Array.from(activeRepoNames.values()) : null,
-          ownerConnectionId: currentOwner?.connectionId ?? null,
-          ownerGeneration: currentOwner?.generation ?? null,
-          ownerStatus: currentOwner?.status ?? null,
-          ownerLeaseExpiresAt: currentOwner ? new Date(currentOwner.leaseExpiresAt).toISOString() : null,
-          ownerLastHeartbeatAt: currentOwner ? new Date(currentOwner.lastHeartbeatAt).toISOString() : null,
+          activeStreamPaths: activeStreamPaths ? Array.from(activeStreamPaths.values()) : null,
           sourceMappingPresent,
         });
       }
     }
-
-    await this.cleanupOrphanConnections(activeSessions, now);
   }
 
   /**
    * [Redis live cache 조회]
-   * stream path에서 repository 이름을 추출하여 Redis path pointer → recording cache 순으로 조회.
-   * RTMP 인증(auth.service) 시 활성 세션 존재 여부를 빠르게 확인하는 데 사용된다.
+   * stream path에서 recordingSessionId를 추출하여 recording cache를 조회한다.
+   * RTMP/HLS/WHEP 인증과 source_id 없는 segment hook fallback에서 사용된다.
    */
   async getLiveCacheByPath(streamPath: string): Promise<RecordingSessionLiveCache | null> {
-    const repoName = this.extractRepositoryName(streamPath);
-    const recordingSessionId = await redis.get(streamPathKey(repoName));
+    const recordingSessionId = this.extractRecordingSessionId(streamPath);
     if (!recordingSessionId) {
       return null;
     }
@@ -1056,39 +840,6 @@ export class RecordingSessionService {
     } catch (_error) {
       return null;
     }
-  }
-
-  /**
-   * [publish ticket 발급 시각 기록]
-   * PENDING 세션에서 첫 publish attempt 정합성 판단을 위해 live cache에 마지막 ticket 발급 시각을 남긴다.
-   */
-  async markPublishTicketIssued(recordingSessionId: string) {
-    const cachedStr = await redis.get(streamRecordingKey(recordingSessionId));
-    if (!cachedStr) {
-      return;
-    }
-
-    let cache: RecordingSessionLiveCache;
-    try {
-      cache = JSON.parse(cachedStr) as RecordingSessionLiveCache;
-    } catch (_error) {
-      return;
-    }
-
-    const repoName = cache.repositoryName;
-    const ttlSeconds = cache.status === "PENDING" ? RECORDING_REGISTRATION_TTL_SECONDS : RECORDING_ACTIVE_TTL_SECONDS;
-    const nextCache: RecordingSessionLiveCache = {
-      ...cache,
-      publishTicketIssuedAt: new Date().toISOString(),
-    };
-    const pipeline = redis.multi();
-    pipeline.set(streamRecordingKey(recordingSessionId), JSON.stringify(nextCache), "EX", ttlSeconds);
-    pipeline.expire(streamRepoKey(cache.repositoryId), ttlSeconds);
-    pipeline.expire(streamPathKey(repoName), ttlSeconds);
-    if (cache.sourceId) {
-      pipeline.expire(streamSourceKey(cache.sourceId), ttlSeconds);
-    }
-    await pipeline.exec();
   }
 
   private async transitionSessionToFinalizing(
@@ -1129,8 +880,7 @@ export class RecordingSessionService {
   /**
    * [Redis live pointer 삭제]
    * 스트림 종료(not-ready) 또는 reconcile 시 호출.
-   * repo/path/recording/source 키를 삭제하여 해당 세션의 live 상태를 해제한다.
-   * 다른 세션이 같은 키를 사용 중이면 해당 키는 삭제하지 않는다.
+   * recording/source 키를 삭제하여 해당 세션의 live 상태를 해제한다.
    */
   private async clearLivePointers(
     recordingSessionId: string,
@@ -1138,11 +888,7 @@ export class RecordingSessionService {
     repositoryName: string,
     sourceId?: string,
   ) {
-    const keys = [
-      streamRepoKey(repositoryId),
-      streamPathKey(repositoryName),
-      streamRecordingKey(recordingSessionId),
-    ];
+    const keys = [streamRecordingKey(recordingSessionId)];
     if (sourceId) {
       keys.push(streamSourceKey(sourceId));
     }
@@ -1150,10 +896,7 @@ export class RecordingSessionService {
     const clearedKeys: string[] = [];
     for (const key of keys) {
       const value = await redis.get(key);
-      if (value === recordingSessionId) {
-        await redis.del(key);
-        clearedKeys.push(key);
-      } else if (key === streamSourceKey(sourceId ?? "")) {
+      if (key === streamSourceKey(sourceId ?? "")) {
         const sourceMapping = this.parseRedisRecord<StreamSourceMapping>(value);
         if (sourceMapping?.recordingSessionId === recordingSessionId) {
           await redis.del(key);
@@ -1207,16 +950,29 @@ export class RecordingSessionService {
 
   /**
    * [stream path → repository 이름 추출]
-   * "live/{repoName}" 형식의 stream path에서 repository 이름 부분을 추출한다.
+   * "live/{repoName}/{recordingSessionId}" 형식의 stream path에서 repository 이름 부분을 추출한다.
    * 형식이 맞지 않으면 에러를 던진다.
    */
   extractRepositoryName(streamPath: string): string {
-    const normalized = streamPath.trim().replace(/^\/+/, "");
+    const normalized = this.normalizeStreamPath(streamPath);
     const parts = normalized.split("/");
     if (parts.length < 2 || parts[0] !== "live" || !parts[1]) {
       throw BadRequest("Invalid stream path format.");
     }
     return parts[1];
+  }
+
+  private extractRecordingSessionId(streamPath: string): string | null {
+    const normalized = this.normalizeStreamPath(streamPath);
+    const parts = normalized.split("/");
+    if (parts.length < 3 || parts[0] !== "live" || !parts[2]) {
+      return null;
+    }
+    return parts[2];
+  }
+
+  private normalizeStreamPath(streamPath: string): string {
+    return streamPath.trim().replace(/^\/+|\/+$/g, "");
   }
 
   private getPendingRegistrationReferenceAt(session: { createdAt: Date; updatedAt?: Date | null }) {
@@ -1292,10 +1048,10 @@ export class RecordingSessionService {
 
   /**
    * [MediaMTX active path 조회]
-   * MediaMTX API에서 현재 active path 목록을 가져와 repository 이름 집합으로 반환한다.
+   * MediaMTX API에서 현재 active path 목록을 가져와 stream path 집합으로 반환한다.
    * reconcile 시 DB 상태와 대조하여 실제로 송출이 끊긴 세션을 감지하는 데 사용된다.
    */
-  private async getActiveRepositoryNames(): Promise<Set<string> | null> {
+  private async getActiveStreamPaths(): Promise<Set<string> | null> {
     const baseUrl = env.MEDIAMTX_API_URL.replace(/\/+$/, "");
 
     try {
@@ -1308,67 +1064,26 @@ export class RecordingSessionService {
       }
 
       const payload = (await response.json()) as { items?: Array<{ name?: unknown }> };
-      const names = new Set<string>();
+      const paths = new Set<string>();
 
       for (const item of payload.items ?? []) {
         if (typeof item.name !== "string") {
           continue;
         }
-        try {
-          names.add(this.extractRepositoryName(item.name));
-        } catch (_error) {
-          // Ignore non-live paths.
+        const normalized = this.normalizeStreamPath(item.name);
+        const parts = normalized.split("/");
+        if (parts.length >= 3 && parts[0] === "live" && parts[1] && parts[2]) {
+          paths.add(normalized);
         }
       }
 
-      return names;
+      return paths;
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown error";
       console.warn("[rtmp-reconcile] active-path-query-failed", {
         reason: message,
       });
       return null;
-    }
-  }
-
-  private async cleanupOrphanConnections(
-    activeSessions: Array<{
-      id: string;
-      repositoryId: string;
-      status: RecordingSessionStatus;
-    }>,
-    now: number,
-  ) {
-    const sessionStatusById = new Map(activeSessions.map((session) => [session.id, session.status]));
-    const connections = await streamOwnershipService.listConnections();
-
-    for (const connection of connections) {
-      const currentOwner = await streamOwnershipService.getCurrentOwner(connection.streamId);
-      const isCurrentOwnerConnection =
-        currentOwner?.recordingSessionId === connection.recordingSessionId &&
-        currentOwner.connectionId === connection.connectionId &&
-        currentOwner.generation === connection.generation;
-
-      if (isCurrentOwnerConnection) {
-        continue;
-      }
-
-      await redis.del(streamConnectionKey(connection.connectionId));
-      console.info("[rtmp-reconcile] orphan-connection-cleanup", {
-        recordingSessionId: connection.recordingSessionId,
-        repositoryId: connection.repositoryId,
-        connectionId: connection.connectionId,
-        generation: connection.generation,
-        connectionStatus: connection.status,
-        connectionLeaseExpiresAt: new Date(connection.leaseExpiresAt).toISOString(),
-        connectionLastHeartbeatAt: new Date(connection.lastHeartbeatAt).toISOString(),
-        connectionIsStale: streamOwnershipService.isStaleOwner(connection, now),
-        ownerRecordingSessionId: currentOwner?.recordingSessionId ?? null,
-        ownerConnectionId: currentOwner?.connectionId ?? null,
-        ownerGeneration: currentOwner?.generation ?? null,
-        ownerStatus: currentOwner?.status ?? null,
-        sessionStatus: sessionStatusById.get(connection.recordingSessionId) ?? null,
-      });
     }
   }
 

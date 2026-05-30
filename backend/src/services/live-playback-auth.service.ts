@@ -23,7 +23,7 @@ export interface LivePlaybackAuthorizeInput {
 
 interface AuthorizeLivePlaybackAccessInput extends LivePlaybackAuthorizeInput {
   cacheKeyPrefix: LivePlaybackAuthCachePrefix;
-  extractRepositoryName: (path: string) => string | null;
+  extractPlaybackTarget: (path: string) => { repoName: string; streamPath: string } | null;
 }
 
 const livePlaybackAuthCacheKey = (
@@ -35,20 +35,20 @@ const livePlaybackAuthCacheKey = (
 export const authorizeLivePlaybackAccess = async (
   input: AuthorizeLivePlaybackAccessInput,
 ): Promise<LivePlaybackAuthOutcome> => {
-  const repoName = input.extractRepositoryName(input.path);
-  if (!repoName) {
+  const target = input.extractPlaybackTarget(input.path);
+  if (!target) {
     return { ok: false, reason: "invalid-path" };
   }
 
   const credentialHash = hashValue(input.rawCredential, LIVE_PLAYBACK_AUTH_CREDENTIAL_HASH_ALGORITHM);
-  const cacheKey = livePlaybackAuthCacheKey(input.cacheKeyPrefix, credentialHash, repoName);
+  const cacheKey = livePlaybackAuthCacheKey(input.cacheKeyPrefix, credentialHash, target.streamPath);
 
   const cached = await redis.get(cacheKey);
   if (cached === LIVE_PLAYBACK_AUTH_CACHE_ALLOW_VALUE) {
-    return { ok: true, repoName, cached: true };
+    return { ok: true, repoName: target.repoName, cached: true };
   }
 
-  const liveSession = await streamService.findLiveSessionByStreamPath(`live/${repoName}`);
+  const liveSession = await streamService.findLiveSessionByStreamPath(target.streamPath);
   if (!liveSession) {
     return { ok: false, reason: "stream-not-found" };
   }
@@ -63,5 +63,5 @@ export const authorizeLivePlaybackAccess = async (
   }
 
   await redis.set(cacheKey, LIVE_PLAYBACK_AUTH_CACHE_ALLOW_VALUE, "EX", LIVE_PLAYBACK_AUTH_CACHE_TTL_SECONDS);
-  return { ok: true, repoName, cached: false };
+  return { ok: true, repoName: target.repoName, cached: false };
 };

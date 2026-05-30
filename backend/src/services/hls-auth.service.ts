@@ -20,23 +20,26 @@ export class HlsAuthService {
     return authorizeLivePlaybackAccess({
       ...input,
       cacheKeyPrefix: LivePlaybackAuthCachePrefix.Hls,
-      extractRepositoryName: this.extractRepositoryName,
+      extractPlaybackTarget: this.extractPlaybackTarget,
     });
   }
 
   /**
    * Caddy가 forward한 path는 둘 중 하나의 형태다.
-   * - `/hls/live/{repo}/...` (orig request path)
-   * - `/live/{repo}/...` (handle_path 이후)
+   * - `/hls/live/{repo}/{recordingSessionId}/...` (orig request path)
+   * - `/live/{repo}/{recordingSessionId}/...` (handle_path 이후)
    * 둘 다 처리한다.
    */
-  private extractRepositoryName(path: string): string | null {
+  private extractPlaybackTarget(path: string): { repoName: string; streamPath: string } | null {
     const normalized = path.replace(/^\/+/, "").replace(/^hls\//, "");
     const parts = normalized.split("/");
-    if (parts.length < 2 || parts[0] !== "live" || !parts[1]) {
+    if (parts.length < 3 || parts[0] !== "live" || !parts[1] || !parts[2]) {
       return null;
     }
-    return parts[1];
+    return {
+      repoName: parts[1],
+      streamPath: `live/${parts[1]}/${parts[2]}`,
+    };
   }
 }
 

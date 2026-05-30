@@ -20,22 +20,25 @@ export class WhepAuthService {
     return authorizeLivePlaybackAccess({
       ...input,
       cacheKeyPrefix: LivePlaybackAuthCachePrefix.Whep,
-      extractRepositoryName: this.extractRepositoryName,
+      extractPlaybackTarget: this.extractPlaybackTarget,
     });
   }
 
   /**
    * Caddy가 forward한 path는 둘 중 하나의 형태다.
-   * - `/live/{repo}/whep`
-   * - `/live/{repo}/whep/{sessionId}` (Location 기반 PATCH/DELETE)
+   * - `/live/{repo}/{recordingSessionId}/whep`
+   * - `/live/{repo}/{recordingSessionId}/whep/{sessionId}` (Location 기반 PATCH/DELETE)
    */
-  private extractRepositoryName(path: string): string | null {
+  private extractPlaybackTarget(path: string): { repoName: string; streamPath: string } | null {
     const normalized = path.replace(/^\/+/, "");
     const parts = normalized.split("/");
-    if (parts.length < 3 || parts[0] !== "live" || !parts[1] || parts[2] !== "whep") {
+    if (parts.length < 4 || parts[0] !== "live" || !parts[1] || !parts[2] || parts[3] !== "whep") {
       return null;
     }
-    return parts[1];
+    return {
+      repoName: parts[1],
+      streamPath: `live/${parts[1]}/${parts[2]}`,
+    };
   }
 }
 

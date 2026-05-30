@@ -108,8 +108,8 @@ export class AuthService {
    * [Publish 인증 (RTMP / WHIP 공통)]
    * MediaMTX가 POST /api/v1/auth/rtmp로 전달한 publish 요청을 검증한다.
    * - RTMP publish, WHIP publish 모두 같은 callback을 받으며 `protocol` 필드만 다르다.
-   * - publish ticket와 current owner lease만 검증한다.
-   * - owner truth를 mutate하지 않고, 상태 승격은 stream-ready hook이 담당한다.
+   * - short-lived publish ticket만 검증한다.
+   * - ticket consume과 상태 승격은 stream-ready hook이 담당한다.
    * - read/playback action은 mediamtx.yml `authHTTPExclude`로 우회되므로 호출되지 않는다.
    *   혹시 우회 설정이 누락되어 들어오면 deny한다 (Caddy `forward_auth`가 진짜 gate).
    */
@@ -162,8 +162,6 @@ export class AuthService {
         repositoryId: validation.ticket.repositoryId,
         credentialSource,
         ticketId: validation.ticket.ticketId,
-        connectionId: validation.ticket.connectionId,
-        generation: validation.ticket.generation,
       });
       return true;
     } catch (_error) {

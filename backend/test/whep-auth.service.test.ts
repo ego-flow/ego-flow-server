@@ -72,20 +72,20 @@ test("authorize accepts native WHEP paths and session paths", async () => {
 
   const initial = await whepAuthService.authorize({
     rawCredential: "credential-1",
-    path: "/live/repo-name/whep",
+    path: "/live/repo-name/session-1/whep",
     userId: "viewer-1",
     userRole: "user",
   });
   const session = await whepAuthService.authorize({
     rawCredential: "credential-2",
-    path: "/live/repo-name/whep/session-id",
+    path: "/live/repo-name/session-1/whep/webrtc-session-id",
     userId: "viewer-1",
     userRole: "user",
   });
 
   assert.deepEqual(initial, { ok: true, repoName: "repo-name", cached: false });
   assert.deepEqual(session, { ok: true, repoName: "repo-name", cached: false });
-  assert.deepEqual(lookedUpPaths, ["live/repo-name", "live/repo-name"]);
+  assert.deepEqual(lookedUpPaths, ["live/repo-name/session-1", "live/repo-name/session-1"]);
 });
 
 test("authorize rejects the retired /whep/{repo} public path shape", async () => {

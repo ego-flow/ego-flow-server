@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
-import type { StreamConnectionMetadata, StreamOwnerLease } from "../src/types/stream";
+import type { PublishTicketRecord } from "../src/types/stream";
 import { FakeRedis } from "./helpers/fake-redis";
 
 process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egoflow";
@@ -21,9 +21,8 @@ const service = new StreamOwnershipService();
 const publishParams = {
   recordingSessionId: "session-1",
   repositoryId: "repo-1",
-  repositoryName: "repo-name",
   userId: "user-1",
-  streamPath: "live/repo-name",
+  streamPath: "live/repo-name/session-1",
 };
 
 beforeEach(() => {
@@ -32,152 +31,48 @@ beforeEach(() => {
 
 test("buildWhipPublishUrl uses the MediaMTX native WHIP path shape", () => {
   assert.equal(
-    service.buildWhipPublishUrl("https://streams.example.com/live/", "repo-name", "ticket value"),
-    "https://streams.example.com/live/repo-name/whip?ticket=ticket%20value",
+    service.buildWhipPublishUrl("https://streams.example.com/live/", "live/repo-name/session-1", "ticket value"),
+    "https://streams.example.com/live/repo-name/session-1/whip?ticket=ticket%20value",
   );
 });
 
-test("issuePublishTicket rejects reconnect takeover until the owner is actually stale", async () => {
-  const firstGrant = await service.issuePublishTicket(publishParams);
-  const streamId = service.buildStreamId(publishParams.repositoryId);
-  const ownerKey = `stream:${streamId}:owner`;
-  const connectionKey = `conn:${firstGrant.ticket.connectionId}`;
-  const now = Date.now();
-
-  const owner = fakeRedis.getJson<StreamOwnerLease>(ownerKey);
-  const connection = fakeRedis.getJson<StreamConnectionMetadata>(connectionKey);
-
-  assert.ok(owner);
-  assert.ok(connection);
-
-  fakeRedis.setJson(ownerKey, {
-    ...owner,
-    status: "claimed",
-    lastHeartbeatAt: now - 16_000,
-    leaseExpiresAt: now + 30_000,
-  });
-  fakeRedis.setJson(connectionKey, {
-    ...connection,
-    status: "claimed",
-    lastHeartbeatAt: now - 16_000,
-    leaseExpiresAt: now + 30_000,
-  });
-
-  let claimedRejection: unknown;
-  try {
-    await service.issuePublishTicket(publishParams);
-  } catch (error) {
-    claimedRejection = error;
-  }
-
-  assert.deepEqual(claimedRejection, {
-    outcome: "rejected",
-    existing: {
-      ...owner,
-      status: "claimed",
-      lastHeartbeatAt: now - 16_000,
-      leaseExpiresAt: now + 30_000,
-    },
-  });
-  assert.equal(
-    service.isStaleOwner({
-      ...owner,
-      status: "claimed",
-      lastHeartbeatAt: now - 16_000,
-      leaseExpiresAt: now + 30_000,
-    }),
-    false,
-  );
-
-  fakeRedis.setJson(ownerKey, {
-    ...owner,
-    status: "publishing",
-    lastHeartbeatAt: now - 11_000,
-    leaseExpiresAt: now + 30_000,
-  });
-  fakeRedis.setJson(connectionKey, {
-    ...connection,
-    status: "publishing",
-    lastHeartbeatAt: now - 11_000,
-    leaseExpiresAt: now + 30_000,
-  });
-
-  let rejection: unknown;
-  try {
-    await service.issuePublishTicket(publishParams);
-  } catch (error) {
-    rejection = error;
-  }
-
-  assert.deepEqual(rejection, {
-    outcome: "rejected",
-    existing: {
-      ...owner,
-      status: "publishing",
-      lastHeartbeatAt: now - 11_000,
-      leaseExpiresAt: now + 30_000,
-    },
-  });
-
-  fakeRedis.setJson(ownerKey, {
-    ...owner,
-    status: "publishing",
-    lastHeartbeatAt: now - 16_000,
-    leaseExpiresAt: now + 30_000,
-  });
-  fakeRedis.setJson(connectionKey, {
-    ...connection,
-    status: "publishing",
-    lastHeartbeatAt: now - 16_000,
-    leaseExpiresAt: now + 30_000,
-  });
-
-  const reconnectGrant = await service.issuePublishTicket(publishParams);
-
-  assert.equal(reconnectGrant.ownerOutcome, "takeover");
-  assert.equal(reconnectGrant.ticket.recordingSessionId, publishParams.recordingSessionId);
-  assert.equal(reconnectGrant.ticket.generation, firstGrant.ticket.generation + 1);
-  assert.equal(reconnectGrant.revokedTicket?.status, "revoked");
-
-  assert.equal(
-    service.isStaleOwner({
-      ...owner,
-      status: "claimed",
-      lastHeartbeatAt: now - 61_000,
-      leaseExpiresAt: now - 1,
-    }),
-    true,
-  );
-});
-
-test("refresh and release keep the current owner when generation does not match", async () => {
+test("issuePublishTicket stores only short-lived ticket metadata", async () => {
   const grant = await service.issuePublishTicket(publishParams);
-  const wrongGeneration = grant.ticket.generation + 1;
+  const stored = fakeRedis.getJson<PublishTicketRecord>(`stream:ticket:${grant.ticket.ticketId}`);
 
-  const ownerBefore = await service.getCurrentOwnerForRepository(publishParams.repositoryId);
-  const connectionBefore = await service.getConnection(grant.ticket.connectionId);
+  assert.ok(grant.ticket.ticketId.startsWith("t_"));
+  assert.deepEqual(stored, grant.ticket);
+  assert.equal(stored?.recordingSessionId, publishParams.recordingSessionId);
+  assert.equal(stored?.repositoryId, publishParams.repositoryId);
+  assert.equal(stored?.userId, publishParams.userId);
+  assert.equal(stored?.streamPath, publishParams.streamPath);
+  assert.equal(stored?.status, "active");
+});
 
-  const refreshResult = await service.refreshConnectionLease({
-    repositoryId: publishParams.repositoryId,
-    recordingSessionId: publishParams.recordingSessionId,
-    connectionId: grant.ticket.connectionId,
-    generation: wrongGeneration,
+test("validate and consume publish ticket only depend on ticket state and stream path", async () => {
+  const grant = await service.issuePublishTicket(publishParams);
+  const query = `ticket=${encodeURIComponent(grant.ticket.ticketId)}`;
+
+  const validation = await service.validatePublishTicket(publishParams.streamPath, query);
+  assert.equal(validation.ok, true);
+  if (validation.ok) {
+    assert.equal(validation.ticket.recordingSessionId, publishParams.recordingSessionId);
+  }
+
+  const pathMismatch = await service.validatePublishTicket("live/other/session-1", query);
+  assert.deepEqual(pathMismatch, {
+    ok: false,
+    reason: "ticket-stream-path-mismatch",
+    ticketId: grant.ticket.ticketId,
   });
 
-  assert.equal(refreshResult.outcome, "rejected");
-  assert.equal(refreshResult.reason, "generation-mismatch");
-  assert.deepEqual(await service.getCurrentOwnerForRepository(publishParams.repositoryId), ownerBefore);
-  assert.deepEqual(await service.getConnection(grant.ticket.connectionId), connectionBefore);
+  const consumed = await service.consumePublishTicket(publishParams.streamPath, query);
+  assert.equal(consumed.ok, true);
 
-  const releaseResult = await service.releaseConnectionLease({
-    repositoryId: publishParams.repositoryId,
-    recordingSessionId: publishParams.recordingSessionId,
-    connectionId: grant.ticket.connectionId,
-    generation: wrongGeneration,
+  const afterConsume = await service.validatePublishTicket(publishParams.streamPath, query);
+  assert.deepEqual(afterConsume, {
+    ok: false,
+    reason: "ticket-status-consumed",
+    ticketId: grant.ticket.ticketId,
   });
-
-  assert.equal(releaseResult.outcome, "rejected");
-  assert.equal(releaseResult.reason, "generation-mismatch");
-  assert.deepEqual(await service.getCurrentOwnerForRepository(publishParams.repositoryId), ownerBefore);
-  assert.deepEqual(await service.getConnection(grant.ticket.connectionId), connectionBefore);
 });

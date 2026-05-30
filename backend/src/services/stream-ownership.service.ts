@@ -1,48 +1,15 @@
 import { v4 as uuidv4 } from "uuid";
 
-import {
-  CLAIM_OWNER_SCRIPT,
-  HEARTBEAT_INTERVAL_SECONDS,
-  INITIAL_OWNER_LEASE_TTL_SECONDS,
-  OWNER_HEALTHY_HEARTBEAT_WINDOW_MS,
-  OWNER_STALE_HEARTBEAT_WINDOW_MS,
-  PUBLISH_TICKET_TTL_SECONDS,
-  REFRESH_OWNER_SCRIPT,
-  RELEASE_OWNER_SCRIPT,
-  STEADY_OWNER_LEASE_TTL_SECONDS,
-} from "../constants/stream/stream-ownership-constants";
-import { STREAM_CONNECTION_SCAN_PATTERN } from "../constants/stream/stream-constants";
+import { PUBLISH_TICKET_TTL_SECONDS } from "../constants/stream/stream-ownership-constants";
 import { redis } from "../lib/redis";
-import type {
-  PublishTicketRecord,
-  StreamConnectionMetadata,
-  StreamOwnerLease,
-} from "../types/stream";
-import {
-  activeTicketKey,
-  streamConnectionKey,
-  streamOwnerGenerationKey,
-  streamOwnerKey,
-  streamTicketKey,
-} from "../utils/stream-keys";
-
-type OwnerClaimResult =
-  | {
-      outcome: "claimed" | "takeover";
-      owner: StreamOwnerLease;
-    }
-  | {
-      outcome: "rejected";
-      existing: StreamOwnerLease;
-    };
+import type { PublishTicketRecord } from "../types/stream";
+import { streamTicketKey } from "../utils/stream-keys";
 
 type PublishTicketValidationResult =
   | {
       ok: true;
       ticket: PublishTicketRecord;
       ticketId: string;
-      owner: StreamOwnerLease;
-      connection: StreamConnectionMetadata;
     }
   | {
       ok: false;
@@ -61,143 +28,40 @@ type PublishTicketConsumeResult =
       ticketId: string | null;
     };
 
-type OwnerRefreshResult =
-  | {
-      outcome: "refreshed";
-      owner: StreamOwnerLease;
-      connection: StreamConnectionMetadata;
-    }
-  | {
-      outcome: "rejected";
-      reason: string;
-      owner?: StreamOwnerLease;
-      connection?: StreamConnectionMetadata;
-    };
-
-type OwnerReleaseResult =
-  | {
-      outcome: "released";
-      releasedOwner: boolean;
-      releasedConnection: boolean;
-    }
-  | {
-      outcome: "rejected";
-      reason: string;
-      owner?: StreamOwnerLease;
-      connection?: StreamConnectionMetadata;
-    };
-
 export class StreamOwnershipService {
-  buildStreamId(repositoryId: string) {
-    return `repository:${repositoryId}`;
-  }
-
   getPublishTicketTtlSeconds() {
     return PUBLISH_TICKET_TTL_SECONDS;
-  }
-
-  getOwnerLeaseTtlSeconds() {
-    return INITIAL_OWNER_LEASE_TTL_SECONDS;
-  }
-
-  getSteadyOwnerLeaseTtlSeconds() {
-    return STEADY_OWNER_LEASE_TTL_SECONDS;
-  }
-
-  getHeartbeatIntervalSeconds() {
-    return HEARTBEAT_INTERVAL_SECONDS;
-  }
-
-  getHealthyHeartbeatWindowMs() {
-    return OWNER_HEALTHY_HEARTBEAT_WINDOW_MS;
-  }
-
-  getStaleHeartbeatWindowMs() {
-    return OWNER_STALE_HEARTBEAT_WINDOW_MS;
   }
 
   getPublishBaseUrl(baseUrl: string) {
     return baseUrl.replace(/\/+$/, "");
   }
 
-  buildPublishUrl(baseUrl: string, repositoryName: string, publishTicket: string) {
+  buildPublishUrl(baseUrl: string, streamPath: string, publishTicket: string) {
     const normalizedBaseUrl = this.getPublishBaseUrl(baseUrl);
-    return `${normalizedBaseUrl}/${repositoryName}?ticket=${encodeURIComponent(publishTicket)}`;
+    const suffix = this.toPublishPathSuffix(streamPath);
+    return `${normalizedBaseUrl}/${suffix}?ticket=${encodeURIComponent(publishTicket)}`;
   }
 
-  buildWhipPublishUrl(baseUrl: string, repositoryName: string, publishTicket: string) {
+  buildWhipPublishUrl(baseUrl: string, streamPath: string, publishTicket: string) {
     const normalizedBaseUrl = this.getPublishBaseUrl(baseUrl);
-    return `${normalizedBaseUrl}/${repositoryName}/whip?ticket=${encodeURIComponent(publishTicket)}`;
-  }
-
-  isHealthyOwner(owner: StreamOwnerLease, now = Date.now()) {
-    if (owner.leaseExpiresAt <= now) {
-      return false;
-    }
-
-    if (owner.status === "claimed") {
-      return true;
-    }
-
-    return owner.lastHeartbeatAt >= now - OWNER_HEALTHY_HEARTBEAT_WINDOW_MS;
-  }
-
-  isStaleOwner(owner: StreamOwnerLease, now = Date.now()) {
-    if (owner.leaseExpiresAt <= now) {
-      return true;
-    }
-
-    if (owner.status === "claimed") {
-      return false;
-    }
-
-    return owner.lastHeartbeatAt < now - OWNER_STALE_HEARTBEAT_WINDOW_MS;
+    const suffix = this.toPublishPathSuffix(streamPath);
+    return `${normalizedBaseUrl}/${suffix}/whip?ticket=${encodeURIComponent(publishTicket)}`;
   }
 
   async issuePublishTicket(params: {
     recordingSessionId: string;
     repositoryId: string;
-    repositoryName: string;
     userId: string;
     streamPath: string;
-  }): Promise<{
-    ticket: PublishTicketRecord;
-    owner: StreamOwnerLease;
-    connection: StreamConnectionMetadata;
-    ownerOutcome: "claimed" | "takeover";
-    revokedTicket: PublishTicketRecord | null;
-  }> {
+  }): Promise<{ ticket: PublishTicketRecord }> {
     const now = Date.now();
-    const streamId = this.buildStreamId(params.repositoryId);
     const ticketId = `t_${uuidv4()}`;
-    const connectionId = `conn_${uuidv4()}`;
-
-    const claimResult = await this.claimOwner({
-      streamId,
-      recordingSessionId: params.recordingSessionId,
-      connectionId,
-      repositoryId: params.repositoryId,
-      repositoryName: params.repositoryName,
-      userId: params.userId,
-      streamPath: params.streamPath,
-      now,
-    });
-
-    if (claimResult.outcome === "rejected") {
-      return Promise.reject(claimResult);
-    }
-
-    const revokedTicket = await this.revokeActiveTicket(params.recordingSessionId);
-
     const expiresAt = now + PUBLISH_TICKET_TTL_SECONDS * 1000;
     const ticket: PublishTicketRecord = {
       ticketId,
-      streamId,
       recordingSessionId: params.recordingSessionId,
-      connectionId,
-      generation: claimResult.owner.generation,
       repositoryId: params.repositoryId,
-      repositoryName: params.repositoryName,
       userId: params.userId,
       streamPath: params.streamPath,
       issuedAt: now,
@@ -205,35 +69,9 @@ export class StreamOwnershipService {
       status: "active",
     };
 
-    const connection: StreamConnectionMetadata = {
-      streamId,
-      recordingSessionId: params.recordingSessionId,
-      connectionId,
-      generation: claimResult.owner.generation,
-      repositoryId: params.repositoryId,
-      repositoryName: params.repositoryName,
-      userId: params.userId,
-      streamPath: params.streamPath,
-      status: "claimed",
-      createdAt: now,
-      lastHeartbeatAt: now,
-      leaseExpiresAt: claimResult.owner.leaseExpiresAt,
-    };
+    await redis.set(streamTicketKey(ticketId), JSON.stringify(ticket), "EX", PUBLISH_TICKET_TTL_SECONDS);
 
-    await redis
-      .multi()
-      .set(streamTicketKey(ticketId), JSON.stringify(ticket), "EX", PUBLISH_TICKET_TTL_SECONDS)
-      .set(streamConnectionKey(connectionId), JSON.stringify(connection), "EX", INITIAL_OWNER_LEASE_TTL_SECONDS)
-      .set(activeTicketKey(params.recordingSessionId), ticketId, "EX", PUBLISH_TICKET_TTL_SECONDS)
-      .exec();
-
-    return {
-      ticket,
-      owner: claimResult.owner,
-      connection,
-      ownerOutcome: claimResult.outcome,
-      revokedTicket,
-    };
+    return { ticket };
   }
 
   async validatePublishTicket(streamPath: string, query?: string): Promise<PublishTicketValidationResult> {
@@ -290,21 +128,10 @@ export class StreamOwnershipService {
       };
     }
 
-    const ownerValidation = await this.validateCurrentOwner(ticket);
-    if (!ownerValidation.ok) {
-      return {
-        ok: false,
-        reason: ownerValidation.reason,
-        ticketId,
-      };
-    }
-
     return {
       ok: true,
       ticket,
       ticketId,
-      owner: ownerValidation.owner,
-      connection: ownerValidation.connection,
     };
   }
 
@@ -320,97 +147,17 @@ export class StreamOwnershipService {
       status: "consumed",
     };
 
-    await redis
-      .multi()
-      .set(streamTicketKey(validation.ticket.ticketId), JSON.stringify(nextTicket), "EX", remainingTtlSeconds)
-      .del(activeTicketKey(validation.ticket.recordingSessionId))
-      .exec();
+    await redis.set(
+      streamTicketKey(validation.ticket.ticketId),
+      JSON.stringify(nextTicket),
+      "EX",
+      remainingTtlSeconds,
+    );
 
     return {
       ok: true,
       ticket: nextTicket,
     };
-  }
-
-  async refreshConnectionLease(params: {
-    repositoryId: string;
-    recordingSessionId: string;
-    connectionId: string;
-    generation: number;
-    sourceId?: string;
-    sourceType?: string;
-  }): Promise<OwnerRefreshResult> {
-    const rawResult = await redis.eval(
-      REFRESH_OWNER_SCRIPT,
-      2,
-      streamOwnerKey(this.buildStreamId(params.repositoryId)),
-      streamConnectionKey(params.connectionId),
-      Date.now().toString(),
-      STEADY_OWNER_LEASE_TTL_SECONDS.toString(),
-      this.buildStreamId(params.repositoryId),
-      params.recordingSessionId,
-      params.connectionId,
-      params.generation.toString(),
-      params.sourceId ?? "",
-      params.sourceType ?? "",
-    );
-
-    return JSON.parse(String(rawResult)) as OwnerRefreshResult;
-  }
-
-  async releaseConnectionLease(params: {
-    repositoryId: string;
-    recordingSessionId: string;
-    connectionId: string;
-    generation: number;
-  }): Promise<OwnerReleaseResult> {
-    const rawResult = await redis.eval(
-      RELEASE_OWNER_SCRIPT,
-      2,
-      streamOwnerKey(this.buildStreamId(params.repositoryId)),
-      streamConnectionKey(params.connectionId),
-      this.buildStreamId(params.repositoryId),
-      params.recordingSessionId,
-      params.connectionId,
-      params.generation.toString(),
-    );
-
-    return JSON.parse(String(rawResult)) as OwnerReleaseResult;
-  }
-
-  async getCurrentOwner(streamId: string): Promise<StreamOwnerLease | null> {
-    return this.parseRedisRecord(await redis.get(streamOwnerKey(streamId)));
-  }
-
-  async getCurrentOwnerForRepository(repositoryId: string): Promise<StreamOwnerLease | null> {
-    return this.getCurrentOwner(this.buildStreamId(repositoryId));
-  }
-
-  async getConnection(connectionId: string): Promise<StreamConnectionMetadata | null> {
-    return this.parseRedisRecord(await redis.get(streamConnectionKey(connectionId)));
-  }
-
-  async listConnections(): Promise<StreamConnectionMetadata[]> {
-    const connections: StreamConnectionMetadata[] = [];
-    let cursor = "0";
-
-    do {
-      const result = await redis.scan(cursor, "MATCH", STREAM_CONNECTION_SCAN_PATTERN, "COUNT", 100);
-      cursor = Array.isArray(result) ? String(result[0]) : "0";
-      const keys = Array.isArray(result) && Array.isArray(result[1]) ? result[1] : [];
-
-      if (keys.length > 0) {
-        const values = await redis.mget(...keys);
-        for (const raw of values) {
-          const parsed = this.parseRedisRecord<StreamConnectionMetadata>(raw);
-          if (parsed) {
-            connections.push(parsed);
-          }
-        }
-      }
-    } while (cursor !== "0");
-
-    return connections;
   }
 
   extractTicketId(query?: string) {
@@ -419,187 +166,9 @@ export class StreamOwnershipService {
     return ticketId && ticketId.trim() ? ticketId.trim() : null;
   }
 
-  private async claimOwner(params: {
-    streamId: string;
-    recordingSessionId: string;
-    connectionId: string;
-    repositoryId: string;
-    repositoryName: string;
-    userId: string;
-    streamPath: string;
-    now: number;
-  }): Promise<OwnerClaimResult> {
-    const rawResult = await redis.eval(
-      CLAIM_OWNER_SCRIPT,
-      2,
-      streamOwnerKey(params.streamId),
-      streamOwnerGenerationKey(params.streamId),
-      params.now.toString(),
-      INITIAL_OWNER_LEASE_TTL_SECONDS.toString(),
-      OWNER_HEALTHY_HEARTBEAT_WINDOW_MS.toString(),
-      OWNER_STALE_HEARTBEAT_WINDOW_MS.toString(),
-      params.streamId,
-      params.recordingSessionId,
-      params.connectionId,
-      params.repositoryId,
-      params.repositoryName,
-      params.userId,
-      params.streamPath,
-    );
-
-    return JSON.parse(String(rawResult)) as OwnerClaimResult;
-  }
-
-  private async revokeActiveTicket(recordingSessionId: string): Promise<PublishTicketRecord | null> {
-    const currentTicketId = await redis.get(activeTicketKey(recordingSessionId));
-    if (!currentTicketId) {
-      return null;
-    }
-
-    const raw = await redis.get(streamTicketKey(currentTicketId));
-    if (!raw) {
-      await redis.del(activeTicketKey(recordingSessionId));
-      return null;
-    }
-
-    let existingTicket: PublishTicketRecord;
-    try {
-      existingTicket = JSON.parse(raw) as PublishTicketRecord;
-    } catch (_error) {
-      await redis
-        .multi()
-        .del(streamTicketKey(currentTicketId))
-        .del(activeTicketKey(recordingSessionId))
-        .exec();
-      return null;
-    }
-
-    const remainingTtlSeconds = this.calculateRemainingTtlSeconds(existingTicket.expiresAt);
-    const revokedTicket: PublishTicketRecord = {
-      ...existingTicket,
-      status: "revoked",
-    };
-
-    await redis
-      .multi()
-      .set(streamTicketKey(currentTicketId), JSON.stringify(revokedTicket), "EX", remainingTtlSeconds)
-      .del(activeTicketKey(recordingSessionId))
-      .exec();
-
-    return revokedTicket;
-  }
-
-  private async validateCurrentOwner(ticket: PublishTicketRecord): Promise<
-    | {
-        ok: true;
-        owner: StreamOwnerLease;
-        connection: StreamConnectionMetadata;
-      }
-    | {
-        ok: false;
-        reason: string;
-      }
-  > {
-    const now = Date.now();
-
-    const ownerRaw = await redis.get(streamOwnerKey(ticket.streamId));
-    if (!ownerRaw) {
-      return {
-        ok: false,
-        reason: "owner-lease-missing",
-      };
-    }
-
-    let owner: StreamOwnerLease;
-    try {
-      owner = JSON.parse(ownerRaw) as StreamOwnerLease;
-    } catch (_error) {
-      return {
-        ok: false,
-        reason: "malformed-owner-record",
-      };
-    }
-
-    if (owner.leaseExpiresAt <= now) {
-      return {
-        ok: false,
-        reason: "owner-lease-expired",
-      };
-    }
-
-    if (
-      owner.recordingSessionId !== ticket.recordingSessionId ||
-      owner.connectionId !== ticket.connectionId ||
-      owner.generation !== ticket.generation ||
-      owner.repositoryId !== ticket.repositoryId ||
-      owner.repositoryName !== ticket.repositoryName ||
-      owner.userId !== ticket.userId ||
-      owner.streamPath !== ticket.streamPath
-    ) {
-      return {
-        ok: false,
-        reason: "owner-ticket-mismatch",
-      };
-    }
-
-    const connectionRaw = await redis.get(streamConnectionKey(ticket.connectionId));
-    if (!connectionRaw) {
-      return {
-        ok: false,
-        reason: "connection-metadata-missing",
-      };
-    }
-
-    let connection: StreamConnectionMetadata;
-    try {
-      connection = JSON.parse(connectionRaw) as StreamConnectionMetadata;
-    } catch (_error) {
-      return {
-        ok: false,
-        reason: "malformed-connection-record",
-      };
-    }
-
-    if (connection.leaseExpiresAt <= now) {
-      return {
-        ok: false,
-        reason: "connection-lease-expired",
-      };
-    }
-
-    if (
-      connection.streamId !== ticket.streamId ||
-      connection.recordingSessionId !== ticket.recordingSessionId ||
-      connection.connectionId !== ticket.connectionId ||
-      connection.generation !== ticket.generation ||
-      connection.repositoryId !== ticket.repositoryId ||
-      connection.repositoryName !== ticket.repositoryName ||
-      connection.userId !== ticket.userId ||
-      connection.streamPath !== ticket.streamPath
-    ) {
-      return {
-        ok: false,
-        reason: "connection-ticket-mismatch",
-      };
-    }
-
-    return {
-      ok: true,
-      owner,
-      connection,
-    };
-  }
-
-  private parseRedisRecord<T>(raw: string | null): T | null {
-    if (!raw) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(raw) as T;
-    } catch (_error) {
-      return null;
-    }
+  private toPublishPathSuffix(streamPath: string) {
+    const normalized = streamPath.trim().replace(/^\/+|\/+$/g, "");
+    return normalized.startsWith("live/") ? normalized.slice("live/".length) : normalized;
   }
 
   private calculateRemainingTtlSeconds(expiresAt: number) {

@@ -6,8 +6,6 @@ import { requireAppJwt } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import {
   publishTicketParamsSchema,
-  streamConnectionHeartbeatBodySchema,
-  streamConnectionHeartbeatParamsSchema,
   streamRegisterSchema,
 } from "../schemas/stream.schema";
 import { streamService } from "../services/stream.service";
@@ -44,29 +42,6 @@ router.post(
       user.userId,
       user.role,
       recordingSessionId,
-    );
-    res.status(200).json(response);
-  }),
-);
-
-// POST /api/v1/streams/:recordingSessionId/connections/:connectionId/heartbeat
-router.post(
-  "/:recordingSessionId/connections/:connectionId/heartbeat",
-  requireAppJwt,
-  validate(streamConnectionHeartbeatParamsSchema, "params"),
-  validate(streamConnectionHeartbeatBodySchema),
-  asyncHandler(async (req, res) => {
-    const user = getAuthUser(req);
-    const { recordingSessionId, connectionId } = req.params as {
-      recordingSessionId: string;
-      connectionId: string;
-    };
-    const response = await streamService.refreshPublishConnectionLease(
-      user.userId,
-      user.role,
-      recordingSessionId,
-      connectionId,
-      req.body.generation,
     );
     res.status(200).json(response);
   }),
