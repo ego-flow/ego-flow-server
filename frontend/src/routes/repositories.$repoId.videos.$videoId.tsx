@@ -55,11 +55,6 @@ function RepositoryVideoDetailPage() {
 	const statusQuery = useQuery({
 		queryKey: ["video-status", repoId, videoId],
 		queryFn: () => requestVideoStatus(repoId, videoId),
-		refetchInterval: (query) =>
-			query.state.data?.status === VideoStatus.Processing ||
-			query.state.data?.status === VideoStatus.Pending
-				? 5000
-				: false,
 	});
 
 	const deleteMutation = useMutation({
@@ -103,7 +98,7 @@ function RepositoryVideoDetailPage() {
 
 	const video = detailQuery.data ?? null;
 	const currentStatus =
-		statusQuery.data?.status ?? detailQuery.data?.status ?? VideoStatus.Pending;
+		statusQuery.data?.status ?? detailQuery.data?.status ?? null;
 	const playbackUrl = video?.dashboardVideoUrl ?? null;
 
 	return (
@@ -161,14 +156,11 @@ function RepositoryVideoDetailPage() {
 			<section className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(18rem,1fr)]">
 				<article className="island-shell rounded-2xl p-5 shadow-sm">
 					<div className="mb-4 flex flex-wrap items-center gap-2">
-						<span
-							className={`rounded-full px-2.5 py-1 text-xs font-semibold ${videoStatusClassName(currentStatus)}`}
-						>
-							{currentStatus}
-						</span>
-						{statusQuery.data ? (
-							<span className="text-sm text-[var(--sea-ink-soft)]">
-								Progress {statusQuery.data.progress}%
+						{currentStatus ? (
+							<span
+								className={`rounded-full px-2.5 py-1 text-xs font-semibold ${videoStatusClassName(currentStatus)}`}
+							>
+								{currentStatus}
 							</span>
 						) : null}
 					</div>
@@ -274,7 +266,7 @@ function RepositoryVideoDetailPage() {
 							</div>
 							<div>
 								<dt className="font-semibold text-[var(--sea-ink)]">Status</dt>
-								<dd>{currentStatus}</dd>
+								<dd>{currentStatus ?? "Unavailable"}</dd>
 							</div>
 							<div>
 								<dt className="font-semibold text-[var(--sea-ink)]">
@@ -365,7 +357,7 @@ function RepositoryVideoDetailPage() {
 							{statusQuery.data?.errorMessage ? (
 								<div>
 									<h3 className="font-semibold text-[var(--sea-ink)]">
-										Processing error
+										Finalize error
 									</h3>
 									<p className="mt-1 text-red-700 dark:text-red-300">
 										{statusQuery.data.errorMessage}

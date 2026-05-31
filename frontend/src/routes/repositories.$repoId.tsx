@@ -337,10 +337,6 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
 											>
 												<option value={VideoStatusFilter.All}>All</option>
 												<option value={VideoStatus.Completed}>Completed</option>
-												<option value={VideoStatus.Processing}>
-													Processing
-												</option>
-												<option value={VideoStatus.Pending}>Pending</option>
 												<option value={VideoStatus.Failed}>Failed</option>
 											</select>
 										</label>

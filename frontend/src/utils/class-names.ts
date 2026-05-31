@@ -6,8 +6,6 @@ export const videoStatusClassName = (status: VideoStatus | string) => {
 	switch (status) {
 		case VideoStatus.Completed:
 			return "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300";
-		case VideoStatus.Processing:
-			return "bg-amber-500/14 text-amber-700 dark:text-amber-300";
 		case VideoStatus.Failed:
 			return "bg-red-500/12 text-red-700 dark:text-red-300";
 		default:

@@ -12,8 +12,6 @@ export enum VideoSortBy {
 export enum VideoStatus {
 	Completed = "COMPLETED",
 	Failed = "FAILED",
-	Pending = "PENDING",
-	Processing = "PROCESSING",
 }
 
 export enum VideoStatusFilter {

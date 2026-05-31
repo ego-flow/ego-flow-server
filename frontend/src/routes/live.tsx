@@ -8,7 +8,6 @@ import { requestLiveStreams } from "#/api/streams";
 import { Button } from "#/components/ui/button";
 import { UserRole } from "#/constants/auth/auth-constants";
 import { useAuth } from "#/hooks/useAuth";
-import { formatDateTime } from "#/lib/format";
 
 const HlsPlayer = lazy(() => import("#/components/HlsPlayer"));
 
@@ -64,7 +63,7 @@ function LivePage() {
 						Stream Monitor
 					</h1>
 					<p className="mt-2 text-sm text-[var(--sea-ink-soft)] sm:text-base">
-						Watch active HLS streams and inspect incoming sessions in real time.
+						Watch active Redis-backed live sessions in real time.
 					</p>
 				</div>
 				<div className="flex items-center gap-3">
@@ -139,12 +138,6 @@ function LivePage() {
 											</dt>
 											<dd>{stream.userId}</dd>
 										</div>
-										<div>
-											<dt className="font-semibold text-[var(--sea-ink)]">
-												Owner
-											</dt>
-											<dd>{stream.ownerId}</dd>
-										</div>
 										{isAdmin ? (
 											<div>
 												<dt className="font-semibold text-[var(--sea-ink)]">
@@ -155,9 +148,9 @@ function LivePage() {
 										) : null}
 										<div>
 											<dt className="font-semibold text-[var(--sea-ink)]">
-												Registered
+												Session
 											</dt>
-											<dd>{formatDateTime(stream.registeredAt)}</dd>
+											<dd className="truncate">{stream.streamId}</dd>
 										</div>
 									</dl>
 								</button>
@@ -188,7 +181,7 @@ function LivePage() {
 							</h2>
 							<p className="mt-1 text-sm text-[var(--sea-ink-soft)]">
 								{selectedStream
-									? `${selectedStream.ownerId} / ${selectedStream.repositoryName}`
+									? selectedStream.repositoryName
 									: "Select an active stream to begin playback."}
 							</p>
 						</div>
@@ -219,11 +212,9 @@ function LivePage() {
 								</div>
 								<div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
 									<dt className="font-semibold text-[var(--sea-ink)]">
-										Registered at
+										WHEP path
 									</dt>
-									<dd className="mt-1">
-										{formatDateTime(selectedStream.registeredAt)}
-									</dd>
+									<dd className="mt-1 break-all">{selectedStream.whepPath}</dd>
 								</div>
 							</dl>
 						</>
