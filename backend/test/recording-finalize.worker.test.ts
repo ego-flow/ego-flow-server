@@ -76,7 +76,6 @@ const fakePrisma: any = {
       id: "segment-1",
       recordingSessionId: "session-1",
       rawPath: "/data/raw/live/repo-name/segment-1.mp4",
-      durationSec: 2,
       status: segmentStatus,
     }),
     updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
@@ -227,7 +226,6 @@ test("recording finalize stores VLM SHA-256 and size metadata after encoding", a
   assert.ok(completedUpdate);
   assert.equal(completedUpdate?.data.vlmVideoPath, outputs.vlmVideoPath);
   assert.equal(completedUpdate?.data.sizeBytes, 1234n);
-  assert.equal(completedUpdate?.data.vlmSizeBytes, 1234n);
   assert.equal(completedUpdate?.data.vlmSha256, "a".repeat(64));
   assert.equal(completedUpdate?.data.recorder, "alice");
   assert.equal(completedUpdate?.data.status, VideoStatus.COMPLETED);

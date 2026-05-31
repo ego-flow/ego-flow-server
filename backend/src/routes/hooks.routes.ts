@@ -74,7 +74,7 @@ router.post(
 /**
  * [MediaMTX hook: segment-complete]
  * MediaMTX가 녹화 세그먼트 파일 쓰기를 완료했을 때 호출.
- * stored segment path -> recordingSessionId mapping을 우선 사용해 RecordingSegment를 WRITE_DONE 상태로 전환하고, duration을 기록한다.
+ * stream path의 recordingSessionId를 기준으로 RecordingSegment를 WRITE_DONE 상태로 전환한다.
  * RecordingSession 상태는 변경하지 않고, 이미 CLOSED인 session에 대해서만 Video 후처리 job enqueue를 시도한다.
  */
 // POST /api/v1/hooks/recording-segment-complete

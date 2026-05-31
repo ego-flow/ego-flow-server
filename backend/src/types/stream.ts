@@ -1,5 +1,4 @@
 export interface RecordingSessionLiveCache {
-  recordingSessionId: string;
   repositoryId: string;
   repositoryName: string;
   userId: string;
@@ -17,11 +16,9 @@ export interface RecordingFinalizeJobData {
 }
 
 export interface PublishTicketRecord {
-  ticketId: string;
   recordingSessionId: string;
   repositoryId: string;
   userId: string;
   streamPath: string;
-  issuedAt: number;
   status: "active" | "consumed";
 }

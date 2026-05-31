@@ -8,6 +8,10 @@ import { beforeEach, test } from "node:test";
 import type { PublishTicketRecord, RecordingSessionLiveCache } from "../src/types/stream";
 import { FakeRedis } from "./helpers/fake-redis";
 
+process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egoflow";
+process.env.JWT_SECRET ??= "replace-this-in-tests-only";
+process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
+
 const moduleLoader = require("node:module") as typeof import("node:module") & {
   _load: (request: string, parent: unknown, isMain: boolean) => unknown;
 };
@@ -79,14 +83,12 @@ const originalConsumePublishTicket = streamOwnershipService.consumePublishTicket
 const originalEnqueueRecordingFinalize = processingService.enqueueRecordingFinalize;
 const originalGetActiveStreamPaths = (recordingSessionService as any).getActiveStreamPaths;
 
-const now = Date.now();
+const ticketId = "ticket-1";
 const ticket: PublishTicketRecord = {
-  ticketId: "ticket-1",
   recordingSessionId: "session-1",
   repositoryId: "repo-1",
   userId: "user-1",
   streamPath: "live/repo-name/session-1",
-  issuedAt: now,
   status: "active",
 };
 
@@ -142,7 +144,7 @@ test("handleStreamReady ignores STREAMING sessions instead of reconnecting them"
   streamOwnershipService.validatePublishTicket = async () => ({
     ok: true,
     ticket,
-    ticketId: ticket.ticketId,
+    ticketId,
   });
   streamOwnershipService.consumePublishTicket = async () => {
     consumeCalled = true;
@@ -152,17 +154,17 @@ test("handleStreamReady ignores STREAMING sessions instead of reconnecting them"
         ...ticket,
         status: "consumed",
       },
+      ticketId,
     };
   };
 
   await recordingSessionService.handleStreamReady({
     path: "live/repo-name/session-1",
-    query: "ticket=ticket-1",
+    ticket: ticketId,
   });
 
   assert.equal(updateCalls.length, 0);
   assert.equal(consumeCalled, false);
-  assert.equal(fakeRedis.has("stream:source:new-source"), false);
   assert.equal(fakeRedis.has("stream:recording:session-1"), false);
   assert.deepEqual(await fakeRedis.smembers("stream:active:sessions"), []);
 });
@@ -192,22 +194,21 @@ test("handleStreamReady leaves DB and Redis untouched when ticket consume is rej
   streamOwnershipService.validatePublishTicket = async () => ({
     ok: true,
     ticket,
-    ticketId: ticket.ticketId,
+    ticketId,
   });
   streamOwnershipService.consumePublishTicket = async () => ({
     ok: false,
     reason: "ticket-status-consumed",
-    ticketId: ticket.ticketId,
+    ticketId,
   });
 
   await recordingSessionService.handleStreamReady({
     path: "live/repo-name/session-1",
-    query: "ticket=ticket-1",
+    ticket: ticketId,
   });
 
   assert.equal(updateCalls.length, 0);
   assert.equal(fakeRedis.has("stream:recording:session-1"), false);
-  assert.equal(fakeRedis.has("stream:source:new-source"), false);
 });
 
 test("handleStreamReady accepts an explicit ticket field when hook query is empty", async () => {
@@ -224,8 +225,8 @@ test("handleStreamReady accepts an explicit ticket field when hook query is empt
     createdAt: new Date("2026-04-09T00:00:00.000Z"),
   };
   const updateCalls: Array<unknown> = [];
-  const validationQueries: Array<string | undefined> = [];
-  const consumeQueries: Array<string | undefined> = [];
+  const validationTicketIds: Array<string | null | undefined> = [];
+  const consumeTicketIds: Array<string | null | undefined> = [];
 
   fakePrisma.recordingSession.findUnique = async () => session;
   fakePrisma.recordingSession.update = async (args: unknown) => {
@@ -234,38 +235,36 @@ test("handleStreamReady accepts an explicit ticket field when hook query is empt
   };
 
   recordingSessionService.getLiveCacheByRecordingSessionId = async () => null;
-  streamOwnershipService.validatePublishTicket = async (_path: string, query?: string) => {
-    validationQueries.push(query);
+  streamOwnershipService.validatePublishTicket = async (_path: string, hookTicketId?: string | null) => {
+    validationTicketIds.push(hookTicketId);
     return {
       ok: true,
       ticket,
-      ticketId: ticket.ticketId,
+      ticketId,
     };
   };
-  streamOwnershipService.consumePublishTicket = async (_path: string, query?: string) => {
-    consumeQueries.push(query);
+  streamOwnershipService.consumePublishTicket = async (_path: string, hookTicketId?: string | null) => {
+    consumeTicketIds.push(hookTicketId);
     return {
       ok: true,
       ticket: {
         ...ticket,
         status: "consumed",
       },
+      ticketId,
     };
   };
 
   await recordingSessionService.handleStreamReady({
     path: "live/repo-name/session-1",
-    query: "",
-    ticket: "ticket-1",
+    ticket: ticketId,
   });
 
-  assert.deepEqual(validationQueries, ["ticket=ticket-1"]);
-  assert.deepEqual(consumeQueries, ["ticket=ticket-1"]);
+  assert.deepEqual(validationTicketIds, [ticketId]);
+  assert.deepEqual(consumeTicketIds, [ticketId]);
   assert.equal(updateCalls.length, 1);
   assert.deepEqual(await fakeRedis.smembers("stream:active:sessions"), ["session-1"]);
-  assert.equal(fakeRedis.has("stream:source:new-source"), false);
   assert.deepEqual(fakeRedis.getJson<RecordingSessionLiveCache>("stream:recording:session-1"), {
-    recordingSessionId: "session-1",
     repositoryId: "repo-1",
     repositoryName: "repo-name",
     userId: "user-1",
@@ -307,7 +306,6 @@ test("handleStreamNotReady closes the streaming session and attempts finalize en
 
   await fakeRedis.sadd("stream:active:sessions", "session-1");
   fakeRedis.setJson("stream:recording:session-1", {
-    recordingSessionId: "session-1",
     repositoryId: "repo-1",
     repositoryName: "repo-name",
     userId: "user-1",
@@ -316,8 +314,6 @@ test("handleStreamNotReady closes the streaming session and attempts finalize en
 
   await recordingSessionService.handleStreamNotReady({
     path: "live/repo-name/session-1",
-    source_id: "source-1",
-    source_type: "rtmp",
   });
 
   assert.equal(updateCalls.length, 1);
@@ -367,8 +363,6 @@ test("recordCloseIntent stores NORMAL_DISCONNECT and stream-not-ready preserves 
   );
   await recordingSessionService.handleStreamNotReady({
     path: "live/repo-name/session-1",
-    source_id: "source-1",
-    source_type: "rtmp",
   });
 
   assert.equal(updateCalls.length, 2);
@@ -432,8 +426,6 @@ test("handleSegmentComplete marks the segment WRITE_DONE and attempts finalize e
   const segmentUpdateCalls: Array<Record<string, unknown>> = [];
   const finalizeCalls: Array<string> = [];
 
-  await fakeRedis.set("segment:/data/raw/live/repo-name/session-1/segment-0001.mp4", "session-1");
-
   fakePrisma.recordingSession.findUnique = async () => closedSession;
   fakePrisma.recordingSegment.findUnique = async () => ({
     ...segment,
@@ -453,9 +445,7 @@ test("handleSegmentComplete marks the segment WRITE_DONE and attempts finalize e
 
   await recordingSessionService.handleSegmentComplete({
     path: "live/repo-name/session-1",
-    source_id: undefined,
     segment_path: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
-    segment_duration: 12.3,
   });
 
   assert.equal(segmentUpdateCalls.length, 1);
@@ -496,7 +486,7 @@ test("tryEnqueueFinalize waits for stream-not-ready to close the session", async
   assert.equal(enqueuePayloads[0]?.recordingSessionId, "session-1");
 });
 
-test("handleSegmentCreate stores segment recording session mapping from stream path", async () => {
+test("handleSegmentCreate stores the single segment from stream path", async () => {
   const upsertCalls: Array<Record<string, unknown>> = [];
 
   fakePrisma.recordingSession.findUnique = async () => ({
@@ -517,19 +507,13 @@ test("handleSegmentCreate stores segment recording session mapping from stream p
 
   await recordingSessionService.handleSegmentCreate({
     path: "live/repo-name/session-1",
-    source_id: "source-1",
     segment_path: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
   });
 
   assert.equal(upsertCalls.length, 1);
-  assert.equal(await fakeRedis.get("segment:/data/raw/live/repo-name/session-1/segment-0001.mp4"), "session-1");
-  assert.equal(
-    fakeRedis.getTtlSeconds("segment:/data/raw/live/repo-name/session-1/segment-0001.mp4"),
-    2 * 60 * 60,
-  );
 });
 
-test("handleSegmentCreate works when source_id is omitted", async () => {
+test("handleSegmentCreate stores the segment without source metadata", async () => {
   const upsertCalls: Array<Record<string, unknown>> = [];
 
   fakePrisma.recordingSession.findUnique = async () => ({
@@ -550,12 +534,10 @@ test("handleSegmentCreate works when source_id is omitted", async () => {
 
   await recordingSessionService.handleSegmentCreate({
     path: "live/repo-name/session-1",
-    source_id: undefined,
     segment_path: "/data/raw/live/repo-name/session-1/segment-0002.mp4",
   });
 
   assert.equal(upsertCalls.length, 1);
-  assert.equal(await fakeRedis.get("segment:/data/raw/live/repo-name/session-1/segment-0002.mp4"), "session-1");
 });
 
 test("handleSegmentCreate ignores an additional segment for the same recording session", async () => {
@@ -579,12 +561,10 @@ test("handleSegmentCreate ignores an additional segment for the same recording s
 
   await recordingSessionService.handleSegmentCreate({
     path: "live/repo-name/session-1",
-    source_id: "source-1",
     segment_path: "/data/raw/live/repo-name/session-1/segment-0002.mp4",
   });
 
   assert.equal(upsertCalls.length, 1);
-  assert.equal(await fakeRedis.get("segment:/data/raw/live/repo-name/session-1/segment-0002.mp4"), null);
 });
 
 test("reconcile keeps a recent pending registration until timeout", async () => {
@@ -681,7 +661,6 @@ test("reconcile completes an expired pending registration only when the row was 
 
   (recordingSessionService as any).getActiveStreamPaths = async () => null;
   fakeRedis.setJson("stream:recording:session-1", {
-    recordingSessionId: "session-1",
     repositoryId: "repo-1",
     repositoryName: "repo-name",
     userId: "user-1",
@@ -763,7 +742,6 @@ test("reconcile closes a broken streaming session when active path is missing", 
 
   await fakeRedis.sadd("stream:active:sessions", "session-1");
   fakeRedis.setJson("stream:recording:session-1", {
-    recordingSessionId: "session-1",
     repositoryId: "repo-1",
     repositoryName: "repo-name",
     userId: "user-1",
@@ -945,7 +923,12 @@ test("handleSegmentComplete ignores late completion for a terminal segment", asy
   const updateCalls: Array<Record<string, unknown>> = [];
   let finalizeCalled = false;
 
-  await fakeRedis.set("segment:/data/raw/live/repo-name/session-1/segment-0001.mp4", "session-1");
+  fakePrisma.recordingSession.findUnique = async () => ({
+    id: "session-1",
+    repositoryId: "repo-1",
+    streamPath: "live/repo-name/session-1",
+    status: RecordingSessionStatus.CLOSED,
+  });
   fakePrisma.recordingSegment.findUnique = async () => ({
     id: "segment-1",
     recordingSessionId: "session-1",
@@ -963,9 +946,7 @@ test("handleSegmentComplete ignores late completion for a terminal segment", asy
 
   await recordingSessionService.handleSegmentComplete({
     path: "live/repo-name/session-1",
-    source_id: undefined,
     segment_path: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
-    segment_duration: 1,
   });
 
   assert.equal(updateCalls.length, 0);

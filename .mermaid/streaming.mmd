@@ -1,36 +1,125 @@
 sequenceDiagram
   autonumber
   participant App as [App]
-  participant Server as [Server]
+  participant Server as [Backend API]
+  participant MTX as [MediaMTX]
+  participant Worker as [Finalize Worker]
 
-  App->>App: Start Streaming
+  App->>Server: POST /api/v1/streams/register
+  Note over App,Server: Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>repositoryId: {repository_uuid}<br/>deviceType: {optional_device_type}
 
-  App->>Server: register 요청
-  Note over App,Server: API<br/>POST /api/v1/streams/register<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>repositoryId: {repository_uuid}<br/>deviceType: {optional_device_type}
-
-  alt register 성공
+  alt register success
     Server-->>App: 200 OK
-    Note over App,Server: Response Body<br/>recordingSessionId: {recordingSessionId}
-    App->>App: recordingSessionId 저장
-  else register 실패
+    Note over App,Server: Response<br/>recordingSessionId: {recordingSessionId}
+  else register error
     Server-->>App: error
-    Note over App,Server: Error Response<br/>error.code: {ERROR_CODE}<br/>error.message: {human_readable_message}<br/>error.details: {optional_details}<br/><br/>Possible Errors<br/>400 VALIDATION_ERROR: repositoryId/deviceType validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: repository maintain 권한 없음<br/>404 NOT_FOUND: repository 없음<br/>409 CONFLICT: register 처리 중 충돌 상태
+    Note over App,Server: Possible errors<br/>400 VALIDATION_ERROR: repositoryId/deviceType validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: repository maintain 권한 없음<br/>404 NOT_FOUND: repository 없음<br/>409 CONFLICT: register 처리 중 충돌 상태
   end
 
-  App->>Server: publish-ticket 요청
-  Note over App,Server: API<br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/><br/>Body<br/>none
+  App->>Server: POST /api/v1/streams/{recordingSessionId}/publish-ticket
+  Note over App,Server: Headers<br/>Authorization: Bearer {appAccessToken}<br/><br/>Body<br/>none
 
-  alt publish-ticket 성공
+  alt publish-ticket success
     Server-->>App: 200 OK
-    Note over App,Server: Response Body<br/>stream_path: live/{repositoryName}/{recordingSessionId}<br/>publish_ticket: t_{uuid}
-    App->>App: publish_ticket, stream_path 저장
-    App->>App: RTMP/WHIP publish endpoint 조립
-    Note over App: RTMP URL<br/>rtmp://{host}:1935/{stream_path}?ticket={publish_ticket}<br/><br/>WHIP URL<br/>{backendOrigin}/{stream_path}/whip?ticket={publish_ticket}
-  else publish-ticket 실패
+    Note over App,Server: Response<br/>stream_path: live/{repositoryName}/{recordingSessionId}<br/>publish_ticket: t_{uuid}
+  else publish-ticket error
     Server-->>App: error
-    Note over App,Server: Error Response<br/>error.code: {ERROR_CODE}<br/>error.message: {human_readable_message}<br/>error.details: {optional_details}<br/><br/>Possible Errors<br/>400 VALIDATION_ERROR: recordingSessionId path validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: 요청 user가 recording session 생성자가 아님<br/>404 NOT_FOUND: recording session 없음<br/>409 CONFLICT: recording session이 PENDING 상태가 아니므로 publish-ticket 발급 불가
+    Note over App,Server: Possible errors<br/>400 VALIDATION_ERROR: recordingSessionId path validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: 요청 user가 recording session 생성자가 아님<br/>404 NOT_FOUND: recording session 없음<br/>409 CONFLICT: recording session이 PENDING 상태가 아니므로 publish-ticket 발급 불가
   end
 
-  Note over App,Server: 중간 이탈 또는 의도치 않은 streaming 중단 후 재시작<br/>App은 기존 recordingSessionId나 publish_ticket을 직접 재사용하지 않고 항상 register부터 다시 호출한다.<br/>/register + /publish-ticket 이후 RTMP publish 전에 이탈했다면 session은 아직 PENDING이므로 register가 같은 recordingSessionId를 재사용할 수 있다.<br/>이 경우 이전 publish_ticket은 버리고 새 publish-ticket을 발급받아 사용한다.<br/>RTMP publish 이후 stream-ready까지 처리된 session은 STREAMING이므로 register가 재사용하지 않고 새 PENDING session을 만든다.<br/>기존 STREAMING session은 stream-not-ready/reconcile에서 CLOSED로 닫히고, recording-segment-complete 이후 Segment 후처리가 별도로 진행된다.
+  App->>App: RTMP publish URL 구성
+  Note over App: URL rule<br/>host = backendBaseUrl hostname<br/>rtmp://{host}:1935/{stream_path}?ticket={publish_ticket}
 
-  Note over App: App-side policy<br/>App은 단일 streaming session의 최장 길이를 30분으로 제한한다.<br/>이 제한은 backend가 강제하지 않는 app contract다.<br/>30분에 도달하면 app이 RTMP publisher socket을 닫고 기존 recording session을 종료한다.<br/>추가 녹화가 필요하면 register부터 새 streaming session을 시작한다.
+  App->>MTX: RTMP connect + publish
+  Note over App,MTX: App sends encoded media to MediaMTX.<br/>Backend does not receive per-frame video/audio data.
+
+  MTX->>Server: POST /api/v1/auth/rtmp
+  Note over MTX,Server: Internal publish auth callback<br/>action=publish<br/>path={stream_path}<br/>query=ticket={publish_ticket}
+
+  alt publish auth accepted
+    Server-->>MTX: 200 OK
+    MTX-->>App: RTMP publish accepted
+  else publish auth rejected
+    Server-->>MTX: 401 Unauthorized
+    MTX-->>App: RTMP publish rejected
+    Note over App,Server: Possible errors observed by App<br/>RTMP AUTH/NETWORK 계열 start failure<br/>App은 register부터 새 session을 시작해야 함
+  end
+
+  MTX->>Server: POST /api/v1/hooks/stream-ready
+  Note over MTX,Server: Internal hook<br/>path={stream_path}<br/>ticket={publish_ticket}
+  Server->>Server: RecordingSession PENDING -> STREAMING
+  Note over Server: live cache 생성<br/>stream:recording:{recordingSessionId}<br/>status=STREAMING<br/>TTL=7200s
+
+  MTX->>Server: POST /api/v1/hooks/recording-segment-create
+  Note over MTX,Server: Internal hook<br/>path={stream_path}<br/>segment_path={raw_segment_path}
+  Server->>Server: RecordingSegment WRITING 생성
+
+  loop while RTMP socket is open
+    App->>MTX: RTMP media chunks
+    MTX->>MTX: fMP4 raw segment write
+  end
+
+  alt user normal stop
+    App->>Server: POST /api/v1/recordings/{recordingSessionId}/close-intent
+    Note over App,Server: Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>reason: NORMAL_DISCONNECT
+
+    alt close-intent success
+      Server-->>App: 200 OK
+      Note over App,Server: Response<br/>ok: true
+      App->>MTX: RTMP socket close
+    else close-intent error
+      Server-->>App: error
+      Note over App,Server: Possible errors<br/>400 VALIDATION_ERROR: body.reason/path validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: 요청 user가 recording session 생성자가 아님<br/>404 NOT_FOUND: recording session 없음<br/>409 CONFLICT: recording session이 STREAMING 상태가 아님
+      App->>MTX: RTMP socket close or session restart
+    end
+  else app crash or network failure
+    App--xMTX: RTMP socket lost
+    Note over App,MTX: close-intent가 도착하지 않으면 server는 종료 사유를 UNEXPECTED_DISCONNECT로 기록한다.
+  end
+
+  par MediaMTX close hooks
+    MTX->>Server: POST /api/v1/hooks/stream-not-ready
+    Server->>Server: RecordingSession STREAMING -> CLOSED
+    Note over Server: close-intent가 있으면 NORMAL_DISCONNECT 보존<br/>없으면 UNEXPECTED_DISCONNECT 기록<br/>live cache와 active set 정리
+  and raw segment complete hook
+    MTX->>Server: POST /api/v1/hooks/recording-segment-complete
+    Server->>Server: RecordingSegment WRITING -> WRITE_DONE
+    Note over Server: hook 순서는 보장되지 않는다.<br/>session=CLOSED + segment=WRITE_DONE 조건이 맞을 때 finalize enqueue
+  end
+
+  Server->>Worker: recording-finalize job
+  Worker->>Worker: raw file 안정화 + metadata 추출 + encoding
+  Worker->>Server: Video row 생성
+  Note over Worker,Server: success<br/>Video.status=COMPLETED<br/>RecordingSegment.status=COMPLETED<br/><br/>failure after retries<br/>Video.status=FAILED<br/>RecordingSegment.status=FAILED
+
+%% 참고:
+%% 이 문서는 App과 server-side streaming system 사이의 계약을 한 장으로 요약한다.
+%% MediaMTX와 Finalize Worker는 server-side component이며, App이 직접 호출하는 HTTP API는 아니다.
+%% 공통 error body shape:
+%% { "error": { "code": "{ERROR_CODE}", "message": "{human_readable_message}", "details": {optional_details} } }
+%% HTTP status code는 AppError.statusCode 또는 validation/auth middleware에서 결정된다.
+%% App 계약:
+%% App이 직접 호출하는 streaming HTTP API는 register, publish-ticket, close-intent다.
+%% MediaMTX auth callback, MediaMTX hooks, finalize worker는 server-side 내부 흐름이며 App이 직접 호출하지 않는다.
+%% App은 publish-ticket 응답의 stream_path와 publish_ticket만 사용해 RTMP publish URL을 만든다.
+%% RTMP URL은 backendBaseUrl hostname, port 1935, returned stream_path, returned publish_ticket으로 구성한다.
+%% App은 열린 RTMP publisher socket으로 encoded video/audio payload를 MediaMTX에 전송한다.
+%% Backend는 per-frame video/audio data를 받지 않고 MediaMTX hook 이벤트와 worker job만 처리한다.
+%% App은 legacy POST /api/v1/recordings/{recordingSessionId}/stop API를 호출하지 않는다.
+%% App의 stop 버튼은 RTMP publisher connection을 바로 닫기 전에
+%% POST /api/v1/recordings/{recordingSessionId}/close-intent 를 호출해야 한다.
+%% close-intent body는 { "reason": "NORMAL_DISCONNECT" } 만 보낸다.
+%% close-intent 200 OK 이후 RTMP publisher connection을 정상 close한다.
+%% close-intent는 RecordingSession.status를 바꾸지 않는 STREAMING self-loop이다.
+%% close-intent가 먼저 도착한 경우 stream-not-ready는 NORMAL_DISCONNECT를 보존한다.
+%% close-intent 호출 실패 또는 app crash/network failure로 close-intent가 누락되면
+%% Backend는 stream-not-ready/reconcile 시 UNEXPECTED_DISCONNECT로 기록한다.
+%% MediaMTX stream-not-ready hook payload만으로 정상 close와 crash/reset/timeout을 정확히 구분하지 않는다.
+%% App은 streaming 재시작 시 기존 recordingSessionId나 publish_ticket을 직접 재사용하지 않고 register부터 다시 호출한다.
+%% register 이후 RTMP publish 전에 이탈했다면 같은 PENDING session이 재사용될 수 있다.
+%% PENDING session이 재사용되더라도 이전 publish_ticket은 버리고 새 publish-ticket을 발급받아 사용한다.
+%% RTMP publish 이후 STREAMING이 된 session은 재사용하지 않으며, 새 register는 새 PENDING session을 만든다.
+%% App은 단일 streaming session의 최장 길이를 30분으로 제한한다. 이 제한은 backend가 강제하지 않는 app contract다.
+%% 현재 구조에서는 App이 단일 recording session을 짧게 유지하는 전제이므로 정상 흐름의 segment rollover는 App 계약에서 다루지 않는다.
+%% 상세 RTMP publish 인증 및 stream-ready 흐름은 .mermaid/3.rtmp-publish.mmd를 참고한다.
+%% 상세 RTMP media 전송, hook race, finalize retry 흐름은 .mermaid/4.rtmp-stream.mmd를 참고한다.

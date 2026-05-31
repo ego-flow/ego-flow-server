@@ -140,7 +140,6 @@ model RecordingSegment {
   id                 String                 @id @default(uuid()) @db.Uuid
   recordingSessionId String                 @unique @map("recording_session_id") @db.Uuid
   rawPath            String                 @map("raw_path") @db.VarChar(1024)
-  durationSec        Float?                 @map("duration_sec")
   status             RecordingSegmentStatus
   createdAt          DateTime               @default(now()) @map("created_at")
   completedAt        DateTime?              @map("completed_at")
@@ -158,7 +157,6 @@ model Video {
   rawRecordingPath      String      @map("raw_recording_path") @db.VarChar(1024)
   streamPath            String?     @map("stream_path") @db.VarChar(255)
   deviceType            String?     @map("device_type") @db.VarChar(100)
-  streamedAt            DateTime    @default(now()) @map("streamed_at")
   durationSec           Float?      @map("duration_sec")
   resolutionWidth       Int?        @map("resolution_width")
   resolutionHeight      Int?        @map("resolution_height")
@@ -169,7 +167,6 @@ model Video {
   dashboardVideoPath    String?     @map("dashboard_video_path") @db.VarChar(1024)
   thumbnailPath         String?     @map("thumbnail_path") @db.VarChar(1024)
   sizeBytes             BigInt?
-  vlmSizeBytes          BigInt?     @map("vlm_size_bytes")
   vlmSha256             String?     @map("vlm_sha256") @db.VarChar(64)
   recorder              String?     @db.VarChar(64)
   clipSegments          Json?       @map("clip_segments")

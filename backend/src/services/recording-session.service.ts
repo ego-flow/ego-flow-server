@@ -8,7 +8,6 @@ import {
   RECORDING_REGISTRATION_TTL_SECONDS,
   RECORDING_WRITING_SEGMENT_CLOSE_GRACE_MS,
   RECORDING_WRITING_SEGMENT_FILE_STABLE_GRACE_MS,
-  SEGMENT_MAPPING_TTL_SECONDS,
   STREAM_ACTIVE_SET_KEY,
 } from "../constants/stream/stream-constants";
 import { BadRequest, Conflict, Forbidden, NotFound } from "../lib/errors";
@@ -17,7 +16,7 @@ import { redis } from "../lib/redis";
 import { runtimeConfig as env } from "../config/runtime";
 import { processingService } from "./processing.service";
 import { streamOwnershipService } from "./stream-ownership.service";
-import { streamRecordingKey, streamSegmentKey } from "../utils/stream-keys";
+import { streamRecordingKey } from "../utils/stream-keys";
 import type {
   RecordingSessionLiveCache,
   RecordingFinalizeJobData,
@@ -98,7 +97,6 @@ export class RecordingSessionService {
     ttlSeconds: number,
   ) {
     const liveCache: RecordingSessionLiveCache = {
-      recordingSessionId: session.id,
       repositoryId: session.repositoryId,
       repositoryName: this.extractRepositoryName(session.streamPath),
       userId: session.userId,
@@ -127,17 +125,15 @@ export class RecordingSessionService {
   /**
    * [stream-ready hook 처리 - PENDING → STREAMING]
    * MediaMTX가 실제 RTMP 송출 시작을 감지하면 호출.
-   * 1. query 또는 ticket field의 publish ticket을 검증한다.
+   * 1. hook wrapper가 추출한 publish ticket을 검증한다.
    * 2. ticket가 가리키는 PENDING 세션만 DB에서 조회한다.
    * 3. ticket를 consumed로 전환한다. 남은 TTL은 그대로 유지한다.
    * 4. DB 상태를 갱신하고 Redis live cache 및 active set을 갱신한다.
    */
   async handleStreamReady(input: StreamReadyHookInput) {
-    const publishTicketQuery = this.resolvePublishTicketQuery(input.query, input.ticket);
-    const credentialSource = this.classifyTicketCredentialSource(input);
     const ticketValidation = await streamOwnershipService.validatePublishTicket(
       input.path,
-      publishTicketQuery,
+      input.ticket,
       { refreshTtl: false },
     );
     if (!ticketValidation.ok) {
@@ -145,7 +141,6 @@ export class RecordingSessionService {
         path: input.path,
         reason: ticketValidation.reason,
         ticketId: ticketValidation.ticketId,
-        credentialSource,
       });
       return;
     }
@@ -176,12 +171,12 @@ export class RecordingSessionService {
         ticketUserId: ticketValidation.ticket.userId,
         sessionStreamPath: session.streamPath,
         ticketStreamPath: ticketValidation.ticket.streamPath,
-        ticketId: ticketValidation.ticket.ticketId,
+        ticketId: ticketValidation.ticketId,
       });
       return;
     }
 
-    const consumedTicket = await streamOwnershipService.consumePublishTicket(input.path, publishTicketQuery);
+    const consumedTicket = await streamOwnershipService.consumePublishTicket(input.path, input.ticket);
     if (!consumedTicket.ok) {
       console.warn("[rtmp-ticket] consume-rejected", {
         recordingSessionId,
@@ -204,7 +199,6 @@ export class RecordingSessionService {
     });
 
     const liveCache: RecordingSessionLiveCache = {
-      recordingSessionId,
       repositoryId: session.repositoryId,
       repositoryName: repoName,
       userId: session.userId,
@@ -229,8 +223,7 @@ export class RecordingSessionService {
       repositoryId: consumedTicket.ticket.repositoryId,
       repositoryName: repoName,
       userId: consumedTicket.ticket.userId,
-      ticketId: consumedTicket.ticket.ticketId,
-      credentialSource,
+      ticketId: consumedTicket.ticketId,
     });
 
     console.info("[rtmp-state] pending-to-streaming", {
@@ -255,8 +248,6 @@ export class RecordingSessionService {
     if (!recordingSessionId) {
       console.warn("[rtmp-state] stream-not-ready-path-invalid", {
         path: input.path,
-        sourceId: input.source_id,
-        sourceType: input.source_type,
       });
       return;
     }
@@ -268,8 +259,6 @@ export class RecordingSessionService {
       console.warn("[rtmp-state] stream-not-ready-session-missing", {
         recordingSessionId,
         path: input.path,
-        sourceId: input.source_id,
-        sourceType: input.source_type,
       });
       return;
     }
@@ -279,8 +268,6 @@ export class RecordingSessionService {
         recordingSessionId,
         repositoryId: session.repositoryId,
         repositoryName: this.extractRepositoryName(session.streamPath),
-        sourceId: input.source_id,
-        sourceType: input.source_type,
         status: session.status,
       });
       return;
@@ -305,7 +292,6 @@ export class RecordingSessionService {
       repositoryId: session.repositoryId,
       repositoryName: repoName,
       endReason,
-      hookSourceId: input.source_id,
     });
 
     await this.tryEnqueueFinalize(recordingSessionId);
@@ -356,8 +342,7 @@ export class RecordingSessionService {
   /**
    * [segment-create hook 처리]
    * MediaMTX가 새 녹화 세그먼트 파일 쓰기를 시작할 때 호출.
-   * stream path의 recordingSessionId로 세션을 찾고, session 단일 RecordingSegment를 생성한 뒤
-   * `segment:{segmentPath}` 매핑을 저장한다.
+   * stream path의 recordingSessionId로 세션을 찾고, session 단일 RecordingSegment를 생성한다.
    * RecordingSegment를 WRITING 상태로 upsert한다.
    */
   async handleSegmentCreate(input: SegmentCreateHookInput) {
@@ -365,7 +350,6 @@ export class RecordingSessionService {
     if (!session) {
       console.warn("[rtmp-segment] session-missing", {
         path: input.path,
-        sourceId: input.source_id ?? null,
         segmentPath: input.segment_path,
       });
       return;
@@ -387,24 +371,15 @@ export class RecordingSessionService {
       console.warn("[rtmp-segment] additional-segment-ignored", {
         recordingSessionId,
         path: input.path,
-        sourceId: input.source_id ?? null,
         existingSegmentPath: segment.rawPath,
         ignoredSegmentPath: input.segment_path,
       });
       return;
     }
 
-    await redis.set(
-      streamSegmentKey(input.segment_path),
-      recordingSessionId,
-      "EX",
-      SEGMENT_MAPPING_TTL_SECONDS,
-    );
-
     console.info("[rtmp-segment] writing-created", {
       recordingSessionId,
       path: input.path,
-      sourceId: input.source_id ?? null,
       segmentPath: input.segment_path,
     });
   }
@@ -412,25 +387,19 @@ export class RecordingSessionService {
   /**
    * [segment-complete hook 처리]
    * MediaMTX가 세그먼트 파일 쓰기를 완료하면 호출.
-   * `segment:{segmentPath}`의 recordingSessionId mapping을 우선 사용하여 segment를 WRITE_DONE으로 전환한다.
-   * mapping miss는 no-op + 경고 로그로 처리한다.
+   * stream path의 recordingSessionId로 session을 복구하여 segment를 WRITE_DONE으로 전환한다.
+   * path/session miss는 no-op + 경고 로그로 처리한다.
    */
   async handleSegmentComplete(input: SegmentCompleteHookInput) {
-    let recordingSessionId = await this.getSegmentRecordingSessionId(input.segment_path);
-    if (!recordingSessionId) {
-      const session = await this.resolveSegmentSession(input.path, [
-        RecordingSessionStatus.STREAMING,
-        RecordingSessionStatus.CLOSED,
-      ]);
-      if (session) {
-        recordingSessionId = session.id;
-      }
-    }
+    const session = await this.resolveSegmentSession(input.path, [
+      RecordingSessionStatus.STREAMING,
+      RecordingSessionStatus.CLOSED,
+    ]);
+    const recordingSessionId = session?.id ?? null;
 
     if (!recordingSessionId) {
-      console.warn("[rtmp-segment] mapping-missing", {
+      console.warn("[rtmp-segment] session-missing-on-complete", {
         path: input.path,
-        sourceId: input.source_id ?? null,
         segmentPath: input.segment_path,
       });
       return;
@@ -445,7 +414,6 @@ export class RecordingSessionService {
         data: {
           recordingSessionId,
           rawPath: input.segment_path,
-          durationSec: input.segment_duration ?? null,
           status: RecordingSegmentStatus.WRITE_DONE,
           completedAt: new Date(),
         },
@@ -454,9 +422,7 @@ export class RecordingSessionService {
       console.info("[rtmp-segment] write-done-created", {
         recordingSessionId,
         path: input.path,
-        sourceId: input.source_id ?? null,
         segmentPath: input.segment_path,
-        durationSec: input.segment_duration ?? null,
       });
 
       await this.tryEnqueueFinalize(recordingSessionId);
@@ -467,7 +433,6 @@ export class RecordingSessionService {
       console.warn("[rtmp-segment] complete-path-mismatch", {
         recordingSessionId,
         path: input.path,
-        sourceId: input.source_id ?? null,
         existingSegmentPath: segment.rawPath,
         ignoredSegmentPath: input.segment_path,
       });
@@ -478,7 +443,6 @@ export class RecordingSessionService {
       console.info("[rtmp-segment] complete-ignored", {
         recordingSessionId,
         path: input.path,
-        sourceId: input.source_id ?? null,
         segmentPath: input.segment_path,
         segmentStatus: segment.status,
       });
@@ -489,7 +453,6 @@ export class RecordingSessionService {
       where: { id: segment.id },
       data: {
         status: RecordingSegmentStatus.WRITE_DONE,
-        durationSec: input.segment_duration ?? null,
         completedAt: new Date(),
       },
     });
@@ -497,51 +460,10 @@ export class RecordingSessionService {
     console.info("[rtmp-segment] write-done", {
       recordingSessionId: segment.recordingSessionId,
       path: input.path,
-      sourceId: input.source_id ?? null,
       segmentPath: input.segment_path,
-      durationSec: input.segment_duration ?? null,
     });
 
     await this.tryEnqueueFinalize(segment.recordingSessionId);
-  }
-
-  async getSessionStatus(recordingSessionId: string) {
-    const session = await prisma.recordingSession.findUnique({
-      where: { id: recordingSessionId },
-      include: {
-        segment: { select: { id: true, status: true } },
-        video: { select: { id: true } },
-      },
-    });
-
-    if (!session) {
-      throw NotFound("Recording session not found.");
-    }
-
-    return {
-      id: session.id,
-      status: session.status,
-      end_reason: session.endReason,
-      segment_id: session.segment?.id ?? null,
-      segment_status: session.segment?.status ?? null,
-      video_id: session.video?.id ?? null,
-      created_at: session.createdAt.toISOString(),
-      ready_at: session.readyAt?.toISOString() ?? null,
-      closed_at: session.closedAt?.toISOString() ?? null,
-    };
-  }
-
-  async getSessionRepositoryId(recordingSessionId: string) {
-    const session = await prisma.recordingSession.findUnique({
-      where: { id: recordingSessionId },
-      select: { repositoryId: true },
-    });
-
-    if (!session) {
-      throw NotFound("Recording session not found.");
-    }
-
-    return session.repositoryId;
   }
 
   /**
@@ -775,11 +697,6 @@ export class RecordingSessionService {
         activeSetKey: STREAM_ACTIVE_SET_KEY,
       });
     }
-  }
-
-  async getSegmentRecordingSessionId(segmentPath: string): Promise<string | null> {
-    const recordingSessionId = await redis.get(streamSegmentKey(segmentPath));
-    return recordingSessionId?.trim() ? recordingSessionId : null;
   }
 
   private async resolveSegmentSession(
@@ -1131,32 +1048,6 @@ export class RecordingSessionService {
     }
   }
 
-  private resolvePublishTicketQuery(query?: string, ticket?: string) {
-    if (query?.trim()) {
-      return query;
-    }
-
-    if (!ticket?.trim()) {
-      return undefined;
-    }
-
-    return new URLSearchParams({ ticket: ticket.trim() }).toString();
-  }
-
-  private classifyTicketCredentialSource(
-    input: StreamReadyHookInput,
-  ): "hook.query" | "hook.ticket" | "missing" {
-    if (input.query?.trim()) {
-      const params = new URLSearchParams(input.query);
-      if (params.get("ticket")?.trim()) {
-        return "hook.query";
-      }
-    }
-    if (input.ticket?.trim()) {
-      return "hook.ticket";
-    }
-    return "missing";
-  }
 }
 
 export const recordingSessionService = new RecordingSessionService();

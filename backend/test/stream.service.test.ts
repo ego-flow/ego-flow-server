@@ -5,6 +5,10 @@ import { after, beforeEach, test } from "node:test";
 import { FakeRedis } from "./helpers/fake-redis";
 import type { RecordingSessionLiveCache } from "../src/types/stream";
 
+process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egoflow";
+process.env.JWT_SECRET ??= "replace-this-in-tests-only";
+process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
+
 const moduleLoader = require("node:module") as typeof import("node:module") & {
   _load: (request: string, parent: unknown, isMain: boolean) => unknown;
 };
@@ -112,7 +116,6 @@ test("registerSession creates a unique MediaMTX path and caches pending metadata
 
   const cache = fakeRedis.getJson<RecordingSessionLiveCache>(`stream:recording:${response.recordingSessionId}`);
   assert.deepEqual(cache, {
-    recordingSessionId: response.recordingSessionId,
     repositoryId: repository.id,
     repositoryName: repository.name,
     userId: "maintainer-1",
@@ -163,7 +166,6 @@ test("registerSession reuses a non-expired pending session for the same user rep
   assert.ok(updateCalls[0]!.data.updatedAt instanceof Date);
   assert.equal(response.recordingSessionId, existingSession.id);
   assert.deepEqual(fakeRedis.getJson<RecordingSessionLiveCache>(`stream:recording:${existingSession.id}`), {
-    recordingSessionId: existingSession.id,
     repositoryId: repository.id,
     repositoryName: repository.name,
     userId: "maintainer-1",
@@ -244,7 +246,6 @@ test("registerSession completes pending sessions when maintain access is forbidd
     return { count: 1 };
   };
   fakeRedis.setJson(`stream:recording:${existingSession.id}`, {
-    recordingSessionId: existingSession.id,
     repositoryId: repository.id,
     repositoryName: repository.name,
     userId: "maintainer-1",
@@ -361,7 +362,6 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
 
   await fakeRedis.sadd("stream:active:sessions", "session-1", "session-pending", "session-hidden");
   fakeRedis.setJson("stream:recording:session-1", {
-    recordingSessionId: "session-1",
     repositoryId: repository.id,
     repositoryName: repository.name,
     userId: "maintainer-1",
@@ -369,7 +369,6 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
     status: "STREAMING",
   } satisfies RecordingSessionLiveCache);
   fakeRedis.setJson("stream:recording:session-pending", {
-    recordingSessionId: "session-pending",
     repositoryId: repository.id,
     repositoryName: repository.name,
     userId: "maintainer-1",
@@ -377,7 +376,6 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
     status: "PENDING",
   } satisfies RecordingSessionLiveCache);
   fakeRedis.setJson("stream:recording:session-hidden", {
-    recordingSessionId: "session-hidden",
     repositoryId: "99999999-9999-4999-8999-999999999999",
     repositoryName: "hidden",
     userId: "other-user",

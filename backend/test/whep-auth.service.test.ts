@@ -57,13 +57,9 @@ test("authorize accepts native WHEP paths and session paths", async () => {
   streamService.findLiveSessionByStreamPath = async (streamPath: string) => {
     lookedUpPaths.push(streamPath);
     return {
-      recordingSessionId: "session-1",
       repositoryId: "repo-1",
       repositoryName: "repo-name",
-      ownerId: "owner-1",
       userId: "user-1",
-      targetDirectory: "/data/raw",
-      registeredAt: new Date("2026-05-27T00:00:00.000Z").toISOString(),
       status: "STREAMING",
     };
   };

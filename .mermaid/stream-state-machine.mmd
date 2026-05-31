@@ -58,7 +58,7 @@ stateDiagram-v2
       Initial entry action:
       recording_segments row is upserted by recordingSessionId.
       rawPath and createdAt are recorded.
-      segment:{segmentPath} is mapped to recordingSessionId for complete hook lookup with 7200s TTL.
+      complete hook lookup uses recordingSessionId from stream path.
     end note
 
     SEG_WRITING --> SEG_WRITING: duplicate segment-create<br/>same recordingSessionId/rawPath<br/>upsert no-op update
@@ -73,7 +73,7 @@ stateDiagram-v2
 
     note right of SEG_WRITE_DONE
       Entry action:
-      durationSec and completedAt are recorded.
+      completedAt is recorded.
       finalize enqueue is attempted only when RecordingSession is already CLOSED.
       Missing enqueue is retried by reconcile.
     end note

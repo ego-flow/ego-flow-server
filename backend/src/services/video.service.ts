@@ -29,7 +29,6 @@ type RepositoryVideoRecord = {
   thumbnailPath: string | null;
   dashboardVideoPath: string | null;
   sizeBytes: bigint | null;
-  vlmSizeBytes: bigint | null;
   recorder: string | null;
   sceneSummary: string | null;
   clipSegments: Prisma.JsonValue | null;
@@ -92,16 +91,14 @@ const toSizeBytes = (value: bigint | number | null | undefined) => {
 const getManifestArtifactMetadata = (video: {
   id: string;
   sizeBytes: bigint | null;
-  vlmSizeBytes: bigint | null;
   vlmSha256: string | null;
 }) => {
-  const sizeBytes = video.sizeBytes ?? video.vlmSizeBytes;
-  if (sizeBytes === null || !video.vlmSha256) {
+  if (video.sizeBytes === null || !video.vlmSha256) {
     throw Internal(`Manifest metadata is missing for completed video '${video.id}'.`);
   }
 
   return {
-    size_bytes: Number(sizeBytes),
+    size_bytes: Number(video.sizeBytes),
     sha256: video.vlmSha256,
   };
 };
@@ -125,7 +122,7 @@ const toRepoVideoResponse = (
     fps: video.fps,
     codec: video.codec,
     recorded_at: video.recordedAt ? video.recordedAt.toISOString() : null,
-    size_bytes: toSizeBytes(video.sizeBytes ?? video.vlmSizeBytes),
+    size_bytes: toSizeBytes(video.sizeBytes),
     contributor_user_id: video.recorder,
     contributor_display_name: video.recorder ? displayNamesByUserId.get(video.recorder) ?? video.recorder : null,
     thumbnail_url: video.thumbnailPath ? toRepositoryThumbnailUrl(targetDirectory, video) : null,
@@ -162,7 +159,6 @@ export class VideoService {
         thumbnailPath: true,
         dashboardVideoPath: true,
         sizeBytes: true,
-        vlmSizeBytes: true,
         recorder: true,
         sceneSummary: true,
         clipSegments: true,
@@ -209,7 +205,6 @@ export class VideoService {
         dashboardVideoPath: true,
         thumbnailPath: true,
         sizeBytes: true,
-        vlmSizeBytes: true,
         vlmSha256: true,
       },
     });
@@ -345,7 +340,6 @@ export class VideoService {
           thumbnailPath: true,
           dashboardVideoPath: true,
           sizeBytes: true,
-          vlmSizeBytes: true,
           recorder: true,
           sceneSummary: true,
           clipSegments: true,
@@ -409,7 +403,6 @@ export class VideoService {
           sceneSummary: true,
           clipSegments: true,
           sizeBytes: true,
-          vlmSizeBytes: true,
           vlmSha256: true,
           thumbnailPath: true,
         },
@@ -488,7 +481,7 @@ export class VideoService {
     return {
       id: video.id,
       path: video.vlmVideoPath,
-      sizeBytes: video.sizeBytes ?? video.vlmSizeBytes,
+      sizeBytes: video.sizeBytes,
       sha256: video.vlmSha256,
     };
   }

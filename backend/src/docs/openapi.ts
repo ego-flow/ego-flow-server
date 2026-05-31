@@ -292,10 +292,9 @@ export const openApiDocument = {
       },
       RecordingCloseIntentResponse: {
         type: "object",
-        required: ["recording_session_id", "end_reason"],
+        required: ["ok"],
         properties: {
-          recording_session_id: { type: "string", format: "uuid" },
-          end_reason: { type: "string", enum: ["NORMAL_DISCONNECT"] },
+          ok: { type: "boolean", example: true },
         },
       },
       LiveStreamSummary: {
@@ -358,34 +357,6 @@ export const openApiDocument = {
           playback_ready: { type: "boolean" },
         },
       },
-      RecordingStatusResponse: {
-        type: "object",
-        required: ["id", "status", "end_reason", "segment_id", "segment_status", "video_id", "created_at", "ready_at", "closed_at"],
-        properties: {
-          id: { type: "string", format: "uuid" },
-          status: {
-            type: "string",
-            enum: ["PENDING", "STREAMING", "CLOSED"],
-          },
-          end_reason: {
-            oneOf: [
-              { type: "string", enum: ["NORMAL_DISCONNECT", "UNEXPECTED_DISCONNECT", "REGISTRATION_TIMEOUT", "ACCESS_FORBIDDEN", "INTERNAL_ERROR"] },
-              { type: "null" },
-            ],
-          },
-          segment_id: { type: ["string", "null"], format: "uuid" },
-          segment_status: {
-            oneOf: [
-              { type: "string", enum: ["WRITING", "WRITE_DONE", "PROCESSING", "COMPLETED", "FAILED"] },
-              { type: "null" },
-            ],
-          },
-          video_id: { type: ["string", "null"], format: "uuid" },
-          created_at: { type: "string", format: "date-time" },
-          ready_at: { type: ["string", "null"], format: "date-time" },
-          closed_at: { type: ["string", "null"], format: "date-time" },
-        },
-      },
       HookOkResponse: {
         type: "object",
         required: ["ok"],
@@ -395,20 +366,17 @@ export const openApiDocument = {
       },
       StreamReadyHookRequest: {
         type: "object",
-        required: ["path"],
+        required: ["path", "ticket"],
         properties: {
           path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
-          query: { type: "string", example: "ticket=t_opaque" },
           ticket: { type: "string", example: "t_opaque" },
         },
       },
       StreamNotReadyHookRequest: {
         type: "object",
-        required: ["path", "source_type"],
+        required: ["path"],
         properties: {
           path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
-          source_id: { type: "string", example: "publisher-123" },
-          source_type: { type: "string", example: "rtmpConn" },
         },
       },
       RecordingSegmentCreateHookRequest: {
@@ -416,7 +384,6 @@ export const openApiDocument = {
         required: ["path", "segment_path"],
         properties: {
           path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
-          source_id: { type: "string", example: "publisher-123" },
           segment_path: { type: "string", example: "/data/raw/live/daily_kitchen/2026-03-30_10-20-30-000000" },
         },
       },
@@ -425,9 +392,7 @@ export const openApiDocument = {
         required: ["path", "segment_path"],
         properties: {
           path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
-          source_id: { type: "string", example: "publisher-123" },
           segment_path: { type: "string", example: "/data/raw/live/daily_kitchen/2026-03-30_10-20-30-000000" },
-          segment_duration: { type: "number", example: 15.2 },
         },
       },
       RepositoryVideo: {
@@ -1586,34 +1551,6 @@ export const openApiDocument = {
         responses: {
           "200": { description: "Authorized" },
           "401": { $ref: "#/components/responses/Unauthorized" },
-          "404": { $ref: "#/components/responses/NotFound" },
-        },
-      },
-    },
-    "/recordings/{recordingSessionId}": {
-      get: {
-        tags: ["Recordings"],
-        summary: "Get recording session status",
-        parameters: [
-          {
-            name: "recordingSessionId",
-            in: "path",
-            required: true,
-            schema: { type: "string", format: "uuid" },
-          },
-        ],
-        responses: {
-          "200": {
-            description: "Recording session status",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/RecordingStatusResponse" },
-              },
-            },
-          },
-          "400": { $ref: "#/components/responses/BadRequest" },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
           "404": { $ref: "#/components/responses/NotFound" },
         },
       },

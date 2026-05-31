@@ -19,7 +19,7 @@ sequenceDiagram
     Note over App,MTX: App 종료 버튼은 close-intent 기록 후<br/>RTMP 연결을 정상 close하고,<br/>MediaMTX가 publisher not-ready 상태를 감지한다.
 
     MTX->>Backend: stream-not-ready hook
-    Note over MTX,Backend: path = live/{repositoryName}/{recordingSessionId}<br/>source_id = {mtxSourceId optional}<br/>source_type = {mtxSourceType required}
+    Note over MTX,Backend: path = live/{repositoryName}/{recordingSessionId}
 
     Backend->>DB: RecordingSession CLOSED update
     Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>required status: STREAMING<br/>updated fields: status=CLOSED, closed_at<br/>existing end_reason=NORMAL_DISCONNECT is preserved
@@ -36,7 +36,7 @@ sequenceDiagram
 
     alt stream-not-ready hook delivered
       MTX->>Backend: stream-not-ready hook
-      Note over MTX,Backend: path = live/{repositoryName}/{recordingSessionId}<br/>source_id = {mtxSourceId optional}<br/>source_type = {mtxSourceType required}
+      Note over MTX,Backend: path = live/{repositoryName}/{recordingSessionId}
       Backend->>DB: RecordingSession CLOSED update
       Note over Backend,DB: close-intent가 없으므로<br/>updated fields: status=CLOSED, closed_at, end_reason=UNEXPECTED_DISCONNECT
       Backend->>Redis: live pointer cleanup

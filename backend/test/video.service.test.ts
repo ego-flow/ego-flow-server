@@ -57,7 +57,6 @@ type VideoRow = {
   dashboardVideoPath: string | null;
   vlmVideoPath: string | null;
   sizeBytes: bigint | null;
-  vlmSizeBytes: bigint | null;
   vlmSha256: string | null;
   recorder: string | null;
   sceneSummary: string | null;
@@ -121,7 +120,6 @@ const fakePrisma: any = {
         recordedAt?: "asc" | "desc";
         durationSec?: "asc" | "desc";
         sizeBytes?: "asc" | "desc";
-        vlmSizeBytes?: "asc" | "desc";
       };
       select: Record<string, unknown>;
     }) => {
@@ -133,13 +131,12 @@ const fakePrisma: any = {
             ? "durationSec"
             : orderBy?.sizeBytes
               ? "sizeBytes"
-              : "vlmSizeBytes";
+              : "createdAt";
       const sortDirection =
         orderBy?.createdAt ??
         orderBy?.recordedAt ??
         orderBy?.durationSec ??
         orderBy?.sizeBytes ??
-        orderBy?.vlmSizeBytes ??
         "desc";
       const filtered = Array.from(videos.values()).filter((video) => matchesWhere(video, where));
       filtered.sort((left, right) => {
@@ -152,7 +149,7 @@ const fakePrisma: any = {
                 ? left.durationSec
                 : sortField === "sizeBytes"
                   ? left.sizeBytes
-                  : left.vlmSizeBytes;
+                  : left.createdAt;
         const rightValue =
           sortField === "createdAt"
             ? right.createdAt
@@ -162,7 +159,7 @@ const fakePrisma: any = {
                 ? right.durationSec
                 : sortField === "sizeBytes"
                   ? right.sizeBytes
-                  : right.vlmSizeBytes;
+                  : right.createdAt;
         const leftSort = leftValue instanceof Date ? leftValue.getTime() : Number(leftValue ?? -1);
         const rightSort = rightValue instanceof Date ? rightValue.getTime() : Number(rightValue ?? -1);
         return sortDirection === "asc" ? leftSort - rightSort : rightSort - leftSort;
@@ -241,7 +238,6 @@ beforeEach(() => {
     dashboardVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", ".dashboard", "video-1.mp4"),
     vlmVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", "video-1.mp4"),
     sizeBytes: 42n,
-    vlmSizeBytes: 42n,
     vlmSha256: "a".repeat(64),
     recorder: "alice",
     sceneSummary: null,
@@ -267,7 +263,6 @@ beforeEach(() => {
     dashboardVideoPath: null,
     vlmVideoPath: null,
     sizeBytes: null,
-    vlmSizeBytes: null,
     vlmSha256: null,
     recorder: "alice",
     sceneSummary: null,
@@ -293,7 +288,6 @@ beforeEach(() => {
     dashboardVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", ".dashboard", "video-3.mp4"),
     vlmVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", "video-3.mp4"),
     sizeBytes: 84n,
-    vlmSizeBytes: 84n,
     vlmSha256: "b".repeat(64),
     recorder: "bob",
     sceneSummary: "Kitchen prep",
@@ -548,7 +542,6 @@ test("getRepositoryManifest throws when a completed video lacks artifact metadat
     dashboardVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", ".dashboard", "video-bad.mp4"),
     vlmVideoPath: path.join(targetDirectory, "alice", "daily-kitchen", "video-bad.mp4"),
     sizeBytes: null,
-    vlmSizeBytes: null,
     vlmSha256: null,
     recorder: "alice",
     sceneSummary: null,

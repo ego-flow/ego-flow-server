@@ -34,10 +34,10 @@ sequenceDiagram
         Note over App,Backend: Error<br/>Recording session is already in {status} state.
       else ticket 발급 가능
         Backend->>Backend: ticket metadata 생성
-        Note over Backend: ticketId = t_{uuid}<br/>streamPath = session.streamPath<br/>issuedAt = now
+        Note over Backend: ticketId = t_{uuid}<br/>streamPath = session.streamPath
 
         Backend->>Redis: publish ticket 저장
-        Note over Backend,Redis: key: stream:ticket:{ticketId}<br/><br/>value fields<br/>ticketId: t_{uuid}<br/>recordingSessionId: {recordingSessionId}<br/>repositoryId: {repositoryId}<br/>userId: {userId}<br/>streamPath: live/{repositoryName}/{recordingSessionId}<br/>issuedAt: now_ms<br/>status: active<br/>TTL: 60 seconds
+        Note over Backend,Redis: key: stream:ticket:{ticketId}<br/><br/>value fields<br/>recordingSessionId: {recordingSessionId}<br/>repositoryId: {repositoryId}<br/>userId: {userId}<br/>streamPath: live/{repositoryName}/{recordingSessionId}<br/>status: active<br/>TTL: 60 seconds
         Redis-->>Backend: ticket 저장 완료
 
         Backend-->>App: 200 OK

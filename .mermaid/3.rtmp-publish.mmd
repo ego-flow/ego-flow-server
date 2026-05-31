@@ -51,7 +51,7 @@ sequenceDiagram
   end
 
   MTX->>Backend: stream-ready hook
-  Note over MTX,Backend: API<br/>POST /api/v1/hooks/stream-ready<br/><br/>Payload 핵심 값<br/>path=live/{repositoryName}/{recordingSessionId}<br/>query=ticket=t_{uuid}<br/>ticket=t_{uuid}
+  Note over MTX,Backend: API<br/>POST /api/v1/hooks/stream-ready<br/><br/>Payload 핵심 값<br/>path=live/{repositoryName}/{recordingSessionId}<br/>ticket=t_{uuid}
 
   Backend->>Redis: ticket 재검증 및 consume
   Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>value.status = consumed<br/>TTL refresh 없음<br/>기존 Redis TTL을 유지
@@ -60,7 +60,7 @@ sequenceDiagram
   Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>updated fields: status=STREAMING, ready_at
 
   Backend->>Redis: live cache 및 active set 갱신
-  Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>recordingSessionId: {recordingSessionId}<br/>repositoryId: {repositoryId}<br/>repositoryName: {repositoryName}<br/>userId: {userId}<br/>deviceType: {optional_device_type}<br/>status: STREAMING<br/>TTL: 7200 seconds<br/><br/>set: stream:active:sessions<br/>member: recordingSessionId
+  Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: {repositoryId}<br/>repositoryName: {repositoryName}<br/>userId: {userId}<br/>deviceType: {optional_device_type}<br/>status: STREAMING<br/>TTL: 7200 seconds<br/><br/>set: stream:active:sessions<br/>member: recordingSessionId
 
   Note over App,Backend: 이 시점 이후 video/audio payload는 backend를 지나가지 않는다.<br/>App은 이미 열린 RTMP TCP socket으로 MediaMTX에 encoded media를 보내고,<br/>Backend는 MediaMTX hook 이벤트만 받는다.
 
@@ -72,13 +72,12 @@ sequenceDiagram
 
   Backend->>DB: RecordingSegment WRITING upsert
   Note over Backend,DB: table: recording_segments<br/>target row: recording_session_id<br/>status=WRITING<br/>policy: one segment per recording session
-  Backend->>Redis: segment mapping 저장
-  Note over Backend,Redis: key: segment:{segmentPath}<br/>value: recordingSessionId<br/>TTL: 7200 seconds
+  Note over Backend: segment complete도 stream path의 recordingSessionId로 같은 segment를 찾는다.
 
   Note over App,MTX: 이후 실제 media 전송은 열린 RTMP publisher socket에서 진행된다.
 
 %% 참고:
 %% 이 문서는 publish-ticket 발급 이후 RTMP publish 인증, stream-ready, live cache 등록,
-%% 첫 recording segment 생성 및 segment mapping 저장까지만 다룬다.
+%% 첫 recording segment 생성까지만 다룬다.
 %% 실제 RTMP media chunk 전송부터 stream 종료, hook 처리, finalize enqueue까지는
 %% .mermaid/4.rtmp-stream.mmd에서 다룬다.

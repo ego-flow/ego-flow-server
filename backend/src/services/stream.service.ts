@@ -240,13 +240,13 @@ export class StreamService {
       repositoryId: session.repositoryId,
       userId: session.userId,
       streamPath: session.streamPath,
-      ticketId: ticketGrant.ticket.ticketId,
+      ticketId: ticketGrant.ticketId,
       ticketTtlSec: streamOwnershipService.getPublishTicketTtlSeconds(),
     });
 
     return {
       stream_path: session.streamPath,
-      publish_ticket: ticketGrant.ticket.ticketId,
+      publish_ticket: ticketGrant.ticketId,
     };
   }
 
@@ -288,23 +288,29 @@ export class StreamService {
 
     const cacheRecords = await redis.mget(...activeIds.map(streamRecordingKey));
     const liveCaches = cacheRecords
-      .map((record) => this.parseLiveCache(record))
-      .filter((cache): cache is RecordingSessionLiveCache => cache?.status === "STREAMING");
+      .map((record, index) => {
+        const cache = this.parseLiveCache(record);
+        if (!cache || cache.status !== "STREAMING") {
+          return null;
+        }
+        return { recordingSessionId: activeIds[index]!, cache };
+      })
+      .filter((entry): entry is { recordingSessionId: string; cache: RecordingSessionLiveCache } => Boolean(entry));
 
     const visibleCaches = liveCaches.filter(
-      (cache) => !accessibleRepoIds || accessibleRepoIds.has(cache.repositoryId),
+      ({ cache }) => !accessibleRepoIds || accessibleRepoIds.has(cache.repositoryId),
     );
 
-    const streams = visibleCaches.map((cache) => {
+    const streams = visibleCaches.map(({ recordingSessionId, cache }) => {
       return {
-        stream_id: cache.recordingSessionId,
+        stream_id: recordingSessionId,
         repository_id: cache.repositoryId,
         repository_name: cache.repositoryName,
         user_id: cache.userId,
         device_type: cache.deviceType ?? null,
         status: "live" as const,
-        hls_path: this.buildHlsPath(cache.repositoryName, cache.recordingSessionId),
-        whep_path: this.buildWhepPath(cache.repositoryName, cache.recordingSessionId),
+        hls_path: this.buildHlsPath(cache.repositoryName, recordingSessionId),
+        whep_path: this.buildWhepPath(cache.repositoryName, recordingSessionId),
       };
     });
 

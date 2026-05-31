@@ -21,6 +21,7 @@ type PublishTicketConsumeResult =
   | {
       ok: true;
       ticket: PublishTicketRecord;
+      ticketId: string;
     }
   | {
       ok: false;
@@ -42,31 +43,28 @@ export class StreamOwnershipService {
     repositoryId: string;
     userId: string;
     streamPath: string;
-  }): Promise<{ ticket: PublishTicketRecord }> {
-    const now = Date.now();
+  }): Promise<{ ticket: PublishTicketRecord; ticketId: string }> {
     const ticketId = `t_${uuidv4()}`;
     const ticket: PublishTicketRecord = {
-      ticketId,
       recordingSessionId: params.recordingSessionId,
       repositoryId: params.repositoryId,
       userId: params.userId,
       streamPath: params.streamPath,
-      issuedAt: now,
       status: "active",
     };
 
     await redis.set(streamTicketKey(ticketId), JSON.stringify(ticket), "EX", PUBLISH_TICKET_TTL_SECONDS);
 
-    return { ticket };
+    return { ticket, ticketId };
   }
 
   async validatePublishTicket(
     streamPath: string,
-    query?: string,
+    ticketId?: string | null,
     options: PublishTicketValidationOptions = {},
   ): Promise<PublishTicketValidationResult> {
-    const ticketId = this.extractTicketId(query);
-    if (!ticketId) {
+    const normalizedTicketId = ticketId?.trim();
+    if (!normalizedTicketId) {
       return {
         ok: false,
         reason: "missing-publish-ticket",
@@ -74,13 +72,13 @@ export class StreamOwnershipService {
       };
     }
 
-    const ticketKey = streamTicketKey(ticketId);
+    const ticketKey = streamTicketKey(normalizedTicketId);
     const raw = await redis.get(ticketKey);
     if (!raw) {
       return {
         ok: false,
         reason: "unknown-or-expired-ticket",
-        ticketId,
+        ticketId: normalizedTicketId,
       };
     }
 
@@ -91,7 +89,7 @@ export class StreamOwnershipService {
       return {
         ok: false,
         reason: "malformed-ticket-record",
-        ticketId,
+        ticketId: normalizedTicketId,
       };
     }
 
@@ -99,7 +97,7 @@ export class StreamOwnershipService {
       return {
         ok: false,
         reason: `ticket-status-${ticket.status.toLowerCase()}`,
-        ticketId,
+        ticketId: normalizedTicketId,
       };
     }
 
@@ -107,7 +105,7 @@ export class StreamOwnershipService {
       return {
         ok: false,
         reason: "ticket-stream-path-mismatch",
-        ticketId,
+        ticketId: normalizedTicketId,
       };
     }
 
@@ -117,7 +115,7 @@ export class StreamOwnershipService {
         return {
           ok: false,
           reason: "unknown-or-expired-ticket",
-          ticketId,
+          ticketId: normalizedTicketId,
         };
       }
     }
@@ -125,12 +123,12 @@ export class StreamOwnershipService {
     return {
       ok: true,
       ticket,
-      ticketId,
+      ticketId: normalizedTicketId,
     };
   }
 
-  async consumePublishTicket(streamPath: string, query?: string): Promise<PublishTicketConsumeResult> {
-    const validation = await this.validatePublishTicket(streamPath, query, { refreshTtl: false });
+  async consumePublishTicket(streamPath: string, ticketId?: string | null): Promise<PublishTicketConsumeResult> {
+    const validation = await this.validatePublishTicket(streamPath, ticketId, { refreshTtl: false });
     if (!validation.ok) {
       return validation;
     }
@@ -141,7 +139,7 @@ export class StreamOwnershipService {
     };
 
     const updated = await redis.set(
-      streamTicketKey(validation.ticket.ticketId),
+      streamTicketKey(validation.ticketId),
       JSON.stringify(nextTicket),
       "KEEPTTL",
       "XX",
@@ -150,13 +148,14 @@ export class StreamOwnershipService {
       return {
         ok: false,
         reason: "unknown-or-expired-ticket",
-        ticketId: validation.ticket.ticketId,
+        ticketId: validation.ticketId,
       };
     }
 
     return {
       ok: true,
       ticket: nextTicket,
+      ticketId: validation.ticketId,
     };
   }
 

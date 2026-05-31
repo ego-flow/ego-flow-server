@@ -146,7 +146,7 @@ export class AuthService {
         return false;
       }
 
-      const validation = await streamOwnershipService.validatePublishTicket(input.path, input.query);
+      const validation = await streamOwnershipService.validatePublishTicket(input.path, publishTicketId);
       if (!validation.ok) {
         this.logRtmpAuthDecision("denied", input, {
           reason: validation.reason,
@@ -161,7 +161,7 @@ export class AuthService {
         recordingSessionId: validation.ticket.recordingSessionId,
         repositoryId: validation.ticket.repositoryId,
         credentialSource,
-        ticketId: validation.ticket.ticketId,
+        ticketId: validation.ticketId,
       });
       return true;
     } catch (_error) {

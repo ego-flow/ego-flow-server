@@ -41,7 +41,7 @@ sequenceDiagram
 
   alt stream-not-ready hook first
     MTX->>Backend: stream-not-ready hook
-    Note over MTX,Backend: publisher connection 종료 event<br/>path=live/{repositoryName}/{recordingSessionId}<br/>source_id={mtxSourceId optional}<br/>source_type={mtxSourceType required}
+    Note over MTX,Backend: publisher connection 종료 event<br/>path=live/{repositoryName}/{recordingSessionId}
 
     Backend->>DB: RecordingSession CLOSED update
     Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>updated fields: status=CLOSED, closed_at, end_reason<br/>close-intent가 있으면 NORMAL_DISCONNECT 보존<br/>없으면 UNEXPECTED_DISCONNECT 기록
@@ -58,25 +58,18 @@ sequenceDiagram
 
     MTX->>Storage: last fMP4 segment close and flush
     MTX->>Backend: recording-segment-complete hook
-    Note over MTX,Backend: raw segment file write 완료 event<br/>segment_path={completed_segment_path}<br/>segment_duration={duration_seconds}
-
-    Backend->>Redis: segment mapping 조회
-    Note over Backend,Redis: key: segment:{segmentPath}<br/>value: recordingSessionId
-    alt mapping exists
-      Redis-->>Backend: recordingSessionId
-    else mapping missing
-      Backend->>DB: stream path 기반 session 복구
-      Note over Backend,DB: allowed session status<br/>STREAMING or CLOSED<br/><br/>mapping과 path 복구가 모두 실패하면 no-op
-    end
+    Note over MTX,Backend: raw segment file write 완료 event<br/>path=live/{repositoryName}/{recordingSessionId}<br/>segment_path={completed_segment_path}
+    Backend->>DB: stream path 기반 session 복구
+    Note over Backend,DB: allowed session status<br/>STREAMING or CLOSED<br/>path 복구가 실패하면 no-op
 
     Backend->>DB: RecordingSegment 조회 및 WRITE_DONE 확정
     Note over Backend,DB: table: recording_segments<br/>target row: recording_session_id<br/>RecordingSession은 변경하지 않는다.
     alt segment row missing
       Backend->>DB: RecordingSegment WRITE_DONE create
-      Note over Backend,DB: create hook 누락 복구<br/>status=WRITE_DONE, duration_sec, completed_at
+      Note over Backend,DB: create hook 누락 복구<br/>status=WRITE_DONE, completed_at
     else existing segment is WRITING
       Backend->>DB: RecordingSegment WRITE_DONE update
-      Note over Backend,DB: updated fields<br/>status=WRITE_DONE, duration_sec, completed_at
+      Note over Backend,DB: updated fields<br/>status=WRITE_DONE, completed_at
     else segment already terminal or processing
       Backend->>Backend: complete ignored
       Note over Backend: FAILED/WRITE_DONE/PROCESSING/COMPLETED 상태는<br/>late segment-complete로 되살리지 않는다.
@@ -90,14 +83,14 @@ sequenceDiagram
   else recording-segment-complete hook first
     MTX->>Storage: last fMP4 segment close and flush
     MTX->>Backend: recording-segment-complete hook
-    Backend->>Redis: segment mapping 조회
+    Backend->>DB: stream path 기반 session 복구
     Backend->>DB: RecordingSegment WRITE_DONE 확정
     Backend->>Backend: tryEnqueueFinalize(recordingSessionId)
     Backend->>DB: RecordingSession 상태 조회<br/>아직 CLOSED가 아님
     Backend->>Backend: no-op
 
     MTX->>Backend: stream-not-ready hook
-    Note over MTX,Backend: path=live/{repositoryName}/{recordingSessionId}<br/>source_id={mtxSourceId optional}<br/>source_type={mtxSourceType required}
+    Note over MTX,Backend: path=live/{repositoryName}/{recordingSessionId}
     Backend->>DB: RecordingSession CLOSED update
     Backend->>Redis: live pointer cleanup
     Backend->>Backend: tryEnqueueFinalize(recordingSessionId)
@@ -168,7 +161,7 @@ sequenceDiagram
   end
 
 %% 참고:
-%% 이 문서는 live cache 및 segment mapping 저장 이후 실제 RTMP media 전송,
+%% 이 문서는 live cache 저장 이후 실제 RTMP media 전송,
 %% publisher socket 종료, stream-not-ready/segment-complete hook, finalize enqueue까지 다룬다.
 %% App 변경 필요:
 %% App의 stop 버튼은 legacy Stop API를 호출하지 않는다.

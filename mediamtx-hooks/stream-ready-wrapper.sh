@@ -51,9 +51,8 @@ if [ -z "$TICKET" ]; then
 fi
 
 ESC_PATH="$(json_escape "$MTX_PATH")"
-ESC_QUERY="$(json_escape "$QUERY")"
 ESC_TICKET="$(json_escape "$TICKET")"
 
-wget -qO /dev/null --post-data="{\"path\":\"$ESC_PATH\",\"query\":\"$ESC_QUERY\",\"ticket\":\"$ESC_TICKET\"}" \
+wget -qO /dev/null --post-data="{\"path\":\"$ESC_PATH\",\"ticket\":\"$ESC_TICKET\"}" \
   --header="Content-Type: application/json" \
   "${BACKEND_URL}/api/v1/hooks/stream-ready" 2>/dev/null || true
