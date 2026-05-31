@@ -275,16 +275,27 @@ export const openApiDocument = {
       PublishTicketResponse: {
         type: "object",
         required: [
-          "recording_session_id",
-          "repository_id",
           "stream_path",
           "publish_ticket",
         ],
         properties: {
-          recording_session_id: { type: "string", format: "uuid" },
-          repository_id: { type: "string", format: "uuid" },
           stream_path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
           publish_ticket: { type: "string", example: "t_0d87967b-903e-4f69-af58-24fdd6dd2a82" },
+        },
+      },
+      RecordingCloseIntentRequest: {
+        type: "object",
+        required: ["reason"],
+        properties: {
+          reason: { type: "string", enum: ["NORMAL_DISCONNECT"] },
+        },
+      },
+      RecordingCloseIntentResponse: {
+        type: "object",
+        required: ["recording_session_id", "end_reason"],
+        properties: {
+          recording_session_id: { type: "string", format: "uuid" },
+          end_reason: { type: "string", enum: ["NORMAL_DISCONNECT"] },
         },
       },
       LiveStreamSummary: {
@@ -347,41 +358,32 @@ export const openApiDocument = {
           playback_ready: { type: "boolean" },
         },
       },
-      RecordingStopRequest: {
-        type: "object",
-        properties: {
-          reason: { type: "string", enum: ["USER_STOP", "GLASSES_STOP"], default: "USER_STOP" },
-        },
-      },
-      RecordingStopResponse: {
-        type: "object",
-        required: ["recording_session_id", "status"],
-        properties: {
-          recording_session_id: { type: "string", format: "uuid" },
-          status: { type: "string", enum: ["stop_requested"] },
-        },
-      },
       RecordingStatusResponse: {
         type: "object",
-        required: ["id", "status", "end_reason", "segment_count", "video_id", "created_at", "ready_at", "not_ready_at", "finalized_at"],
+        required: ["id", "status", "end_reason", "segment_id", "segment_status", "video_id", "created_at", "ready_at", "closed_at"],
         properties: {
           id: { type: "string", format: "uuid" },
           status: {
             type: "string",
-            enum: ["PENDING", "STREAMING", "STOP_REQUESTED", "FINALIZING", "COMPLETED", "FAILED", "ABORTED"],
+            enum: ["PENDING", "STREAMING", "CLOSED"],
           },
           end_reason: {
             oneOf: [
-              { type: "string", enum: ["USER_STOP", "GLASSES_STOP", "UNEXPECTED_DISCONNECT", "REGISTRATION_TIMEOUT", "ACCESS_FORBIDDEN", "INTERNAL_ERROR"] },
+              { type: "string", enum: ["NORMAL_DISCONNECT", "UNEXPECTED_DISCONNECT", "REGISTRATION_TIMEOUT", "ACCESS_FORBIDDEN", "INTERNAL_ERROR"] },
               { type: "null" },
             ],
           },
-          segment_count: { type: "integer", minimum: 0 },
+          segment_id: { type: ["string", "null"], format: "uuid" },
+          segment_status: {
+            oneOf: [
+              { type: "string", enum: ["WRITING", "WRITE_DONE", "PROCESSING", "COMPLETED", "FAILED"] },
+              { type: "null" },
+            ],
+          },
           video_id: { type: ["string", "null"], format: "uuid" },
           created_at: { type: "string", format: "date-time" },
           ready_at: { type: ["string", "null"], format: "date-time" },
-          not_ready_at: { type: ["string", "null"], format: "date-time" },
-          finalized_at: { type: ["string", "null"], format: "date-time" },
+          closed_at: { type: ["string", "null"], format: "date-time" },
         },
       },
       HookOkResponse: {
@@ -393,12 +395,11 @@ export const openApiDocument = {
       },
       StreamReadyHookRequest: {
         type: "object",
-        required: ["path", "source_type"],
+        required: ["path"],
         properties: {
           path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
           query: { type: "string", example: "ticket=t_opaque" },
-          source_id: { type: "string", example: "publisher-123" },
-          source_type: { type: "string", example: "rtmpConn" },
+          ticket: { type: "string", example: "t_opaque" },
         },
       },
       StreamNotReadyHookRequest: {
@@ -456,7 +457,7 @@ export const openApiDocument = {
           repository_id: { type: "string", format: "uuid" },
           repository_name: { type: "string" },
           owner_id: { type: "string" },
-          status: { type: "string", enum: ["PENDING", "PROCESSING", "COMPLETED", "FAILED"] },
+          status: { type: "string", enum: ["COMPLETED", "FAILED"] },
           duration_sec: { type: ["number", "null"] },
           resolution_width: { type: ["integer", "null"] },
           resolution_height: { type: ["integer", "null"] },
@@ -505,7 +506,7 @@ export const openApiDocument = {
         properties: {
           id: { type: "string", format: "uuid" },
           repository_id: { type: "string", format: "uuid" },
-          status: { type: "string", enum: ["PENDING", "PROCESSING", "COMPLETED", "FAILED"] },
+          status: { type: "string", enum: ["COMPLETED", "FAILED"] },
           progress: { type: "integer", minimum: 0, maximum: 100 },
           error_message: { type: ["string", "null"] },
           processing_started_at: { type: ["string", "null"], format: "date-time" },
@@ -1589,43 +1590,6 @@ export const openApiDocument = {
         },
       },
     },
-    "/recordings/{recordingSessionId}/stop": {
-      post: {
-        tags: ["Recordings"],
-        summary: "Request stop for a recording session",
-        parameters: [
-          {
-            name: "recordingSessionId",
-            in: "path",
-            required: true,
-            schema: { type: "string", format: "uuid" },
-          },
-        ],
-        requestBody: {
-          required: false,
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/RecordingStopRequest" },
-            },
-          },
-        },
-        responses: {
-          "200": {
-            description: "Stop requested",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/RecordingStopResponse" },
-              },
-            },
-          },
-          "400": { $ref: "#/components/responses/BadRequest" },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
-          "404": { $ref: "#/components/responses/NotFound" },
-          "409": { $ref: "#/components/responses/Conflict" },
-        },
-      },
-    },
     "/recordings/{recordingSessionId}": {
       get: {
         tags: ["Recordings"],
@@ -1651,6 +1615,43 @@ export const openApiDocument = {
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/Forbidden" },
           "404": { $ref: "#/components/responses/NotFound" },
+        },
+      },
+    },
+    "/recordings/{recordingSessionId}/close-intent": {
+      post: {
+        tags: ["Recordings"],
+        summary: "Record normal RTMP close intent before the publisher socket closes",
+        parameters: [
+          {
+            name: "recordingSessionId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/RecordingCloseIntentRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Close intent recorded",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/RecordingCloseIntentResponse" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+          "409": { $ref: "#/components/responses/Conflict" },
         },
       },
     },
@@ -1735,7 +1736,7 @@ export const openApiDocument = {
     "/hooks/recording-segment-complete": {
       post: {
         tags: ["Hooks"],
-        summary: "Handle MediaMTX recording-segment-complete hook with authoritative segment mapping",
+        summary: "Handle MediaMTX recording-segment-complete hook with segment session mapping",
         security: [],
         requestBody: {
           required: true,
@@ -1767,7 +1768,7 @@ export const openApiDocument = {
           {
             name: "status",
             in: "query",
-            schema: { type: "string", enum: ["PENDING", "PROCESSING", "COMPLETED", "FAILED"] },
+            schema: { type: "string", enum: ["COMPLETED", "FAILED"] },
           },
           {
             name: "page",

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { RecordingSessionEndReason, RecordingSegmentStatus, RecordingSessionStatus } from "@prisma/client";
 import { beforeEach, test } from "node:test";
 
@@ -30,6 +33,12 @@ moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
 
 const fakeRedis = new FakeRedis();
 const fakePrisma: any = {
+  $transaction: async (callbackOrQueries: unknown) => {
+    if (typeof callbackOrQueries === "function") {
+      return callbackOrQueries(fakePrisma);
+    }
+    return Promise.all(callbackOrQueries as Array<Promise<unknown>>);
+  },
   recordingSession: {
     findUnique: async (_args?: unknown) => null,
     update: async (_args?: unknown) => null,
@@ -37,11 +46,19 @@ const fakePrisma: any = {
   },
   recordingSegment: {
     count: async (_args?: unknown) => 0,
+    findMany: async (_args?: unknown) => [],
+    findUnique: async (_args?: unknown) => null,
     findFirst: async (_args?: unknown) => null,
-    aggregate: async (_args?: unknown) => ({ _max: { sequence: null } }),
     upsert: async (_args?: unknown) => null,
     create: async (_args?: unknown) => null,
     update: async (_args?: unknown) => null,
+    updateMany: async (_args?: unknown) => ({ count: 0 }),
+  },
+  video: {
+    upsert: async (_args?: unknown) => ({ id: "video-1" }),
+    findUnique: async (_args?: unknown) => null,
+    create: async (_args?: unknown) => ({ id: "video-1" }),
+    findMany: async (_args?: unknown) => [],
   },
 };
 
@@ -52,11 +69,14 @@ const { recordingSessionService } =
   require("../src/services/recording-session.service") as typeof import("../src/services/recording-session.service");
 const { streamOwnershipService } =
   require("../src/services/stream-ownership.service") as typeof import("../src/services/stream-ownership.service");
+const { processingService } =
+  require("../src/services/processing.service") as typeof import("../src/services/processing.service");
 
 const originalGetLiveCacheByRecordingSessionId = recordingSessionService.getLiveCacheByRecordingSessionId;
 const originalTryEnqueueFinalize = recordingSessionService.tryEnqueueFinalize;
 const originalValidatePublishTicket = streamOwnershipService.validatePublishTicket;
 const originalConsumePublishTicket = streamOwnershipService.consumePublishTicket;
+const originalEnqueueRecordingFinalize = processingService.enqueueRecordingFinalize;
 const originalGetActiveStreamPaths = (recordingSessionService as any).getActiveStreamPaths;
 
 const now = Date.now();
@@ -77,16 +97,23 @@ beforeEach(() => {
   fakePrisma.recordingSession.update = async () => null;
   fakePrisma.recordingSession.updateMany = async () => ({ count: 0 });
   fakePrisma.recordingSegment.count = async () => 0;
+  fakePrisma.recordingSegment.findMany = async () => [];
+  fakePrisma.recordingSegment.findUnique = async () => null;
   fakePrisma.recordingSegment.findFirst = async () => null;
-  fakePrisma.recordingSegment.aggregate = async () => ({ _max: { sequence: null } });
   fakePrisma.recordingSegment.upsert = async () => null;
   fakePrisma.recordingSegment.create = async () => null;
   fakePrisma.recordingSegment.update = async () => null;
+  fakePrisma.recordingSegment.updateMany = async () => ({ count: 0 });
+  fakePrisma.video.upsert = async () => ({ id: "video-1" });
+  fakePrisma.video.findUnique = async () => null;
+  fakePrisma.video.create = async () => ({ id: "video-1" });
+  fakePrisma.video.findMany = async () => [];
 
   recordingSessionService.getLiveCacheByRecordingSessionId = originalGetLiveCacheByRecordingSessionId;
   recordingSessionService.tryEnqueueFinalize = originalTryEnqueueFinalize;
   streamOwnershipService.validatePublishTicket = originalValidatePublishTicket;
   streamOwnershipService.consumePublishTicket = originalConsumePublishTicket;
+  processingService.enqueueRecordingFinalize = originalEnqueueRecordingFinalize;
   (recordingSessionService as any).getActiveStreamPaths = originalGetActiveStreamPaths;
 });
 
@@ -131,8 +158,6 @@ test("handleStreamReady ignores STREAMING sessions instead of reconnecting them"
   await recordingSessionService.handleStreamReady({
     path: "live/repo-name/session-1",
     query: "ticket=ticket-1",
-    source_id: "new-source",
-    source_type: "rtmp",
   });
 
   assert.equal(updateCalls.length, 0);
@@ -178,8 +203,6 @@ test("handleStreamReady leaves DB and Redis untouched when ticket consume is rej
   await recordingSessionService.handleStreamReady({
     path: "live/repo-name/session-1",
     query: "ticket=ticket-1",
-    source_id: "new-source",
-    source_type: "rtmp",
   });
 
   assert.equal(updateCalls.length, 0);
@@ -234,8 +257,6 @@ test("handleStreamReady accepts an explicit ticket field when hook query is empt
     path: "live/repo-name/session-1",
     query: "",
     ticket: "ticket-1",
-    source_id: "new-source",
-    source_type: "rtmp",
   });
 
   assert.deepEqual(validationQueries, ["ticket=ticket-1"]);
@@ -250,10 +271,10 @@ test("handleStreamReady accepts an explicit ticket field when hook query is empt
     userId: "user-1",
     status: "STREAMING",
   });
-  assert.equal(fakeRedis.getTtlSeconds("stream:recording:session-1"), 24 * 60 * 60);
+  assert.equal(fakeRedis.getTtlSeconds("stream:recording:session-1"), 2 * 60 * 60);
 });
 
-test("handleStreamNotReady finalizes the session resolved from stream path", async () => {
+test("handleStreamNotReady closes the streaming session and attempts finalize enqueue", async () => {
   const session = {
     id: "session-1",
     repositoryId: "repo-1",
@@ -265,8 +286,10 @@ test("handleStreamNotReady finalizes the session resolved from stream path", asy
     targetDirectory: "/data/raw",
     readyAt: new Date("2026-04-09T00:00:00.000Z"),
     endReason: null,
+    closedAt: null,
   };
   const updateCalls: Array<Record<string, unknown>> = [];
+  let enqueueCalled = false;
 
   fakePrisma.recordingSession.findUnique = async () => session;
   fakePrisma.recordingSession.update = async (args: { data: Record<string, unknown> }) => {
@@ -277,7 +300,10 @@ test("handleStreamNotReady finalizes the session resolved from stream path", asy
     };
   };
 
-  recordingSessionService.tryEnqueueFinalize = async () => true;
+  recordingSessionService.tryEnqueueFinalize = async () => {
+    enqueueCalled = true;
+    return true;
+  };
 
   await fakeRedis.sadd("stream:active:sessions", "session-1");
   fakeRedis.setJson("stream:recording:session-1", {
@@ -295,12 +321,182 @@ test("handleStreamNotReady finalizes the session resolved from stream path", asy
   });
 
   assert.equal(updateCalls.length, 1);
-  assert.equal(updateCalls[0]?.status, RecordingSessionStatus.FINALIZING);
+  assert.equal(updateCalls[0]?.status, RecordingSessionStatus.CLOSED);
+  assert.ok(updateCalls[0]?.closedAt instanceof Date);
+  assert.equal(updateCalls[0]?.endReason, RecordingSessionEndReason.UNEXPECTED_DISCONNECT);
+  assert.equal(enqueueCalled, true);
   assert.deepEqual(await fakeRedis.smembers("stream:active:sessions"), []);
   assert.equal(await fakeRedis.get("stream:recording:session-1"), null);
 });
 
-test("handleSegmentCreate stores segment ownership mapping from stream path", async () => {
+test("recordCloseIntent stores NORMAL_DISCONNECT and stream-not-ready preserves it", async () => {
+  const session = {
+    id: "session-1",
+    repositoryId: "repo-1",
+    ownerId: "owner-1",
+    userId: "user-1",
+    deviceType: null,
+    streamPath: "live/repo-name/session-1",
+    status: RecordingSessionStatus.STREAMING,
+    targetDirectory: "/data/raw",
+    readyAt: new Date("2026-04-09T00:00:00.000Z"),
+    closedAt: null,
+    createdAt: new Date("2026-04-09T00:00:00.000Z"),
+    endReason: null,
+    video: null,
+  };
+  const updateCalls: Array<Record<string, unknown>> = [];
+  let currentSession: any = session;
+
+  fakePrisma.recordingSession.findUnique = async () => currentSession;
+  fakePrisma.recordingSession.update = async (args: { data: Record<string, unknown> }) => {
+    updateCalls.push(args.data);
+    currentSession = {
+      ...currentSession,
+      ...args.data,
+    };
+    return currentSession;
+  };
+
+  recordingSessionService.tryEnqueueFinalize = async () => true;
+
+  await recordingSessionService.recordCloseIntent(
+    "session-1",
+    "user-1",
+    RecordingSessionEndReason.NORMAL_DISCONNECT,
+  );
+  await recordingSessionService.handleStreamNotReady({
+    path: "live/repo-name/session-1",
+    source_id: "source-1",
+    source_type: "rtmp",
+  });
+
+  assert.equal(updateCalls.length, 2);
+  assert.deepEqual(updateCalls[0], {
+    endReason: RecordingSessionEndReason.NORMAL_DISCONNECT,
+  });
+  assert.equal(updateCalls[1]?.status, RecordingSessionStatus.CLOSED);
+  assert.ok(updateCalls[1]?.closedAt instanceof Date);
+  assert.equal(updateCalls[1]?.endReason, RecordingSessionEndReason.NORMAL_DISCONNECT);
+});
+
+test("recordCloseIntent rejects non-owner requests", async () => {
+  fakePrisma.recordingSession.findUnique = async () => ({
+    id: "session-1",
+    repositoryId: "repo-1",
+    ownerId: "owner-1",
+    userId: "user-1",
+    deviceType: null,
+    streamPath: "live/repo-name/session-1",
+    status: RecordingSessionStatus.STREAMING,
+    targetDirectory: "/data/raw",
+    readyAt: new Date("2026-04-09T00:00:00.000Z"),
+    closedAt: null,
+    createdAt: new Date("2026-04-09T00:00:00.000Z"),
+    endReason: null,
+    video: null,
+  });
+
+  await assert.rejects(
+    recordingSessionService.recordCloseIntent(
+      "session-1",
+      "user-2",
+      RecordingSessionEndReason.NORMAL_DISCONNECT,
+    ),
+    { statusCode: 403 },
+  );
+});
+
+test("handleSegmentComplete marks the segment WRITE_DONE and attempts finalize enqueue", async () => {
+  const closedSession = {
+    id: "session-1",
+    repositoryId: "repo-1",
+    ownerId: "owner-1",
+    userId: "user-1",
+    deviceType: null,
+    streamPath: "live/repo-name/session-1",
+    status: RecordingSessionStatus.CLOSED,
+    targetDirectory: "/data/raw",
+    readyAt: new Date("2026-04-09T00:00:00.000Z"),
+    closedAt: new Date("2026-04-09T00:01:00.000Z"),
+    createdAt: new Date("2026-04-09T00:00:00.000Z"),
+    endReason: RecordingSessionEndReason.NORMAL_DISCONNECT,
+    video: null,
+  };
+  const segment = {
+    id: "segment-1",
+    recordingSessionId: "session-1",
+    rawPath: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
+    status: RecordingSegmentStatus.WRITING,
+  };
+  const segmentUpdateCalls: Array<Record<string, unknown>> = [];
+  const finalizeCalls: Array<string> = [];
+
+  await fakeRedis.set("segment:/data/raw/live/repo-name/session-1/segment-0001.mp4", "session-1");
+
+  fakePrisma.recordingSession.findUnique = async () => closedSession;
+  fakePrisma.recordingSegment.findUnique = async () => ({
+    ...segment,
+    status: RecordingSegmentStatus.WRITING,
+  });
+  fakePrisma.recordingSegment.update = async (args: Record<string, unknown>) => {
+    segmentUpdateCalls.push(args);
+    return {
+      ...segment,
+      ...((args as any).data as Record<string, unknown>),
+    };
+  };
+  recordingSessionService.tryEnqueueFinalize = async (recordingSessionId: string) => {
+    finalizeCalls.push(recordingSessionId);
+    return true;
+  };
+
+  await recordingSessionService.handleSegmentComplete({
+    path: "live/repo-name/session-1",
+    source_id: undefined,
+    segment_path: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
+    segment_duration: 12.3,
+  });
+
+  assert.equal(segmentUpdateCalls.length, 1);
+  assert.equal((segmentUpdateCalls[0] as any).data.status, RecordingSegmentStatus.WRITE_DONE);
+  assert.deepEqual(finalizeCalls, ["session-1"]);
+});
+
+test("tryEnqueueFinalize waits for stream-not-ready to close the session", async () => {
+  let status: RecordingSessionStatus = RecordingSessionStatus.STREAMING;
+  const enqueuePayloads: Array<{ recordingSessionId: string }> = [];
+
+  fakePrisma.recordingSession.findUnique = async () => ({
+    id: "session-1",
+    repositoryId: "repo-1",
+    ownerId: "owner-1",
+    userId: "user-1",
+    streamPath: "live/repo-name/session-1",
+    status,
+    targetDirectory: "/data/raw",
+    endReason: null,
+  });
+  fakePrisma.recordingSegment.findUnique = async () => ({
+    status: RecordingSegmentStatus.WRITE_DONE,
+    rawPath: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
+  });
+  processingService.enqueueRecordingFinalize = async (payload: { recordingSessionId: string }) => {
+    enqueuePayloads.push(payload);
+    return { id: "fake-job" } as never;
+  };
+
+  assert.equal(await recordingSessionService.tryEnqueueFinalize("session-1"), false);
+  assert.equal(enqueuePayloads.length, 0);
+
+  status = RecordingSessionStatus.CLOSED;
+
+  assert.equal(await recordingSessionService.tryEnqueueFinalize("session-1"), true);
+  assert.equal(enqueuePayloads.length, 1);
+  assert.equal(enqueuePayloads[0]?.recordingSessionId, "session-1");
+});
+
+test("handleSegmentCreate stores segment recording session mapping from stream path", async () => {
   const upsertCalls: Array<Record<string, unknown>> = [];
 
   fakePrisma.recordingSession.findUnique = async () => ({
@@ -309,10 +505,14 @@ test("handleSegmentCreate stores segment ownership mapping from stream path", as
     streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.STREAMING,
   });
-  fakePrisma.recordingSegment.aggregate = async () => ({ _max: { sequence: 3 } });
   fakePrisma.recordingSegment.upsert = async (args: Record<string, unknown>) => {
     upsertCalls.push(args);
-    return null;
+    return {
+      id: "segment-1",
+      recordingSessionId: "session-1",
+      rawPath: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
+      status: RecordingSegmentStatus.WRITING,
+    };
   };
 
   await recordingSessionService.handleSegmentCreate({
@@ -322,13 +522,10 @@ test("handleSegmentCreate stores segment ownership mapping from stream path", as
   });
 
   assert.equal(upsertCalls.length, 1);
-  assert.deepEqual(
-    fakeRedis.getJson("segment:/data/raw/live/repo-name/session-1/segment-0001.mp4"),
-    {
-      recordingSessionId: "session-1",
-      repositoryId: "repo-1",
-      segmentPath: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
-    },
+  assert.equal(await fakeRedis.get("segment:/data/raw/live/repo-name/session-1/segment-0001.mp4"), "session-1");
+  assert.equal(
+    fakeRedis.getTtlSeconds("segment:/data/raw/live/repo-name/session-1/segment-0001.mp4"),
+    2 * 60 * 60,
   );
 });
 
@@ -341,10 +538,14 @@ test("handleSegmentCreate works when source_id is omitted", async () => {
     streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.STREAMING,
   });
-  fakePrisma.recordingSegment.aggregate = async () => ({ _max: { sequence: 1 } });
   fakePrisma.recordingSegment.upsert = async (args: Record<string, unknown>) => {
     upsertCalls.push(args);
-    return null;
+    return {
+      id: "segment-1",
+      recordingSessionId: "session-1",
+      rawPath: "/data/raw/live/repo-name/session-1/segment-0002.mp4",
+      status: RecordingSegmentStatus.WRITING,
+    };
   };
 
   await recordingSessionService.handleSegmentCreate({
@@ -354,14 +555,36 @@ test("handleSegmentCreate works when source_id is omitted", async () => {
   });
 
   assert.equal(upsertCalls.length, 1);
-  assert.deepEqual(
-    fakeRedis.getJson("segment:/data/raw/live/repo-name/session-1/segment-0002.mp4"),
-    {
+  assert.equal(await fakeRedis.get("segment:/data/raw/live/repo-name/session-1/segment-0002.mp4"), "session-1");
+});
+
+test("handleSegmentCreate ignores an additional segment for the same recording session", async () => {
+  const upsertCalls: Array<Record<string, unknown>> = [];
+
+  fakePrisma.recordingSession.findUnique = async () => ({
+    id: "session-1",
+    repositoryId: "repo-1",
+    streamPath: "live/repo-name/session-1",
+    status: RecordingSessionStatus.STREAMING,
+  });
+  fakePrisma.recordingSegment.upsert = async (args: Record<string, unknown>) => {
+    upsertCalls.push(args);
+    return {
+      id: "segment-1",
       recordingSessionId: "session-1",
-      repositoryId: "repo-1",
-      segmentPath: "/data/raw/live/repo-name/session-1/segment-0002.mp4",
-    },
-  );
+      rawPath: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
+      status: RecordingSegmentStatus.WRITING,
+    };
+  };
+
+  await recordingSessionService.handleSegmentCreate({
+    path: "live/repo-name/session-1",
+    source_id: "source-1",
+    segment_path: "/data/raw/live/repo-name/session-1/segment-0002.mp4",
+  });
+
+  assert.equal(upsertCalls.length, 1);
+  assert.equal(await fakeRedis.get("segment:/data/raw/live/repo-name/session-1/segment-0002.mp4"), null);
 });
 
 test("reconcile keeps a recent pending registration until timeout", async () => {
@@ -375,8 +598,7 @@ test("reconcile keeps a recent pending registration until timeout", async () => 
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data/raw",
     readyAt: null,
-    stopRequestedAt: null,
-    notReadyAt: null,
+    closedAt: null,
     createdAt: new Date(Date.now() - 20_000),
     endReason: null,
   };
@@ -398,7 +620,7 @@ test("reconcile keeps a recent pending registration until timeout", async () => 
   assert.equal(updateCalls.length, 0);
 });
 
-test("reconcile uses the refreshed pending registration timestamp before aborting", async () => {
+test("reconcile uses the refreshed pending registration timestamp before completing", async () => {
   const session = {
     id: "session-1",
     repositoryId: "repo-1",
@@ -409,8 +631,7 @@ test("reconcile uses the refreshed pending registration timestamp before abortin
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data/raw",
     readyAt: null,
-    stopRequestedAt: null,
-    notReadyAt: null,
+    closedAt: null,
     createdAt: new Date(Date.now() - 10 * 60_000),
     updatedAt: new Date(Date.now() - 60_000),
     endReason: null,
@@ -433,7 +654,7 @@ test("reconcile uses the refreshed pending registration timestamp before abortin
   assert.equal(updateCalls.length, 0);
 });
 
-test("reconcile aborts an expired pending registration only when the row was not refreshed", async () => {
+test("reconcile completes an expired pending registration only when the row was not refreshed", async () => {
   const staleUpdatedAt = new Date(Date.now() - 10 * 60_000);
   const session = {
     id: "session-1",
@@ -445,8 +666,7 @@ test("reconcile aborts an expired pending registration only when the row was not
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data/raw",
     readyAt: null,
-    stopRequestedAt: null,
-    notReadyAt: null,
+    closedAt: null,
     createdAt: staleUpdatedAt,
     updatedAt: staleUpdatedAt,
     endReason: null,
@@ -476,12 +696,12 @@ test("reconcile aborts an expired pending registration only when the row was not
     status: RecordingSessionStatus.PENDING,
     updatedAt: { lte: staleUpdatedAt },
   });
-  assert.equal((updateManyCalls[0] as any).data.status, RecordingSessionStatus.ABORTED);
+  assert.equal((updateManyCalls[0] as any).data.status, RecordingSessionStatus.CLOSED);
   assert.equal((updateManyCalls[0] as any).data.endReason, RecordingSessionEndReason.REGISTRATION_TIMEOUT);
   assert.equal(await fakeRedis.get("stream:recording:session-1"), null);
 });
 
-test("reconcile does not abort a pending registration that register refreshed concurrently", async () => {
+test("reconcile does not complete a pending registration that register refreshed concurrently", async () => {
   const staleUpdatedAt = new Date(Date.now() - 10 * 60_000);
   const session = {
     id: "session-1",
@@ -493,8 +713,7 @@ test("reconcile does not abort a pending registration that register refreshed co
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data/raw",
     readyAt: null,
-    stopRequestedAt: null,
-    notReadyAt: null,
+    closedAt: null,
     createdAt: staleUpdatedAt,
     updatedAt: staleUpdatedAt,
     endReason: null,
@@ -514,7 +733,7 @@ test("reconcile does not abort a pending registration that register refreshed co
   assert.equal(updateManyCalls.length, 1);
 });
 
-test("reconcile finalizes a broken streaming session when active path is missing", async () => {
+test("reconcile closes a broken streaming session when active path is missing", async () => {
   const session = {
     id: "session-1",
     repositoryId: "repo-1",
@@ -525,14 +744,15 @@ test("reconcile finalizes a broken streaming session when active path is missing
     status: RecordingSessionStatus.STREAMING,
     targetDirectory: "/data/raw",
     readyAt: new Date("2026-04-09T00:00:00.000Z"),
-    stopRequestedAt: null,
-    notReadyAt: null,
+    closedAt: null,
     createdAt: new Date("2026-04-09T00:00:00.000Z"),
     endReason: null,
   };
   const updateCalls: Array<Record<string, unknown>> = [];
+  let enqueueCalled = false;
 
   fakePrisma.recordingSession.findMany = async () => [session];
+  fakePrisma.recordingSession.findUnique = async () => null;
   fakePrisma.recordingSession.update = async (args: { data: Record<string, unknown> }) => {
     updateCalls.push(args.data);
     return {
@@ -550,36 +770,42 @@ test("reconcile finalizes a broken streaming session when active path is missing
     status: "STREAMING",
   } satisfies RecordingSessionLiveCache);
 
-  recordingSessionService.tryEnqueueFinalize = async () => true;
+  recordingSessionService.tryEnqueueFinalize = async () => {
+    enqueueCalled = true;
+    return true;
+  };
   (recordingSessionService as any).getActiveStreamPaths = async () => new Set<string>();
 
   await recordingSessionService.reconcileSessions();
 
   assert.equal(updateCalls.length, 1);
-  assert.equal(updateCalls[0]?.status, RecordingSessionStatus.FINALIZING);
+  assert.equal(updateCalls[0]?.status, RecordingSessionStatus.CLOSED);
+  assert.ok(updateCalls[0]?.closedAt instanceof Date);
+  assert.equal(updateCalls[0]?.endReason, RecordingSessionEndReason.UNEXPECTED_DISCONNECT);
+  assert.equal(enqueueCalled, true);
   assert.deepEqual(await fakeRedis.smembers("stream:active:sessions"), []);
   assert.equal(await fakeRedis.get("stream:recording:session-1"), null);
 });
 
-test("tryEnqueueFinalize aborts an empty USER_STOP session instead of failing", async () => {
+test("reconcile closes a streaming session that already has a closed marker", async () => {
   const updateCalls: Array<{
     where: { id: string };
     data: Record<string, unknown>;
   }> = [];
 
-  fakePrisma.recordingSession.findUnique = async () => ({
+  const session = {
     id: "session-empty",
     repositoryId: "repo-1",
     streamPath: "live/repo-name/session-empty",
-    status: RecordingSessionStatus.FINALIZING,
-    endReason: RecordingSessionEndReason.USER_STOP,
+    status: RecordingSessionStatus.STREAMING,
+    endReason: RecordingSessionEndReason.NORMAL_DISCONNECT,
     createdAt: new Date(Date.now() - 60_000),
     readyAt: new Date(Date.now() - 55_000),
-    stopRequestedAt: new Date(Date.now() - 50_000),
-    notReadyAt: new Date(Date.now() - 40_000),
-    finalizedAt: null,
+    closedAt: new Date(Date.now() - 40_000),
     video: null,
-  });
+  };
+  fakePrisma.recordingSession.findMany = async () => [session];
+  fakePrisma.recordingSession.findUnique = async () => session;
   fakePrisma.recordingSession.update = async (args: {
     where: { id: string };
     data: Record<string, unknown>;
@@ -587,21 +813,161 @@ test("tryEnqueueFinalize aborts an empty USER_STOP session instead of failing", 
     updateCalls.push(args);
     return args;
   };
-  fakePrisma.recordingSegment.count = async (args?: { where?: { status?: RecordingSegmentStatus } }) => {
-    if (args?.where?.status === RecordingSegmentStatus.WRITING) {
-      return 0;
-    }
-    if (args?.where?.status === RecordingSegmentStatus.COMPLETED) {
-      return 0;
-    }
-    return 0;
-  };
+  fakePrisma.recordingSegment.findUnique = async () => null;
+  (recordingSessionService as any).getActiveStreamPaths = async () => null;
 
-  const enqueued = await recordingSessionService.tryEnqueueFinalize("session-empty");
+  await recordingSessionService.reconcileSessions();
 
-  assert.equal(enqueued, false);
   assert.equal(updateCalls.length, 1);
   assert.equal(updateCalls[0]?.where.id, "session-empty");
-  assert.equal(updateCalls[0]?.data.status, RecordingSessionStatus.ABORTED);
-  assert.equal(updateCalls[0]?.data.endReason, RecordingSessionEndReason.USER_STOP);
+  assert.equal(updateCalls[0]?.data.status, RecordingSessionStatus.CLOSED);
+  assert.equal(updateCalls[0]?.data.endReason, RecordingSessionEndReason.NORMAL_DISCONNECT);
+});
+
+test("reconcile promotes a stale closed WRITING segment with a stable raw file to WRITE_DONE", async () => {
+  const tempDir = await mkdtemp(path.join(tmpdir(), "egoflow-segment-"));
+  const rawPath = path.join(tempDir, "segment.mp4");
+  const oldFileTime = new Date(Date.now() - 60_000);
+  await writeFile(rawPath, Buffer.from([1, 2, 3, 4]));
+  await utimes(rawPath, oldFileTime, oldFileTime);
+
+  const closedSession = {
+    id: "session-1",
+    repositoryId: "repo-1",
+    userId: "user-1",
+    deviceType: null,
+    streamPath: "live/repo-name/session-1",
+    status: RecordingSessionStatus.CLOSED,
+    readyAt: new Date(Date.now() - 5 * 60_000),
+    closedAt: new Date(Date.now() - 3 * 60_000),
+    createdAt: new Date(Date.now() - 6 * 60_000),
+    endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
+  };
+  const segment = {
+    id: "segment-1",
+    recordingSessionId: "session-1",
+    rawPath,
+    status: RecordingSegmentStatus.WRITING,
+    createdAt: new Date(Date.now() - 4 * 60_000),
+    recordingSession: closedSession,
+  };
+  const updateManyCalls: Array<Record<string, unknown>> = [];
+  const finalizeCalls: Array<string> = [];
+
+  fakePrisma.recordingSession.findMany = async () => [];
+  fakePrisma.recordingSegment.findMany = async (args: Record<string, any>) => {
+    if (args.where.status === RecordingSegmentStatus.WRITING) {
+      return [segment];
+    }
+    return [];
+  };
+  fakePrisma.recordingSegment.updateMany = async (args: Record<string, unknown>) => {
+    updateManyCalls.push(args);
+    return { count: 1 };
+  };
+  recordingSessionService.tryEnqueueFinalize = async (recordingSessionId: string) => {
+    finalizeCalls.push(recordingSessionId);
+    return true;
+  };
+
+  try {
+    await recordingSessionService.reconcileSessions();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+
+  assert.equal(updateManyCalls.length, 1);
+  assert.equal((updateManyCalls[0] as any).data.status, RecordingSegmentStatus.WRITE_DONE);
+  assert.ok((updateManyCalls[0] as any).data.completedAt instanceof Date);
+  assert.deepEqual(finalizeCalls, ["session-1"]);
+});
+
+test("reconcile fails a stale closed WRITING segment with an empty raw file", async () => {
+  const tempDir = await mkdtemp(path.join(tmpdir(), "egoflow-empty-segment-"));
+  const rawPath = path.join(tempDir, "segment.mp4");
+  const oldFileTime = new Date(Date.now() - 60_000);
+  await writeFile(rawPath, Buffer.alloc(0));
+  await utimes(rawPath, oldFileTime, oldFileTime);
+
+  const closedSession = {
+    id: "session-1",
+    repositoryId: "repo-1",
+    userId: "user-1",
+    deviceType: null,
+    streamPath: "live/repo-name/session-1",
+    status: RecordingSessionStatus.CLOSED,
+    readyAt: new Date(Date.now() - 5 * 60_000),
+    closedAt: new Date(Date.now() - 3 * 60_000),
+    createdAt: new Date(Date.now() - 6 * 60_000),
+    endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
+  };
+  const segment = {
+    id: "segment-1",
+    recordingSessionId: "session-1",
+    rawPath,
+    status: RecordingSegmentStatus.WRITING,
+    createdAt: new Date(Date.now() - 4 * 60_000),
+    recordingSession: closedSession,
+  };
+  const updateManyCalls: Array<Record<string, unknown>> = [];
+  const videoCreateCalls: Array<Record<string, any>> = [];
+
+  fakePrisma.recordingSession.findMany = async () => [];
+  fakePrisma.recordingSegment.findMany = async (args: Record<string, any>) => {
+    if (args.where.status === RecordingSegmentStatus.WRITING) {
+      return [segment];
+    }
+    return [];
+  };
+  fakePrisma.recordingSegment.updateMany = async (args: Record<string, unknown>) => {
+    updateManyCalls.push(args);
+    return { count: 1 };
+  };
+  fakePrisma.video.create = async (args: Record<string, any>) => {
+    videoCreateCalls.push(args);
+    return { id: args.data.id };
+  };
+
+  try {
+    await recordingSessionService.reconcileSessions();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+
+  assert.equal(updateManyCalls.length, 1);
+  assert.equal((updateManyCalls[0] as any).data.status, RecordingSegmentStatus.FAILED);
+  assert.equal(videoCreateCalls.length, 1);
+  assert.equal(videoCreateCalls[0]?.data.status, "FAILED");
+  assert.equal(videoCreateCalls[0]?.data.recordingSessionId, "session-1");
+});
+
+test("handleSegmentComplete ignores late completion for a terminal segment", async () => {
+  const updateCalls: Array<Record<string, unknown>> = [];
+  let finalizeCalled = false;
+
+  await fakeRedis.set("segment:/data/raw/live/repo-name/session-1/segment-0001.mp4", "session-1");
+  fakePrisma.recordingSegment.findUnique = async () => ({
+    id: "segment-1",
+    recordingSessionId: "session-1",
+    rawPath: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
+    status: RecordingSegmentStatus.FAILED,
+  });
+  fakePrisma.recordingSegment.update = async (args: Record<string, unknown>) => {
+    updateCalls.push(args);
+    return args;
+  };
+  recordingSessionService.tryEnqueueFinalize = async () => {
+    finalizeCalled = true;
+    return true;
+  };
+
+  await recordingSessionService.handleSegmentComplete({
+    path: "live/repo-name/session-1",
+    source_id: undefined,
+    segment_path: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
+    segment_duration: 1,
+  });
+
+  assert.equal(updateCalls.length, 0);
+  assert.equal(finalizeCalled, false);
 });

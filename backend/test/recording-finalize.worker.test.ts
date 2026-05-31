@@ -13,6 +13,7 @@ const moduleLoader = require("node:module") as typeof import("node:module") & {
 const originalLoad = moduleLoader._load;
 
 let capturedProcessor: ((job: any) => Promise<void>) | null = null;
+let capturedHandlers: Map<string, (...args: any[]) => unknown> | null = null;
 
 moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
   if (request === "bullmq") {
@@ -27,6 +28,7 @@ moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
           _options: unknown,
         ) {
           capturedProcessor = processor;
+          capturedHandlers = this.handlers;
         }
 
         on(event: string, handler: (...args: unknown[]) => void) {
@@ -40,8 +42,10 @@ moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
   return originalLoad(request, parent, isMain);
 }) as typeof moduleLoader._load;
 
-const videoUpdateCalls: Array<{ where: { id: string }; data: Record<string, unknown> }> = [];
+const videoUpdateCalls: Array<{ data: Record<string, unknown> }> = [];
 const recordingSessionUpdateCalls: Array<{ where: { id: string }; data: Record<string, unknown> }> = [];
+const recordingSegmentUpdateManyCalls: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
+let segmentStatus: RecordingSegmentStatus = RecordingSegmentStatus.WRITE_DONE;
 
 const session = {
   id: "session-1",
@@ -50,7 +54,7 @@ const session = {
   userId: "alice",
   deviceType: "meta-rayban",
   streamPath: "live/repo-name",
-  status: RecordingSessionStatus.FINALIZING,
+  status: RecordingSessionStatus.CLOSED,
   targetDirectory: "/data/root",
   readyAt: null as Date | null,
   createdAt: new Date("2026-04-14T09:59:00.000Z"),
@@ -68,27 +72,37 @@ const fakePrisma: any = {
     },
   },
   recordingSegment: {
-    findMany: async () => [
-      {
-        id: "segment-1",
-        recordingSessionId: "session-1",
-        sequence: 1,
-        rawPath: "/data/raw/live/repo-name/segment-1.mp4",
-        durationSec: 2,
-        status: RecordingSegmentStatus.COMPLETED,
-      },
-    ],
+    findUnique: async () => ({
+      id: "segment-1",
+      recordingSessionId: "session-1",
+      rawPath: "/data/raw/live/repo-name/segment-1.mp4",
+      durationSec: 2,
+      status: segmentStatus,
+    }),
+    updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+      recordingSegmentUpdateManyCalls.push(args);
+
+      if (args.where.status && args.where.status !== segmentStatus) {
+        return { count: 0 };
+      }
+      if (args.data.status) {
+        segmentStatus = args.data.status as RecordingSegmentStatus;
+      }
+
+      return { count: 1 };
+    },
   },
   video: {
+    findUnique: async () => null,
     findMany: async () => [
       {
         recorder: "alice",
       },
     ],
-    update: async (args: { where: { id: string }; data: Record<string, unknown> }) => {
+    create: async (args: { data: Record<string, unknown> }) => {
       videoUpdateCalls.push(args);
       return {
-        id: args.where.id,
+        id: args.data.id,
         ...args.data,
       };
     },
@@ -107,6 +121,7 @@ const fakePrisma: any = {
     }),
     update: async () => null,
   },
+  $queryRaw: async () => [{ id: "repo-1" }],
   $transaction: async (operations: Array<Promise<unknown>> | ((tx: unknown) => Promise<unknown>)) =>
     typeof operations === "function" ? operations(fakePrisma) : Promise.all(operations),
 };
@@ -124,15 +139,17 @@ const originalEnsureOutputDirectories = encoding.ensureOutputDirectories;
 const originalEncodeVlmVideo = encoding.encodeVlmVideo;
 const originalEncodeDashboardVideo = encoding.encodeDashboardVideo;
 const originalEncodeThumbnail = encoding.encodeThumbnail;
-const originalConcatSegments = encoding.concatSegments;
 const originalProbeVideoMetadata = ffprobeLib.probeVideoMetadata;
 const originalWaitForStableFile = fileUtils.waitForStableFile;
 const originalComputeFileDigestAndSize = fileUtils.computeFileDigestAndSize;
 
 beforeEach(() => {
   capturedProcessor = null;
+  capturedHandlers = null;
   videoUpdateCalls.length = 0;
   recordingSessionUpdateCalls.length = 0;
+  recordingSegmentUpdateManyCalls.length = 0;
+  segmentStatus = RecordingSegmentStatus.WRITE_DONE;
   session.readyAt = null;
 
   (encoding as any).buildOutputPaths = originalBuildOutputPaths;
@@ -140,7 +157,6 @@ beforeEach(() => {
   (encoding as any).encodeVlmVideo = originalEncodeVlmVideo;
   (encoding as any).encodeDashboardVideo = originalEncodeDashboardVideo;
   (encoding as any).encodeThumbnail = originalEncodeThumbnail;
-  (encoding as any).concatSegments = originalConcatSegments;
   (ffprobeLib as any).probeVideoMetadata = originalProbeVideoMetadata;
   (fileUtils as any).waitForStableFile = originalWaitForStableFile;
   (fileUtils as any).computeFileDigestAndSize = originalComputeFileDigestAndSize;
@@ -215,8 +231,12 @@ test("recording finalize stores VLM SHA-256 and size metadata after encoding", a
   assert.equal(completedUpdate?.data.vlmSha256, "a".repeat(64));
   assert.equal(completedUpdate?.data.recorder, "alice");
   assert.equal(completedUpdate?.data.status, VideoStatus.COMPLETED);
-  assert.equal(recordingSessionUpdateCalls.at(-1)?.data.status, RecordingSessionStatus.COMPLETED);
+  assert.equal(recordingSessionUpdateCalls.length, 0);
   assert.deepEqual(progressUpdates, [5, 15, 35, 90, 100]);
+  assert.deepEqual(
+    recordingSegmentUpdateManyCalls.map((call) => call.data.status),
+    [RecordingSegmentStatus.PROCESSING, RecordingSegmentStatus.COMPLETED],
+  );
 });
 
 test("recording finalize falls back to session timing when ffprobe recordedAt is missing", async () => {
@@ -263,7 +283,95 @@ test("recording finalize falls back to session timing when ffprobe recordedAt is
     updateProgress: async () => {},
   });
 
-  const metadataUpdate = videoUpdateCalls[1];
+  const metadataUpdate = videoUpdateCalls[0];
   assert.ok(metadataUpdate);
   assert.equal(metadataUpdate?.data.recordedAt, session.readyAt);
+});
+
+test("recording finalize ignores PROCESSING segment instead of resuming without a WRITE_DONE claim", async () => {
+  segmentStatus = RecordingSegmentStatus.PROCESSING;
+  let waitCalled = false;
+
+  (fileUtils as any).waitForStableFile = (async () => {
+    waitCalled = true;
+  }) as typeof fileUtils.waitForStableFile;
+
+  createRecordingFinalizeWorker();
+  assert.ok(capturedProcessor);
+
+  await capturedProcessor?.({
+    data: {
+      recordingSessionId: "session-1",
+      videoId: "video-1",
+      repositoryId: "repo-1",
+      ownerId: "alice",
+      repoName: "repo-name",
+      targetDirectory: "/data/root/datasets",
+    },
+    updateProgress: async () => {},
+  });
+
+  assert.equal(waitCalled, false);
+  assert.equal(videoUpdateCalls.length, 0);
+  assert.equal(recordingSegmentUpdateManyCalls.length, 0);
+});
+
+test("recording finalize resets PROCESSING segment to WRITE_DONE before BullMQ retry", async () => {
+  (fileUtils as any).waitForStableFile = (async () => {
+    throw new Error("raw file not stable");
+  }) as typeof fileUtils.waitForStableFile;
+
+  createRecordingFinalizeWorker();
+  assert.ok(capturedProcessor);
+
+  await assert.rejects(
+    capturedProcessor?.({
+      data: {
+        recordingSessionId: "session-1",
+        videoId: "video-1",
+        repositoryId: "repo-1",
+        ownerId: "alice",
+        repoName: "repo-name",
+        targetDirectory: "/data/root/datasets",
+      },
+      attemptsMade: 0,
+      opts: { attempts: 3 },
+      updateProgress: async () => {},
+    }),
+    /raw file not stable/,
+  );
+
+  assert.deepEqual(
+    recordingSegmentUpdateManyCalls.map((call) => call.data.status),
+    [RecordingSegmentStatus.PROCESSING, RecordingSegmentStatus.WRITE_DONE],
+  );
+  assert.equal(segmentStatus, RecordingSegmentStatus.WRITE_DONE);
+});
+
+test("recording finalize final failure marks segment failed and creates failed video", async () => {
+  createRecordingFinalizeWorker();
+  const failedHandler = capturedHandlers?.get("failed");
+  assert.ok(failedHandler);
+
+  failedHandler(
+    {
+      data: {
+        recordingSessionId: "session-1",
+        videoId: "video-1",
+        repositoryId: "repo-1",
+        ownerId: "alice",
+        repoName: "repo-name",
+        targetDirectory: "/data/root/datasets",
+      },
+      attemptsMade: 3,
+      opts: { attempts: 3 },
+    },
+    new Error("encoding failed"),
+  );
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.equal(segmentStatus, RecordingSegmentStatus.FAILED);
+  assert.equal(videoUpdateCalls.length, 1);
+  assert.equal(videoUpdateCalls[0]?.data.status, VideoStatus.FAILED);
+  assert.equal(videoUpdateCalls[0]?.data.errorMessage, "encoding failed");
 });

@@ -50,7 +50,7 @@ export class StreamService {
       access = await repositoryService.assertRepositoryAccess(userId, userRole, input.repositoryId, "maintain");
     } catch (error) {
       if (this.isForbiddenError(error)) {
-        await this.abortPendingSessionsAfterForbiddenAccess(
+        await this.completePendingSessionsAfterForbiddenAccess(
           input.repositoryId,
           userId,
           input.deviceType ?? null,
@@ -118,7 +118,7 @@ export class StreamService {
     return error instanceof AppError && error.code === ErrorCode.FORBIDDEN;
   }
 
-  private async abortPendingSessionsAfterForbiddenAccess(
+  private async completePendingSessionsAfterForbiddenAccess(
     repositoryId: string,
     userId: string,
     deviceType: string | null,
@@ -137,8 +137,8 @@ export class StreamService {
       return;
     }
 
-    const abortedSessionIds: string[] = [];
-    const finalizedAt = new Date();
+    const closedSessionIds: string[] = [];
+    const closedAt = new Date();
     for (const session of pendingSessions) {
       const result = await prisma.recordingSession.updateMany({
         where: {
@@ -146,28 +146,28 @@ export class StreamService {
           status: RecordingSessionStatus.PENDING,
         },
         data: {
-          status: RecordingSessionStatus.ABORTED,
+          status: RecordingSessionStatus.CLOSED,
           endReason: RecordingSessionEndReason.ACCESS_FORBIDDEN,
-          finalizedAt,
+          closedAt,
         },
       });
 
       if (result.count > 0) {
-        abortedSessionIds.push(session.id);
+        closedSessionIds.push(session.id);
       }
     }
 
-    if (abortedSessionIds.length === 0) {
+    if (closedSessionIds.length === 0) {
       return;
     }
 
-    await redis.del(...abortedSessionIds.map(streamRecordingKey));
+    await redis.del(...closedSessionIds.map(streamRecordingKey));
 
-    console.info("[rtmp-register] forbidden-pending-aborted", {
+    console.info("[rtmp-register] forbidden-pending-closed", {
       repositoryId,
       userId,
       deviceType,
-      recordingSessionIds: abortedSessionIds,
+      recordingSessionIds: closedSessionIds,
       endReason: RecordingSessionEndReason.ACCESS_FORBIDDEN,
     });
   }
@@ -245,8 +245,6 @@ export class StreamService {
     });
 
     return {
-      recording_session_id: session.id,
-      repository_id: session.repositoryId,
       stream_path: session.streamPath,
       publish_ticket: ticketGrant.ticket.ticketId,
     };
@@ -361,7 +359,7 @@ export class StreamService {
    * [RTMP 인증 보조: live session 조회]
    * RTMP publish/read 인증 시 auth.service에서 호출.
    * stream path의 recordingSessionId로 Redis live cache를 조회한다.
-   * FINALIZING 상태인 세션은 이미 종료된 것이므로 null을 반환한다.
+   * Redis live pointer가 없거나 STREAMING이 아니면 live session으로 취급하지 않는다.
    */
   async findLiveSessionByStreamPath(streamPath: string): Promise<RecordingSessionLiveCache | null> {
     const cache = await recordingSessionService.getLiveCacheByPath(streamPath);
@@ -369,7 +367,7 @@ export class StreamService {
       return null;
     }
 
-    if (cache.status !== "STREAMING" && cache.status !== "STOP_REQUESTED") {
+    if (cache.status !== "STREAMING") {
       return null;
     }
 
@@ -379,7 +377,7 @@ export class StreamService {
   /**
    * [상태 정합성 루프 시작]
    * 서버 기동 시 5초 간격으로 reconcileSessions를 실행하는 타이머를 시작한다.
-   * PENDING 타임아웃, STREAMING/STOP_REQUESTED인데 MediaMTX에 path가 없는 경우 등
+   * PENDING 타임아웃, STREAMING인데 MediaMTX에 path가 없는 경우 등
    * hook 누락이나 비정상 종료로 인한 상태 불일치를 주기적으로 보정한다.
    */
   startReconcileLoop() {

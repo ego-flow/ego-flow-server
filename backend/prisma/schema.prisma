@@ -58,8 +58,6 @@ model Setting {
 }
 
 enum VideoStatus {
-  PENDING
-  PROCESSING
   COMPLETED
   FAILED
 }
@@ -67,16 +65,11 @@ enum VideoStatus {
 enum RecordingSessionStatus {
   PENDING
   STREAMING
-  STOP_REQUESTED
-  FINALIZING
-  COMPLETED
-  FAILED
-  ABORTED
+  CLOSED
 }
 
 enum RecordingSessionEndReason {
-  USER_STOP
-  GLASSES_STOP
+  NORMAL_DISCONNECT
   UNEXPECTED_DISCONNECT
   REGISTRATION_TIMEOUT
   ACCESS_FORBIDDEN
@@ -85,6 +78,8 @@ enum RecordingSessionEndReason {
 
 enum RecordingSegmentStatus {
   WRITING
+  WRITE_DONE
+  PROCESSING
   COMPLETED
   FAILED
 }
@@ -128,14 +123,12 @@ model RecordingSession {
   status          RecordingSessionStatus
   endReason       RecordingSessionEndReason? @map("end_reason")
   targetDirectory String                    @map("target_directory") @db.VarChar(1024)
-  stopRequestedAt DateTime?                 @map("stop_requested_at")
   readyAt         DateTime?                 @map("ready_at")
-  notReadyAt      DateTime?                 @map("not_ready_at")
-  finalizedAt     DateTime?                 @map("finalized_at")
+  closedAt        DateTime?                 @map("closed_at")
   createdAt       DateTime                  @default(now()) @map("created_at")
   updatedAt       DateTime                  @updatedAt @map("updated_at")
 
-  segments RecordingSegment[]
+  segment  RecordingSegment?
   video    Video?
 
   @@index([repositoryId, status], map: "idx_recording_sessions_repo_status")
@@ -145,8 +138,7 @@ model RecordingSession {
 
 model RecordingSegment {
   id                 String                 @id @default(uuid()) @db.Uuid
-  recordingSessionId String                 @map("recording_session_id") @db.Uuid
-  sequence           Int
+  recordingSessionId String                 @unique @map("recording_session_id") @db.Uuid
   rawPath            String                 @map("raw_path") @db.VarChar(1024)
   durationSec        Float?                 @map("duration_sec")
   status             RecordingSegmentStatus
@@ -155,8 +147,7 @@ model RecordingSegment {
 
   recordingSession RecordingSession @relation(fields: [recordingSessionId], references: [id])
 
-  @@unique([recordingSessionId, rawPath], map: "uniq_recording_segments_session_raw_path")
-  @@index([recordingSessionId, sequence], map: "idx_recording_segments_session_sequence")
+  @@index([status], map: "idx_recording_segments_status")
   @@map("recording_segments")
 }
 
@@ -185,7 +176,7 @@ model Video {
   actionLabels          Json?       @map("action_labels")
   videoTextAlignment    Json?       @map("video_text_alignment")
   sceneSummary          String?     @map("scene_summary") @db.Text
-  status                VideoStatus @default(PENDING)
+  status                VideoStatus
   errorMessage          String?     @map("error_message") @db.Text
   processingStartedAt   DateTime?   @map("processing_started_at")
   processingCompletedAt DateTime?   @map("processing_completed_at")

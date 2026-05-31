@@ -49,10 +49,20 @@ export class FakeRedis {
   }
 
   async set(key: string, value: RedisValue, ...args: Array<string | number>) {
+    const hasExistingValue = this.store.has(key);
+    const hasXx = args.some((value) => String(value).toUpperCase() === "XX");
+    const hasNx = args.some((value) => String(value).toUpperCase() === "NX");
+    if ((hasXx && !hasExistingValue) || (hasNx && hasExistingValue)) {
+      return null;
+    }
+
+    const keepTtl = args.some((value) => String(value).toUpperCase() === "KEEPTTL");
     this.store.set(key, String(value));
     const exIndex = args.findIndex((value) => String(value).toUpperCase() === "EX");
     if (exIndex >= 0) {
       this.ttlSeconds.set(key, Number(args[exIndex + 1]));
+    } else if (keepTtl) {
+      // Keep the existing TTL entry unchanged.
     } else {
       this.ttlSeconds.delete(key);
     }

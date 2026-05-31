@@ -106,25 +106,3 @@ export const encodeThumbnail = async (inputPath: string, outputPath: string, see
 
   await run(command);
 };
-
-/**
- * [세그먼트 병합]
- * 2개 이상의 녹화 세그먼트를 ffmpeg concat demuxer로 무재인코딩 병합한다.
- * 병합된 파일은 .tmp/{sessionId}/merged.mp4에 생성된다.
- */
-export const concatSegments = async (
-  segmentPaths: string[],
-  concatListPath: string,
-  outputPath: string,
-): Promise<void> => {
-  const concatContent = segmentPaths.map((p) => `file '${p}'`).join("\n");
-  await fs.writeFile(concatListPath, concatContent, "utf-8");
-  await fs.mkdir(path.dirname(outputPath), { recursive: true });
-
-  const command = ffmpeg(concatListPath)
-    .inputOptions(["-f concat", "-safe 0"])
-    .outputOptions(["-c copy", "-movflags +faststart"])
-    .output(outputPath);
-
-  await run(command);
-};

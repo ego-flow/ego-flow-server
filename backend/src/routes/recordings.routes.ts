@@ -5,41 +5,40 @@ import { BadRequest } from "../lib/errors";
 import { getAuthUser } from "../lib/request-context";
 import { requireAppJwt, requireDashboardOrApp } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
-import { recordingSessionIdParamsSchema, recordingStopBodySchema } from "../schemas/stream.schema";
+import {
+  recordingCloseIntentSchema,
+  recordingSessionIdParamsSchema,
+} from "../schemas/stream.schema";
 import { recordingSessionService } from "../services/recording-session.service";
 import { repositoryService } from "../services/repository.service";
 
 const router = Router();
 
 /**
- * [녹화 중지 요청]
- * 앱에서 Stop 버튼 또는 glasses 촬영 종료 시 호출.
- * repository maintain 권한을 확인한 뒤 세션을 STOP_REQUESTED 상태로 전환한다.
- * reason은 "USER_STOP" 또는 "GLASSES_STOP".
- * 이후 앱이 RTMP 연결을 끊으면 MediaMTX stream-not-ready hook이 FINALIZING을 트리거한다.
+ * [녹화 종료 의도 기록]
+ * 앱이 RTMP 연결을 정상 종료하기 직전에 호출한다.
+ * 실제 CLOSED 전이는 MediaMTX stream-not-ready hook이 담당한다.
  */
-// POST /api/v1/recordings/:recordingSessionId/stop
+// POST /api/v1/recordings/:recordingSessionId/close-intent
 router.post(
-  "/:recordingSessionId/stop",
+  "/:recordingSessionId/close-intent",
   requireAppJwt,
-  validate(recordingStopBodySchema),
+  validate(recordingSessionIdParamsSchema, "params"),
+  validate(recordingCloseIntentSchema),
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
+    const { recordingSessionId } = req.params as { recordingSessionId: string };
+    const { reason } = req.body as { reason: string };
 
-    const paramsParsed = recordingSessionIdParamsSchema.safeParse(req.params);
-    if (!paramsParsed.success) {
-      throw BadRequest("Invalid recording session identifier.");
-    }
+    const session = await recordingSessionService.recordCloseIntent(
+      recordingSessionId,
+      user.userId,
+      reason,
+    );
 
-    const { recordingSessionId } = paramsParsed.data;
-    const { reason } = req.body;
-    const repositoryId = await recordingSessionService.getSessionRepositoryId(recordingSessionId);
-    await repositoryService.assertRepositoryAccess(user.userId, user.role, repositoryId, "maintain");
-
-    const session = await recordingSessionService.requestStop(recordingSessionId, reason);
     res.status(200).json({
       recording_session_id: session.id,
-      status: "stop_requested",
+      end_reason: session.endReason,
     });
   }),
 );

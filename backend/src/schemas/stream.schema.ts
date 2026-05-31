@@ -35,12 +35,6 @@ export const streamReadyHookSchema = z.object({
   path: z.string().min(1),
   query: z.string().optional(),
   ticket: optionalHookString,
-  source_id: optionalHookString,
-  source_type: z.string().min(1),
-  mtx_query: optionalHookString,
-  mtx_source_id: optionalHookString,
-  mtx_source_type: optionalHookString,
-  mtx_path: optionalHookString,
 });
 
 export const streamNotReadyHookSchema = z.object({
@@ -66,8 +60,8 @@ export const recordingSessionIdParamsSchema = z.object({
   recordingSessionId: z.string().uuid(),
 });
 
-export const recordingStopBodySchema = z.object({
-  reason: z.enum(["USER_STOP", "GLASSES_STOP"]).default("USER_STOP"),
+export const recordingCloseIntentSchema = z.object({
+  reason: z.literal("NORMAL_DISCONNECT"),
 });
 
 export type StreamRegisterInput = z.infer<typeof streamRegisterSchema>;
@@ -77,4 +71,4 @@ export type StreamNotReadyHookInput = z.infer<typeof streamNotReadyHookSchema>;
 export type SegmentCreateHookInput = z.infer<typeof segmentCreateHookSchema>;
 export type SegmentCompleteHookInput = z.infer<typeof segmentCompleteHookSchema>;
 export type RecordingSessionIdParams = z.infer<typeof recordingSessionIdParamsSchema>;
-export type RecordingStopBody = z.infer<typeof recordingStopBodySchema>;
+export type RecordingCloseIntentInput = z.infer<typeof recordingCloseIntentSchema>;

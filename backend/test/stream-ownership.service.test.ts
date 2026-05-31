@@ -52,6 +52,7 @@ test("validate and consume publish ticket only depend on ticket state and stream
   if (validation.ok) {
     assert.equal(validation.ticket.recordingSessionId, publishParams.recordingSessionId);
   }
+  assert.equal(fakeRedis.getTtlSeconds(`stream:ticket:${grant.ticket.ticketId}`), 60);
 
   const pathMismatch = await service.validatePublishTicket("live/other/session-1", query);
   assert.deepEqual(pathMismatch, {
@@ -70,4 +71,31 @@ test("validate and consume publish ticket only depend on ticket state and stream
     reason: "ticket-status-consumed",
     ticketId: grant.ticket.ticketId,
   });
+});
+
+test("validatePublishTicket refreshes the ticket TTL on successful verification", async () => {
+  const grant = await service.issuePublishTicket(publishParams);
+  const key = `stream:ticket:${grant.ticket.ticketId}`;
+  const query = `ticket=${encodeURIComponent(grant.ticket.ticketId)}`;
+
+  await fakeRedis.expire(key, 5);
+
+  const validation = await service.validatePublishTicket(publishParams.streamPath, query);
+
+  assert.equal(validation.ok, true);
+  assert.equal(fakeRedis.getTtlSeconds(key), 60);
+});
+
+test("consumePublishTicket preserves the remaining ticket TTL", async () => {
+  const grant = await service.issuePublishTicket(publishParams);
+  const key = `stream:ticket:${grant.ticket.ticketId}`;
+  const query = `ticket=${encodeURIComponent(grant.ticket.ticketId)}`;
+
+  await fakeRedis.expire(key, 5);
+
+  const consumed = await service.consumePublishTicket(publishParams.streamPath, query);
+
+  assert.equal(consumed.ok, true);
+  assert.equal(fakeRedis.getTtlSeconds(key), 5);
+  assert.equal(fakeRedis.getJson<PublishTicketRecord>(key)?.status, "consumed");
 });

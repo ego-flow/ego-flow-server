@@ -256,7 +256,7 @@ beforeEach(() => {
   videos.set("video-2", {
     id: "video-2",
     repositoryId: "repo-2",
-    status: VideoStatus.PROCESSING,
+    status: VideoStatus.FAILED,
     durationSec: null,
     resolutionWidth: null,
     resolutionHeight: null,

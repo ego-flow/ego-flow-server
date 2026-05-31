@@ -1,5 +1,7 @@
 rtmp: yes
 rtmpAddress: :1935
+readTimeout: 10s
+writeTimeout: 10s
 
 hls: yes
 hlsAddress: :8888
@@ -35,7 +37,7 @@ pathDefaults:
   recordPath: /data/raw/%path/%Y-%m-%d_%H-%M-%S-%f
   recordFormat: fmp4
   recordPartDuration: 1s
-  recordSegmentDuration: 12h
+  recordSegmentDuration: 2h
   recordDeleteAfter: 0s
   runOnReady: /mediamtx-hooks/stream-ready-wrapper.sh
   runOnNotReady: /mediamtx-hooks/stream-not-ready-wrapper.sh

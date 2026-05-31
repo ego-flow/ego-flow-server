@@ -45,7 +45,7 @@ fi
 
 if [ -z "$TICKET" ]; then
   {
-    echo "[stream-ready-wrapper] ticket-empty path=$MTX_PATH source_id=$MTX_SOURCE_ID source_type=$MTX_SOURCE_TYPE"
+    echo "[stream-ready-wrapper] ticket-empty path=$MTX_PATH"
     env | grep '^MTX_' || true
   } >&2
 fi
@@ -53,13 +53,7 @@ fi
 ESC_PATH="$(json_escape "$MTX_PATH")"
 ESC_QUERY="$(json_escape "$QUERY")"
 ESC_TICKET="$(json_escape "$TICKET")"
-ESC_SOURCE_ID="$(json_escape "$MTX_SOURCE_ID")"
-ESC_SOURCE_TYPE="$(json_escape "$MTX_SOURCE_TYPE")"
-ESC_MTX_QUERY_RAW="$(json_escape "$MTX_QUERY_RAW")"
-ESC_MTX_SOURCE_ID="$(json_escape "${MTX_SOURCE_ID:-}")"
-ESC_MTX_SOURCE_TYPE="$(json_escape "${MTX_SOURCE_TYPE:-}")"
-ESC_MTX_PATH="$(json_escape "${MTX_PATH:-}")"
 
-wget -qO /dev/null --post-data="{\"path\":\"$ESC_PATH\",\"query\":\"$ESC_QUERY\",\"ticket\":\"$ESC_TICKET\",\"source_id\":\"$ESC_SOURCE_ID\",\"source_type\":\"$ESC_SOURCE_TYPE\",\"mtx_query\":\"$ESC_MTX_QUERY_RAW\",\"mtx_source_id\":\"$ESC_MTX_SOURCE_ID\",\"mtx_source_type\":\"$ESC_MTX_SOURCE_TYPE\",\"mtx_path\":\"$ESC_MTX_PATH\"}" \
+wget -qO /dev/null --post-data="{\"path\":\"$ESC_PATH\",\"query\":\"$ESC_QUERY\",\"ticket\":\"$ESC_TICKET\"}" \
   --header="Content-Type: application/json" \
   "${BACKEND_URL}/api/v1/hooks/stream-ready" 2>/dev/null || true

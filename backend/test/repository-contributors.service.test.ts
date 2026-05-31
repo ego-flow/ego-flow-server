@@ -7,6 +7,7 @@ process.env.JWT_SECRET ??= "replace-this-in-tests-only";
 process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 
 let updatedContributors: unknown = null;
+const lockCalls: string[] = [];
 
 const fakePrisma: any = {
   repoMember: {
@@ -26,6 +27,10 @@ const fakePrisma: any = {
       return null;
     },
   },
+  $queryRaw: async (...args: unknown[]) => {
+    lockCalls.push(String(args[0]));
+    return [{ id: "repo-1" }];
+  },
 };
 
 (globalThis as any).__egoflowPrisma = fakePrisma;
@@ -35,6 +40,7 @@ const { computeRepositoryContributorUserIds, refreshRepositoryContributors } =
 
 beforeEach(() => {
   updatedContributors = null;
+  lockCalls.length = 0;
   fakePrisma.repoMember.findMany = async () => [
     { userId: "alice", role: RepoRole.admin },
   ];
@@ -55,6 +61,7 @@ test("repository contributors include existing contributors, admins, and recorde
 
   await refreshRepositoryContributors("repo-1");
   assert.deepEqual(updatedContributors, ["alice", "bob", "carol"]);
+  assert.equal(lockCalls.length, 1);
 });
 
 test("repository contributors keep existing contributors after role changes and video removal", async () => {

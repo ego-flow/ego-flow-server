@@ -70,10 +70,8 @@ const createSessionFromArgs = (args: { data: Record<string, any> }) => ({
   streamPath: args.data.streamPath,
   status: args.data.status,
   targetDirectory: args.data.targetDirectory,
-  stopRequestedAt: null,
   readyAt: null,
-  notReadyAt: null,
-  finalizedAt: null,
+  closedAt: null,
   createdAt: new Date("2026-05-29T00:00:00.000Z"),
   updatedAt: new Date("2026-05-29T00:00:00.000Z"),
 });
@@ -218,7 +216,7 @@ test("registerSession reuses pending sessions regardless of age and leaves clean
   assert.equal(fakeRedis.getJson<RecordingSessionLiveCache>(`stream:recording:${expiredSession.id}`)?.status, "PENDING");
 });
 
-test("registerSession aborts pending sessions when maintain access is forbidden", async () => {
+test("registerSession completes pending sessions when maintain access is forbidden", async () => {
   const existingSession = {
     id: "33333333-3333-4333-8333-333333333333",
     repositoryId: repository.id,
@@ -275,9 +273,8 @@ test("registerSession aborts pending sessions when maintain access is forbidden"
     id: existingSession.id,
     status: RecordingSessionStatus.PENDING,
   });
-  assert.equal((updateManyCalls[0] as any).data.status, RecordingSessionStatus.ABORTED);
+  assert.equal((updateManyCalls[0] as any).data.status, RecordingSessionStatus.CLOSED);
   assert.equal((updateManyCalls[0] as any).data.endReason, RecordingSessionEndReason.ACCESS_FORBIDDEN);
-  assert.ok((updateManyCalls[0] as any).data.finalizedAt instanceof Date);
   assert.equal(await fakeRedis.get(`stream:recording:${existingSession.id}`), null);
 });
 
@@ -291,10 +288,8 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
     streamPath: "live/test2/44444444-4444-4444-8444-444444444444",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data",
-    stopRequestedAt: null,
     readyAt: null,
-    notReadyAt: null,
-    finalizedAt: null,
+    closedAt: null,
     createdAt: new Date(Date.now() - 10 * 60_000),
     updatedAt: new Date(Date.now() - 10 * 60_000),
   };
@@ -308,10 +303,11 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
   const response = await streamService.issuePublishTicket("maintainer-1", "user", stalePendingSession.id);
 
   assert.equal(repositoryAccessChecked, false);
-  assert.equal(response.recording_session_id, stalePendingSession.id);
-  assert.equal(response.repository_id, repository.id);
   assert.equal(response.stream_path, stalePendingSession.streamPath);
   assert.ok(response.publish_ticket.startsWith("t_"));
+  assert.deepEqual(Object.keys(response).sort(), ["publish_ticket", "stream_path"]);
+  assert.equal(Object.hasOwn(response, "recording_session_id"), false);
+  assert.equal(Object.hasOwn(response, "repository_id"), false);
   assert.equal(Object.hasOwn(response, "repository_name"), false);
   assert.equal(Object.hasOwn(response, "publish_ticket_expires_at"), false);
   assert.equal(Object.hasOwn(response, "rtmp_publish_base_url"), false);
@@ -338,10 +334,8 @@ test("issuePublishTicket only allows PENDING recording sessions", async () => {
     streamPath: "live/test2/55555555-5555-4555-8555-555555555555",
     status: RecordingSessionStatus.STREAMING,
     targetDirectory: "/data",
-    stopRequestedAt: null,
     readyAt: new Date(),
-    notReadyAt: null,
-    finalizedAt: null,
+    closedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };

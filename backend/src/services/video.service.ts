@@ -67,10 +67,7 @@ const normalizeProgress = (status: VideoStatus, progress: number | null): number
   switch (status) {
     case "COMPLETED":
       return 100;
-    case "PROCESSING":
-      return 0;
     case "FAILED":
-    case "PENDING":
     default:
       return 0;
   }

@@ -28,6 +28,10 @@ type PublishTicketConsumeResult =
       ticketId: string | null;
     };
 
+type PublishTicketValidationOptions = {
+  refreshTtl?: boolean;
+};
+
 export class StreamOwnershipService {
   getPublishTicketTtlSeconds() {
     return PUBLISH_TICKET_TTL_SECONDS;
@@ -56,7 +60,11 @@ export class StreamOwnershipService {
     return { ticket };
   }
 
-  async validatePublishTicket(streamPath: string, query?: string): Promise<PublishTicketValidationResult> {
+  async validatePublishTicket(
+    streamPath: string,
+    query?: string,
+    options: PublishTicketValidationOptions = {},
+  ): Promise<PublishTicketValidationResult> {
     const ticketId = this.extractTicketId(query);
     if (!ticketId) {
       return {
@@ -66,7 +74,8 @@ export class StreamOwnershipService {
       };
     }
 
-    const raw = await redis.get(streamTicketKey(ticketId));
+    const ticketKey = streamTicketKey(ticketId);
+    const raw = await redis.get(ticketKey);
     if (!raw) {
       return {
         ok: false,
@@ -102,6 +111,17 @@ export class StreamOwnershipService {
       };
     }
 
+    if (options.refreshTtl ?? true) {
+      const refreshed = await redis.expire(ticketKey, PUBLISH_TICKET_TTL_SECONDS);
+      if (!refreshed) {
+        return {
+          ok: false,
+          reason: "unknown-or-expired-ticket",
+          ticketId,
+        };
+      }
+    }
+
     return {
       ok: true,
       ticket,
@@ -110,7 +130,7 @@ export class StreamOwnershipService {
   }
 
   async consumePublishTicket(streamPath: string, query?: string): Promise<PublishTicketConsumeResult> {
-    const validation = await this.validatePublishTicket(streamPath, query);
+    const validation = await this.validatePublishTicket(streamPath, query, { refreshTtl: false });
     if (!validation.ok) {
       return validation;
     }
@@ -120,12 +140,19 @@ export class StreamOwnershipService {
       status: "consumed",
     };
 
-    await redis.set(
+    const updated = await redis.set(
       streamTicketKey(validation.ticket.ticketId),
       JSON.stringify(nextTicket),
-      "EX",
-      PUBLISH_TICKET_TTL_SECONDS,
+      "KEEPTTL",
+      "XX",
     );
+    if (updated !== "OK") {
+      return {
+        ok: false,
+        reason: "unknown-or-expired-ticket",
+        ticketId: validation.ticket.ticketId,
+      };
+    }
 
     return {
       ok: true,

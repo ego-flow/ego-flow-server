@@ -675,8 +675,6 @@ export class RepositoryService {
           in: [
             RecordingSessionStatus.PENDING,
             RecordingSessionStatus.STREAMING,
-            RecordingSessionStatus.STOP_REQUESTED,
-            RecordingSessionStatus.FINALIZING,
           ],
         },
       },

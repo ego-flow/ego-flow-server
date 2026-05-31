@@ -4,6 +4,22 @@ import { prisma } from "../lib/prisma";
 
 type PrismaClientLike = typeof prisma | Prisma.TransactionClient;
 
+const lockRepositoryForContributorRefresh = async (
+  repositoryId: string,
+  client: PrismaClientLike,
+) => {
+  await client.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT id
+    FROM repositories
+    WHERE id = ${repositoryId}::uuid
+    FOR UPDATE
+  `);
+};
+
+const isRootPrismaClient = (client: PrismaClientLike): client is typeof prisma =>
+  typeof (client as typeof prisma).$transaction === "function" &&
+  typeof (client as typeof prisma).$connect === "function";
+
 export const normalizeContributorUserIds = (value: Prisma.JsonValue | null | undefined): string[] => {
   if (!Array.isArray(value)) {
     return [];
@@ -57,7 +73,13 @@ export const computeRepositoryContributorUserIds = async (
 export const refreshRepositoryContributors = async (
   repositoryId: string,
   client: PrismaClientLike = prisma,
-) => {
+): Promise<string[]> => {
+  if (isRootPrismaClient(client)) {
+    return prisma.$transaction((tx): Promise<string[]> => refreshRepositoryContributors(repositoryId, tx));
+  }
+
+  await lockRepositoryForContributorRefresh(repositoryId, client);
+
   const contributors = await computeRepositoryContributorUserIds(repositoryId, client);
 
   await client.repository.update({
