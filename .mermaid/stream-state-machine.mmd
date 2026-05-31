@@ -1,0 +1,128 @@
+stateDiagram-v2
+  state "RecordingSession" as RecordingSession {
+    [*] --> RS_PENDING: POST /api/v1/streams/register<br/>session row create or reuse
+
+    state "PENDING" as RS_PENDING
+    state "STREAMING" as RS_STREAMING
+    state "CLOSED" as RS_CLOSED
+
+    note right of RS_PENDING
+      Initial entry action:
+      recording_sessions row is stored with status=PENDING.
+      Redis stream:recording:{recordingSessionId} is stored with 300s TTL.
+      streamPath is live/{repositoryName}/{recordingSessionId}.
+    end note
+
+    RS_PENDING --> RS_PENDING: register reuse<br/>same user/repository/deviceType<br/>updatedAt + Redis TTL refresh
+    RS_PENDING --> RS_STREAMING: stream-ready hook<br/>ticket validated and consumed
+    RS_PENDING --> RS_CLOSED: registration timeout<br/>background reconcile closes stale reservation
+    RS_PENDING --> RS_CLOSED: access forbidden cleanup<br/>register permission check failed
+
+    note right of RS_STREAMING
+      Entry action:
+      RecordingSession is updated to STREAMING.
+      readyAt is recorded.
+      Redis stream:recording:{recordingSessionId} becomes live cache with 7200s TTL.
+      stream:active:sessions adds recordingSessionId.
+    end note
+
+    RS_STREAMING --> RS_STREAMING: close-intent API<br/>record NORMAL_DISCONNECT intent only
+    RS_STREAMING --> RS_CLOSED: stream-not-ready hook<br/>publisher connection closed
+    RS_STREAMING --> RS_CLOSED: reconcile<br/>MediaMTX active path missing
+    RS_STREAMING --> RS_CLOSED: reconcile<br/>closedAt already recorded
+
+    note right of RS_CLOSED
+      Entry action:
+      stream-not-ready records closedAt.
+      If close-intent was recorded, endReason=NORMAL_DISCONNECT is preserved.
+      If close-intent was not recorded, endReason=UNEXPECTED_DISCONNECT is recorded.
+      reconcile fallback records closedAt and endReason=UNEXPECTED_DISCONNECT.
+      PENDING cleanup records closedAt and timeout/forbidden endReason.
+      Redis stream:recording:{recordingSessionId} and stream:active:sessions membership are removed.
+      Session status no longer represents processing progress.
+    end note
+
+    RS_CLOSED --> [*]
+  }
+
+  state "RecordingSegment" as RecordingSegment {
+    [*] --> SEG_WRITING: recording-segment-create hook<br/>MediaMTX opens raw segment file
+
+    state "WRITING" as SEG_WRITING
+    state "WRITE_DONE" as SEG_WRITE_DONE
+    state "PROCESSING" as SEG_PROCESSING
+    state "COMPLETED" as SEG_COMPLETED
+    state "FAILED" as SEG_FAILED
+
+    note right of SEG_WRITING
+      Initial entry action:
+      recording_segments row is upserted by recordingSessionId.
+      rawPath and createdAt are recorded.
+      segment:{segmentPath} is mapped to recordingSessionId for complete hook lookup with 7200s TTL.
+    end note
+
+    SEG_WRITING --> SEG_WRITING: duplicate segment-create<br/>same recordingSessionId/rawPath<br/>upsert no-op update
+    SEG_WRITING --> SEG_WRITE_DONE: recording-segment-complete hook<br/>raw file write finished
+    SEG_WRITING --> SEG_WRITE_DONE: reconcile recovery<br/>CLOSED session + stable non-empty raw file
+    SEG_WRITING --> SEG_FAILED: reconcile cleanup<br/>CLOSED session + stale empty/missing raw file
+    [*] --> SEG_WRITE_DONE: segment-complete recovery<br/>create hook missing<br/>single segment row created directly
+    SEG_WRITE_DONE --> SEG_PROCESSING: finalize worker claim<br/>atomic WRITE_DONE -> PROCESSING
+    SEG_WRITE_DONE --> SEG_FAILED: finalize job failed before claim<br/>final worker failure handler
+    SEG_PROCESSING --> SEG_COMPLETED: encoding success<br/>Video row created
+    SEG_PROCESSING --> SEG_FAILED: encoding failure after retries<br/>Video FAILED row created
+
+    note right of SEG_WRITE_DONE
+      Entry action:
+      durationSec and completedAt are recorded.
+      finalize enqueue is attempted only when RecordingSession is already CLOSED.
+      Missing enqueue is retried by reconcile.
+    end note
+
+    note right of SEG_PROCESSING
+      Entry action:
+      worker owns post-processing for the single raw segment.
+      Generated VLM, dashboard, and thumbnail files are produced from rawPath.
+    end note
+
+    SEG_COMPLETED --> [*]
+    SEG_FAILED --> [*]
+  }
+
+  state "Video" as Video {
+    [*] --> VIDEO_COMPLETED: finalize success<br/>create videos row
+    [*] --> VIDEO_FAILED: finalize failure<br/>create failed videos row
+
+    state "COMPLETED" as VIDEO_COMPLETED
+    state "FAILED" as VIDEO_FAILED
+
+    note right of VIDEO_COMPLETED
+      Entry action:
+      final metadata is persisted: paths, duration, resolution, codec,
+      recordedAt, sizeBytes, recorder, sha256, and processing timestamps.
+    end note
+
+    note right of VIDEO_FAILED
+      Entry action:
+      errorMessage and processingCompletedAt are persisted.
+      RecordingSession remains CLOSED.
+    end note
+
+    VIDEO_COMPLETED --> [*]
+    VIDEO_FAILED --> [*]
+  }
+
+%% 참고:
+%% RecordingSession.status는 streaming session 자체의 lifecycle만 표현한다.
+%% 최초 PENDING 진입은 register API가 담당하고, STREAMING 진입은 stream-ready hook이 담당한다.
+%% App 변경 필요:
+%% App 종료 버튼은 legacy Stop API를 호출하지 않고
+%% POST /api/v1/recordings/{recordingSessionId}/close-intent 를 먼저 호출한다.
+%% body는 { "reason": "NORMAL_DISCONNECT" } 이며, 200 OK 이후 RTMP publisher socket을 정상 close한다.
+%% close-intent는 RecordingSession.status를 바꾸지 않는 STREAMING self-loop이다.
+%% publisher connection 종료는 stream-not-ready hook 또는 reconcile이 CLOSED로 반영한다.
+%% MediaMTX stream-not-ready hook payload만으로 정상 close와 crash/reset을 완벽히 구분할 수는 없다.
+%% recording session 하나는 RecordingSegment 하나만 가진다.
+%% 최초 segment 진입은 segment-create hook의 WRITING row 생성이며, create hook이 누락된 경우 segment-complete가 WRITE_DONE row를 복구 생성할 수 있다.
+%% segment-complete는 RecordingSession을 직접 닫지 않고 단일 RecordingSegment를 WRITE_DONE으로 확정한 뒤 enqueue를 시도한다.
+%% RecordingSegment.status가 raw segment write와 후처리 상태를 표현한다.
+%% Video row는 finalize가 성공하거나 최종 실패했을 때 생성된다.

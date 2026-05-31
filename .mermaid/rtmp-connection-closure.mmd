@@ -1,0 +1,66 @@
+sequenceDiagram
+  autonumber
+  participant App as [Android App]
+  participant MTX as [MediaMTX]
+  participant Backend as [Backend]
+  participant DB as [DB]
+  participant Redis as [Redis]
+
+  Note over App,MTX: 전제<br/>RecordingSession은 STREAMING 상태이고,<br/>App은 MediaMTX에 RTMP publisher socket을 열어둔 상태다.<br/>MediaMTX path는 live/{repositoryName}/{recordingSessionId} 이다.
+
+  alt normal disconnect
+    App->>Backend: close-intent API
+    Note over App,Backend: POST /api/v1/recordings/{recordingSessionId}/close-intent<br/>body.reason=NORMAL_DISCONNECT
+    Backend->>DB: RecordingSession endReason update
+    Note over Backend,DB: updated fields: end_reason=NORMAL_DISCONNECT<br/>status/closed_at/Redis는 변경하지 않는다.
+    Backend-->>App: 200 OK
+
+    App->>MTX: RTMP publisher socket normal close
+    Note over App,MTX: App 종료 버튼은 close-intent 기록 후<br/>RTMP 연결을 정상 close하고,<br/>MediaMTX가 publisher not-ready 상태를 감지한다.
+
+    MTX->>Backend: stream-not-ready hook
+    Note over MTX,Backend: path = live/{repositoryName}/{recordingSessionId}<br/>source_id = {mtxSourceId optional}<br/>source_type = {mtxSourceType required}
+
+    Backend->>DB: RecordingSession CLOSED update
+    Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>required status: STREAMING<br/>updated fields: status=CLOSED, closed_at<br/>existing end_reason=NORMAL_DISCONNECT is preserved
+
+    Backend->>Redis: live pointer cleanup
+    Note over Backend,Redis: delete key: stream:recording:{recordingSessionId}<br/>remove member from set: stream:active:sessions
+
+  else unexpected closure or timeout
+    App--xMTX: RTMP publisher connection lost
+    Note over App,MTX: App crash, process kill, TCP reset, radio/network loss, half-open timeout 등
+
+    MTX->>MTX: publisher connection 상태 감지
+    Note over MTX: TCP close/reset은 빠르게 not-ready로 이어진다.<br/>half-open/stalled 연결은 MediaMTX readTimeout/writeTimeout에 의존한다.<br/>현재 mediamtx.yml<br/>readTimeout: 10s<br/>writeTimeout: 10s
+
+    alt stream-not-ready hook delivered
+      MTX->>Backend: stream-not-ready hook
+      Note over MTX,Backend: path = live/{repositoryName}/{recordingSessionId}<br/>source_id = {mtxSourceId optional}<br/>source_type = {mtxSourceType required}
+      Backend->>DB: RecordingSession CLOSED update
+      Note over Backend,DB: close-intent가 없으므로<br/>updated fields: status=CLOSED, closed_at, end_reason=UNEXPECTED_DISCONNECT
+      Backend->>Redis: live pointer cleanup
+    else hook missed and reconcile detects missing path
+      Backend->>MTX: MediaMTX active paths 조회
+      alt active path query succeeded and path missing
+        Backend->>DB: RecordingSession CLOSED update
+        Note over Backend,DB: active path missing fallback<br/>updated fields: status=CLOSED, closed_at, end_reason=UNEXPECTED_DISCONNECT
+        Backend->>Redis: live pointer cleanup
+      else active path query failed
+        Backend->>Backend: no-op until next reconcile
+        Note over Backend: MediaMTX active path 목록을 확인하지 못하면<br/>해당 loop에서는 STREAMING session을 강제로 닫지 않는다.
+      end
+    end
+  end
+
+%% 참고:
+%% 이 문서는 RTMP publisher socket 종료와 RecordingSession CLOSED 기록 정책을 다룬다.
+%% App 변경 필요:
+%% App은 legacy POST /api/v1/recordings/{recordingSessionId}/stop 을 호출하지 않는다.
+%% App은 정상 종료 시 POST /api/v1/recordings/{recordingSessionId}/close-intent 를 호출한다.
+%% body는 { "reason": "NORMAL_DISCONNECT" } 이며, 200 OK 이후 RTMP socket을 닫는다.
+%% close-intent가 실패하거나 누락되면 해당 종료는 UNEXPECTED_DISCONNECT로 기록될 수 있다.
+%% GLASSES_STOP endReason은 사용하지 않는다.
+%% MediaMTX stream-not-ready hook payload만으로 종료 원인을 정확히 구분하지 않는다.
+%% close-intent가 있으면 NORMAL_DISCONNECT, 없으면 stream-not-ready/reconcile이 UNEXPECTED_DISCONNECT로 기록한다.
+%% 이후 segment-complete hook, finalize enqueue 흐름은 .mermaid/4.rtmp-stream.mmd에서 다룬다.

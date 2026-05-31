@@ -6,15 +6,15 @@ sequenceDiagram
   App->>App: Start Streaming
 
   App->>Server: register 요청
-  Note over App,Server: API<br/>POST /api/v1/streams/register<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>{<br/>  "repositoryId": "{repository_uuid}",<br/>  "deviceType": "{optional_device_type}"<br/>}
+  Note over App,Server: API<br/>POST /api/v1/streams/register<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>repositoryId: {repository_uuid}<br/>deviceType: {optional_device_type}
 
   alt register 성공
     Server-->>App: 200 OK
-    Note over App,Server: Response Body<br/>{<br/>  "recordingSessionId": "{recordingSessionId}"<br/>}
+    Note over App,Server: Response Body<br/>recordingSessionId: {recordingSessionId}
     App->>App: recordingSessionId 저장
   else register 실패
     Server-->>App: error
-    Note over App,Server: Error Response<br/>{<br/>  "error": {<br/>    "code": "{ERROR_CODE}",<br/>    "message": "{human_readable_message}",<br/>    "details": "{optional_details}"<br/>  }<br/>}<br/><br/>Possible Errors<br/>400 VALIDATION_ERROR: repositoryId/deviceType validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: repository maintain 권한 없음<br/>404 NOT_FOUND: repository 없음<br/>409 CONFLICT: register 처리 중 충돌 상태
+    Note over App,Server: Error Response<br/>error.code: {ERROR_CODE}<br/>error.message: {human_readable_message}<br/>error.details: {optional_details}<br/><br/>Possible Errors<br/>400 VALIDATION_ERROR: repositoryId/deviceType validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: repository maintain 권한 없음<br/>404 NOT_FOUND: repository 없음<br/>409 CONFLICT: register 처리 중 충돌 상태
   end
 
   App->>Server: publish-ticket 요청
@@ -22,13 +22,15 @@ sequenceDiagram
 
   alt publish-ticket 성공
     Server-->>App: 200 OK
-    Note over App,Server: Response Body<br/>{<br/>  "recording_session_id": "{recordingSessionId}",<br/>  "repository_id": "{repositoryId}",<br/>  "stream_path": "live/{repositoryName}/{recordingSessionId}",<br/>  "publish_ticket": "t_{uuid}"<br/>}
+    Note over App,Server: Response Body<br/>stream_path: live/{repositoryName}/{recordingSessionId}<br/>publish_ticket: t_{uuid}
     App->>App: publish_ticket, stream_path 저장
     App->>App: RTMP/WHIP publish endpoint 조립
-    Note over App: RTMP URL<br/>"rtmp://" + URL(backendBaseUrl).hostname + ":1935/" + stream_path + "?ticket=" + publish_ticket<br/><br/>WHIP URL<br/>new URL(backendBaseUrl).origin + "/" + stream_path + "/whip?ticket=" + encodeURIComponent(publish_ticket)
+    Note over App: RTMP URL<br/>rtmp://{host}:1935/{stream_path}?ticket={publish_ticket}<br/><br/>WHIP URL<br/>{backendOrigin}/{stream_path}/whip?ticket={publish_ticket}
   else publish-ticket 실패
     Server-->>App: error
-    Note over App,Server: Error Response<br/>{<br/>  "error": {<br/>    "code": "{ERROR_CODE}",<br/>    "message": "{human_readable_message}",<br/>    "details": "{optional_details}"<br/>  }<br/>}<br/><br/>Possible Errors<br/>400 VALIDATION_ERROR: recordingSessionId path validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: 요청 user가 recording session 생성자가 아님<br/>404 NOT_FOUND: recording session 없음<br/>409 CONFLICT: recording session이 PENDING 상태가 아니므로 publish-ticket 발급 불가
+    Note over App,Server: Error Response<br/>error.code: {ERROR_CODE}<br/>error.message: {human_readable_message}<br/>error.details: {optional_details}<br/><br/>Possible Errors<br/>400 VALIDATION_ERROR: recordingSessionId path validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: 요청 user가 recording session 생성자가 아님<br/>404 NOT_FOUND: recording session 없음<br/>409 CONFLICT: recording session이 PENDING 상태가 아니므로 publish-ticket 발급 불가
   end
 
-  Note over App,Server: 중간 이탈 또는 의도치 않은 streaming 중단 후 재시작<br/>App은 기존 recordingSessionId나 publish_ticket을 재사용하지 않고 항상 register부터 다시 호출한다.<br/>register는 STREAMING 세션을 재사용하지 않으므로 새 recordingSessionId와 새 stream_path가 생성된다.<br/>기존 STREAMING 세션은 RTMP 연결 종료 감지(stream-not-ready hook) 또는 reconcile에 의해 FINALIZING으로 이동한다.
+  Note over App,Server: 중간 이탈 또는 의도치 않은 streaming 중단 후 재시작<br/>App은 기존 recordingSessionId나 publish_ticket을 직접 재사용하지 않고 항상 register부터 다시 호출한다.<br/>/register + /publish-ticket 이후 RTMP publish 전에 이탈했다면 session은 아직 PENDING이므로 register가 같은 recordingSessionId를 재사용할 수 있다.<br/>이 경우 이전 publish_ticket은 버리고 새 publish-ticket을 발급받아 사용한다.<br/>RTMP publish 이후 stream-ready까지 처리된 session은 STREAMING이므로 register가 재사용하지 않고 새 PENDING session을 만든다.<br/>기존 STREAMING session은 stream-not-ready/reconcile에서 CLOSED로 닫히고, recording-segment-complete 이후 Segment 후처리가 별도로 진행된다.
+
+  Note over App: App-side policy<br/>App은 단일 streaming session의 최장 길이를 30분으로 제한한다.<br/>이 제한은 backend가 강제하지 않는 app contract다.<br/>30분에 도달하면 app이 RTMP publisher socket을 닫고 기존 recording session을 종료한다.<br/>추가 녹화가 필요하면 register부터 새 streaming session을 시작한다.

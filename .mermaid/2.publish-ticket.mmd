@@ -4,7 +4,6 @@ sequenceDiagram
   participant Backend as [Backend]
   participant DB as [DB]
   participant Redis as [Redis]
-  participant MTX as [MediaMTX]
 
   App->>Backend: publish-ticket 요청
   Note over App,Backend: API<br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/><br/>Body<br/>none
@@ -34,46 +33,22 @@ sequenceDiagram
         Backend-->>App: 409 Conflict
         Note over App,Backend: Error<br/>Recording session is already in {status} state.
       else ticket 발급 가능
-        Note over Backend,DB: publish-ticket 단계에서는 repository 권한을 재검증하지 않는다.<br/>PENDING 등록 유효시간 만료도 검사하지 않는다.<br/>recording_sessions row도 갱신하지 않는다.
-
         Backend->>Backend: ticket metadata 생성
         Note over Backend: ticketId = t_{uuid}<br/>streamPath = session.streamPath<br/>issuedAt = now
 
         Backend->>Redis: publish ticket 저장
-        Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>value: {<br/>  "ticketId": "t_{uuid}",<br/>  "recordingSessionId": "{recordingSessionId}",<br/>  "repositoryId": "{repositoryId}",<br/>  "userId": "{userId}",<br/>  "streamPath": "live/{repositoryName}/{recordingSessionId}",<br/>  "issuedAt": {now_ms},<br/>  "status": "active"<br/>}<br/>TTL: 60 seconds
+        Note over Backend,Redis: key: stream:ticket:{ticketId}<br/><br/>value fields<br/>ticketId: t_{uuid}<br/>recordingSessionId: {recordingSessionId}<br/>repositoryId: {repositoryId}<br/>userId: {userId}<br/>streamPath: live/{repositoryName}/{recordingSessionId}<br/>issuedAt: now_ms<br/>status: active<br/>TTL: 60 seconds
         Redis-->>Backend: ticket 저장 완료
 
-        Note over Backend,Redis: publish-ticket 단계에서 Redis에 쓰는 값은 stream:ticket:{ticketId} 하나다.<br/>expiresAt은 JSON에 저장하지 않고 Redis TTL만 사용한다.
-
         Backend-->>App: 200 OK
-        Note over App,Backend: Response Body<br/>{<br/>  "recording_session_id": "{recordingSessionId}",<br/>  "repository_id": "{repositoryId}",<br/>  "stream_path": "live/{repositoryName}/{recordingSessionId}",<br/>  "publish_ticket": "t_{uuid}"<br/>}
+        Note over App,Backend: Response Body<br/>stream_path: live/{repositoryName}/{recordingSessionId}<br/>publish_ticket: t_{uuid}
       end
     end
   end
 
-  App->>App: RTMP publish URL 조립
-  Note over App: host = URL(backendBaseUrl).hostname<br/>"rtmp://" + host + ":1935/" + stream_path + "?ticket=" + publish_ticket
-  App->>App: WHIP publish URL 조립
-  Note over App: origin = new URL(backendBaseUrl).origin<br/>origin + "/" + stream_path + "/whip?ticket=" + encodeURIComponent(publish_ticket)
-  App->>MTX: RTMP publish 시작
-  Note over App,MTX: URL<br/>rtmp://{host}:1935/live/{repositoryName}/{recordingSessionId}?ticket=t_{uuid}
-  MTX->>Backend: RTMP auth 요청
-  Note over Backend,MTX: API<br/>POST /api/v1/auth/rtmp<br/><br/>Payload<br/>action=publish<br/>path=live/{repositoryName}/{recordingSessionId}<br/>query=ticket=t_{uuid}
-
-  Backend->>Redis: ticket 검증
-  Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>checks: exists, status=active, streamPath match<br/>만료는 Redis key TTL로 판단된다.
-  alt ticket 검증 실패
-    Backend-->>MTX: 401 Unauthorized
-  else ticket 검증 성공
-    Note over Backend,Redis: auth 단계는 ticket consume, DB update, active set update를 하지 않는다.
-    Backend-->>MTX: 200 OK
-  end
-
-  MTX->>Backend: stream-ready hook
-  Note over Backend,MTX: API<br/>POST /api/v1/hooks/stream-ready<br/><br/>Payload<br/>path=live/{repositoryName}/{recordingSessionId}<br/>query=ticket=t_{uuid}<br/>source_id={sourceId optional}<br/>source_type={sourceType}
-  Backend->>Redis: ticket 재검증 및 consume
-  Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>value.status = "consumed"<br/>TTL: 60 seconds로 재설정
-  Backend->>DB: RecordingSession STREAMING 승격
-  Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>updated fields: status = STREAMING, ready_at = now
-  Backend->>Redis: live cache 및 active set 갱신
-  Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: {<br/>  "recordingSessionId": "{recordingSessionId}",<br/>  "repositoryId": "{repositoryId}",<br/>  "repositoryName": "{repositoryName}",<br/>  "userId": "{userId}",<br/>  "deviceType": "{optional_device_type}",<br/>  "status": "STREAMING"<br/>}<br/>TTL: 86400 seconds<br/><br/>set: stream:active:sessions<br/>member: recordingSessionId
+%% 참고:
+%% publish-ticket 단계에서는 repository 권한을 재검증하지 않는다.
+%% PENDING 등록 유효시간 만료도 검사하지 않고 recording_sessions row도 갱신하지 않는다.
+%% publish-ticket 단계에서 Redis에 쓰는 값은 stream:ticket:{ticketId} 하나다.
+%% expiresAt은 JSON에 저장하지 않고 Redis TTL만 사용한다.
+%% 이후 RTMP publish/auth/stream-ready 흐름은 .mermaid/3.rtmp-publish.mmd에서 다룬다.

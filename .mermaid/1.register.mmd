@@ -7,7 +7,7 @@ sequenceDiagram
 
   App->>App: Start Streaming 버튼 클릭
   App->>Backend: register 요청
-  Note over App,Backend: API<br/>POST /api/v1/streams/register<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>{<br/>  "repositoryId": "{repository_uuid}",<br/>  "deviceType": "{optional_device_type}"<br/>}
+  Note over App,Backend: API<br/>POST /api/v1/streams/register<br/><br/>Headers<br/>Authorization: Bearer appAccessToken<br/>Content-Type: application/json<br/><br/>Body<br/>repositoryId: repository_uuid<br/>deviceType: optional_device_type
 
   Backend->>Backend: requireAppJwt
   Note over Backend: Bearer token 추출<br/>App JWT 검증<br/>사용자 존재 확인<br/>필요 시 X-Refreshed-Token 응답 헤더 설정
@@ -18,43 +18,46 @@ sequenceDiagram
   Note over Backend,DB: repositories: id = repositoryId row<br/>repo_members: repositoryId + userId row
   DB-->>Backend: repository 기본 정보 + 사용자의 repository role
   Backend->>Backend: repository maintain 권한 검증
-  Note over Backend: assertRepositoryAccess(userId, userRole, repositoryId, "maintain")<br/>admin 또는 maintain 이상만 통과
+  Note over Backend: assertRepositoryAccess<br/>required role: maintain<br/>admin 또는 maintain 이상만 통과
 
   alt maintain 권한 없음
     Backend->>DB: 기존 PENDING session 정리
-    Note over Backend,DB: table: recording_sessions<br/>target rows: repository_id = repositoryId, user_id = userId, device_type = deviceType ?? null, status = PENDING<br/>updated fields: status = ABORTED, end_reason = ACCESS_FORBIDDEN, finalized_at = now
-    DB-->>Backend: aborted recordingSessionIds
-    Backend->>Redis: aborted PENDING cache 삭제
-    Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>action: delete for each aborted recordingSessionId
+    Note over Backend,DB: recording_sessions에서<br/>동일 repository/user/deviceType의 PENDING 세션을<br/>ACCESS_FORBIDDEN 사유로 CLOSED 처리
+    Note over Backend,DB: status = CLOSED<br/>end_reason = ACCESS_FORBIDDEN<br/>closed_at = now
+    DB-->>Backend: closed recordingSessionIds
+    Backend->>Redis: closed PENDING cache 삭제
+    Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>action: delete for each closed recordingSessionId
     Backend-->>App: 403 Forbidden
   else maintain 권한 있음
     Backend->>DB: 재사용 가능한 PENDING session 조회
-    Note over Backend,DB: recording_sessions 대상 row<br/>repository_id = repositoryId<br/>user_id = userId<br/>device_type = deviceType ?? null<br/>status = PENDING<br/>created_at 최신 순
+    Note over Backend,DB: recording_sessions에서<br/>동일 repository/user/deviceType의<br/>PENDING 세션을 created_at 최신 순으로 조회
     DB-->>Backend: pendingSessions[]
 
     alt 재사용 가능한 PENDING 세션 있음
       Backend->>Backend: 재사용 session 선택
       Note over Backend: reusableSession = pendingSessions[0]<br/>가장 최근 createdAt 세션 선택
-      Note over Backend,DB: register 경로 자체는 PENDING age를 비교하지 않는다.<br/>DB에 PENDING row가 남아 있으면 최신 row를 재사용하고 updatedAt을 갱신한다.<br/>timeout cleanup은 별도 reconcile 루프가 담당한다.
       Backend->>DB: 기존 PENDING session row 갱신
       Note over Backend,DB: recording_sessions 대상 row: id = reusableSession.id<br/>status = PENDING 유지<br/>updated_at = now
       DB-->>Backend: refreshedSession
       Backend->>Redis: PENDING session cache 갱신
-      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: {<br/>  "recordingSessionId": "{existing_recording_session_id}",<br/>  "repositoryId": "{repository_uuid}",<br/>  "repositoryName": "{repository_name}",<br/>  "userId": "{user_id}",<br/>  "deviceType": "{optional_device_type}",<br/>  "status": "PENDING"<br/>}<br/>TTL: 300 seconds
+      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>recordingSessionId: existing_recording_session_id<br/>repositoryId: repository_uuid<br/>repositoryName: repository_name<br/>userId: user_id<br/>deviceType: optional_device_type<br/>status: PENDING<br/>TTL: 300 seconds
       Backend-->>App: 200 OK
-      Note over App,Backend: Response Body<br/>{<br/>  "recordingSessionId": "{existing_recording_session_id}"<br/>}
+      Note over App,Backend: Response Body<br/>recordingSessionId: existing_recording_session_id
     else PENDING 세션 없음
       Backend->>Backend: 신규 session metadata 생성
-      Note over Backend: recordingSessionId = randomUUID()<br/>streamPath = live/{repositoryName}/{recordingSessionId}<br/>targetDirectory = getTargetDirectory()
+      Note over Backend: recordingSessionId = randomUUID()<br/>streamPath = live/repositoryName/recordingSessionId<br/>targetDirectory = getTargetDirectory()
       Backend->>DB: 신규 RecordingSession row 생성
-      Note over Backend,DB: recording_sessions 저장 값<br/>id = recordingSessionId<br/>repository_id = repositoryId<br/>owner_id = repository.ownerId<br/>user_id = userId<br/>device_type = deviceType ?? null<br/>stream_path = live/{repositoryName}/{recordingSessionId}<br/>status = PENDING<br/>target_directory = getTargetDirectory()
-      Note over DB: recording_sessions 신규 row<br/>end_reason = null<br/>stop_requested_at = null<br/>ready_at = null<br/>not_ready_at = null<br/>finalized_at = null<br/>created_at/updated_at = DB/Prisma 자동 기록
+      Note over Backend,DB: recording_sessions 저장 값<br/>id = recordingSessionId<br/>repository_id = repositoryId<br/>owner_id = repository.ownerId<br/>user_id = userId<br/>device_type = optional deviceType<br/>stream_path = live/repositoryName/recordingSessionId<br/>status = PENDING<br/>target_directory = getTargetDirectory()
+      Note over DB: recording_sessions 신규 row<br/>end_reason = null<br/>ready_at = null<br/>closed_at = null<br/>created_at/updated_at = DB/Prisma 자동 기록
       DB-->>Backend: session
       Backend->>Redis: PENDING session cache 저장
-      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: {<br/>  "recordingSessionId": "{new_recording_session_id}",<br/>  "repositoryId": "{repository_uuid}",<br/>  "repositoryName": "{repository_name}",<br/>  "userId": "{user_id}",<br/>  "deviceType": "{optional_device_type}",<br/>  "status": "PENDING"<br/>}<br/>TTL: 300 seconds<br/><br/>stream:active:sessions는 후속 stream-ready 처리에서만 갱신된다.
+      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>recordingSessionId: new_recording_session_id<br/>repositoryId: repository_uuid<br/>repositoryName: repository_name<br/>userId: user_id<br/>deviceType: optional_device_type<br/>status: PENDING<br/>TTL: 300 seconds
       Backend-->>App: 200 OK
-      Note over App,Backend: Response Body<br/>{<br/>  "recordingSessionId": "{new_recording_session_id}"<br/>}
+      Note over App,Backend: Response Body<br/>recordingSessionId: new_recording_session_id
     end
   end
 
-  Note over App,Backend: 다음 단계는 App이 반환받은 recordingSessionId로<br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket을 호출하는 흐름이다.
+%% 참고:
+%% Background reconcile loop는 DB에 남아 있는 PENDING recording_sessions를 등록 TTL 경과 후 CLOSED + REGISTRATION_TIMEOUT으로 정리한다.
+%% 관련 Redis PENDING cache도 함께 삭제된다.
+%% 다음 단계는 App이 반환받은 recordingSessionId로 POST /api/v1/streams/{recordingSessionId}/publish-ticket을 호출하는 흐름이다.
