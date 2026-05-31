@@ -162,13 +162,13 @@ check_prereqs() {
 
   if [[ ! -f "$ROOT_DIR/config.json" ]]; then
     echo "Missing config file: $ROOT_DIR/config.json"
-    echo "Create it from $ROOT_DIR/config.json.example before running the stack."
+    echo "Run $ROOT_DIR/scripts/setup-server-config.sh before running the stack."
     exit 1
   fi
 
   if [[ ! -f "$ROOT_DIR/.env" ]]; then
     echo "Missing env file: $ROOT_DIR/.env"
-    echo "Create it from $ROOT_DIR/.env.example before running the stack."
+    echo "Run $ROOT_DIR/scripts/setup-server-config.sh before running the stack."
     exit 1
   fi
 

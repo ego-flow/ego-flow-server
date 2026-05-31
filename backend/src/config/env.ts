@@ -20,7 +20,7 @@ export const getDotenvPath = () => dotenvPath;
 
 if (!fs.existsSync(dotenvPath)) {
   console.error(`Missing env file: ${dotenvPath}`);
-  console.error("Create it from .env.example before starting the server.");
+  console.error("Run scripts/setup-server-config.sh before starting the server.");
   process.exit(1);
 }
 

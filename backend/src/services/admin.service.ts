@@ -13,23 +13,6 @@ import type { AuthenticatedUser } from "../types/auth";
 
 type ConfigValue = string | number | boolean | null;
 
-const maskConnectionUrl = (url: string | undefined): string => {
-  if (!url) {
-    return SECRET_EMPTY_PLACEHOLDER;
-  }
-
-  try {
-    const parsed = new URL(url);
-    if (parsed.username || parsed.password) {
-      parsed.username = parsed.username ? SECRET_PLACEHOLDER : "";
-      parsed.password = parsed.password ? SECRET_PLACEHOLDER : "";
-    }
-    return parsed.toString();
-  } catch {
-    return SECRET_PLACEHOLDER;
-  }
-};
-
 const maskSecretPresence = (value: string | undefined): string =>
   value && value.length > 0 ? SECRET_PLACEHOLDER : SECRET_EMPTY_PLACEHOLDER;
 
@@ -146,7 +129,6 @@ export class AdminService {
           { key: "RTMP_PORT", value: runtimeConfig.RTMP_PORT },
           { key: "RTMPS_PORT", value: runtimeConfig.RTMPS_PORT },
           { key: "HLS_PORT", value: runtimeConfig.HLS_PORT },
-          { key: "WEBRTC_PORT", value: runtimeConfig.WEBRTC_PORT, sourcePath: getConfigFilePath() },
           { key: "MEDIAMTX_API_PORT", value: runtimeConfig.MEDIAMTX_API_PORT },
         ],
       },
@@ -184,9 +166,8 @@ export class AdminService {
       },
       {
         title: "Secrets",
-        description: "Credentials and connection strings (values are masked).",
+        description: "Credentials and optional integration secrets (values are masked).",
         entries: [
-          { key: "DATABASE_URL", value: maskConnectionUrl(runtimeConfig.DATABASE_URL), sensitive: true, sourcePath: getDotenvPath() },
           { key: "JWT_SECRET", value: maskSecretPresence(runtimeConfig.JWT_SECRET), sensitive: true, sourcePath: getDotenvPath() },
           { key: "ADMIN_DEFAULT_PASSWORD", value: maskSecretPresence(runtimeConfig.ADMIN_DEFAULT_PASSWORD), sensitive: true, sourcePath: getDotenvPath() },
           { key: "HF_TOKEN", value: maskSecretPresence(runtimeConfig.HF_TOKEN), sensitive: true, sourcePath: getDotenvPath() },

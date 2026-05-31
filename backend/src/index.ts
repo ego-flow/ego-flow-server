@@ -116,7 +116,6 @@ const start = async () => {
     rtmpsCertPath: env.RTMPS_CERT_PATH,
     rtmpsKeyPath: env.RTMPS_KEY_PATH,
     hlsPort: env.HLS_PORT,
-    webrtcPort: env.WEBRTC_PORT,
     mediamtxApiPort: env.MEDIAMTX_API_PORT,
     hlsPathPrefix: env.HLS_PATH_PREFIX,
     whipPathPrefix: env.WHIP_PATH_PREFIX,

@@ -17,7 +17,6 @@ const configFileSchema = z.object({
     }
   }),
   PUBLIC_HTTP_PORT: z.coerce.number().int().positive().default(80),
-  WEBRTC_PORT: z.coerce.number().int().positive().default(8889),
   CORS_ORIGIN: z.string().default("*"),
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
   DELETE_RAW_AFTER_PROCESSING: z.boolean().default(true),
@@ -32,7 +31,7 @@ const configFilePath = getConfigFilePath();
 
 if (!fs.existsSync(configFilePath)) {
   console.error(`Missing config file: ${configFilePath}`);
-  console.error("Create it from config.json.example before starting the server.");
+  console.error("Run scripts/setup-server-config.sh before starting the server.");
   process.exit(1);
 }
 

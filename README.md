@@ -146,8 +146,11 @@ The reverse proxy listens on `PUBLIC_HTTP_PORT` and forwards `/api*`, `/api-docs
 ADMIN_DEFAULT_PASSWORD=changeme123
 JWT_SECRET=replace-this-in-production
 
-# Optional overrides
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/egoflow?schema=public
+# PostgreSQL
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=egoflow
+
 # HF_TOKEN=
 
 # Optional RTMPS overrides
@@ -160,7 +163,9 @@ DATABASE_URL=postgresql://postgres:postgres@postgres:5432/egoflow?schema=public
 | --- | --- | --- | --- |
 | `ADMIN_DEFAULT_PASSWORD` | Yes | None | Default password for the seeded admin account. |
 | `JWT_SECRET` | Yes | None | Secret key used to sign and verify JWT access tokens. |
-| `DATABASE_URL` | No | `postgresql://postgres:postgres@postgres:5432/egoflow?schema=public` | PostgreSQL connection string override. |
+| `POSTGRES_USER` | Yes | None | PostgreSQL username used by the Compose stack. |
+| `POSTGRES_PASSWORD` | Yes | None | PostgreSQL password used by the Compose stack. |
+| `POSTGRES_DB` | Yes | None | PostgreSQL database name used by the Compose stack. |
 | `HF_TOKEN` | No | None | Hugging Face token used for Hugging Face integration. |
 | `RTMPS_ENCRYPTION_MODE` | No | `no` | MediaMTX RTMP encryption mode. |
 | `RTMPS_CERT_PATH` | No | `/certs/server.crt` | MediaMTX RTMPS server certificate path. |
