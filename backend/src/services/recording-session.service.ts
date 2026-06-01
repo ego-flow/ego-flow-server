@@ -1,13 +1,10 @@
 import { randomUUID } from "node:crypto";
-import fs from "node:fs/promises";
 
-import { RecordingSessionStatus, RecordingSessionEndReason, RecordingSegmentStatus, VideoStatus } from "@prisma/client";
+import { RecordingSessionStatus, RecordingSessionEndReason, RecordingSegmentStatus } from "@prisma/client";
 
 import {
   RECORDING_ACTIVE_TTL_SECONDS,
   RECORDING_REGISTRATION_TTL_SECONDS,
-  RECORDING_WRITING_SEGMENT_CLOSE_GRACE_MS,
-  RECORDING_WRITING_SEGMENT_FILE_STABLE_GRACE_MS,
   STREAM_ACTIVE_SET_KEY,
 } from "../constants/stream/stream-constants";
 import { BadRequest, Conflict, Forbidden, NotFound } from "../lib/errors";
@@ -387,18 +384,13 @@ export class RecordingSessionService {
   /**
    * [segment-complete hook 처리]
    * MediaMTX가 세그먼트 파일 쓰기를 완료하면 호출.
-   * stream path의 recordingSessionId로 session을 복구하여 segment를 WRITE_DONE으로 전환한다.
-   * path/session miss는 no-op + 경고 로그로 처리한다.
+   * stream path의 recordingSessionId로 기존 RecordingSegment만 WRITE_DONE으로 전환한다.
+   * session 복구나 create hook 누락 복구는 하지 않는다.
    */
   async handleSegmentComplete(input: SegmentCompleteHookInput) {
-    const session = await this.resolveSegmentSession(input.path, [
-      RecordingSessionStatus.STREAMING,
-      RecordingSessionStatus.CLOSED,
-    ]);
-    const recordingSessionId = session?.id ?? null;
-
+    const recordingSessionId = this.extractRecordingSessionId(input.path);
     if (!recordingSessionId) {
-      console.warn("[rtmp-segment] session-missing-on-complete", {
+      console.warn("[rtmp-segment] complete-path-invalid", {
         path: input.path,
         segmentPath: input.segment_path,
       });
@@ -410,22 +402,11 @@ export class RecordingSessionService {
     });
 
     if (!segment) {
-      await prisma.recordingSegment.create({
-        data: {
-          recordingSessionId,
-          rawPath: input.segment_path,
-          status: RecordingSegmentStatus.WRITE_DONE,
-          completedAt: new Date(),
-        },
-      });
-
-      console.info("[rtmp-segment] write-done-created", {
+      console.warn("[rtmp-segment] complete-segment-missing", {
         recordingSessionId,
         path: input.path,
         segmentPath: input.segment_path,
       });
-
-      await this.tryEnqueueFinalize(recordingSessionId);
       return;
     }
 
@@ -542,10 +523,9 @@ export class RecordingSessionService {
 
   /**
    * [상태 정합성 보정 - reconcile]
-   * 5초 간격으로 실행. hook 누락이나 비정상 종료로 인한 상태 불일치를 보정한다.
+   * 5초 간격으로 실행. 비정상 종료로 인한 상태 불일치를 보정한다.
    * - PENDING: register timeout 시 CLOSED
    * - STREAMING: active path가 없거나 closedAt이 기록되어 있으면 CLOSED로 보정 후 segment complete 기반 enqueue 시도
-   * - WRITE_DONE segment: enqueue 누락 시 finalize job 재시도
    */
   async reconcileSessions() {
     const activeSessions = await prisma.recordingSession.findMany({
@@ -607,9 +587,6 @@ export class RecordingSessionService {
         }
       }
     }
-
-    await this.reconcileClosedWritingSegments();
-    await this.requeueWriteDoneSegmentProcessing();
   }
 
   /**
@@ -774,225 +751,6 @@ export class RecordingSessionService {
     });
 
     return result.count > 0;
-  }
-
-  private async reconcileClosedWritingSegments() {
-    const nowMs = Date.now();
-    const closedCutoff = new Date(nowMs - RECORDING_WRITING_SEGMENT_CLOSE_GRACE_MS);
-    const segments = await prisma.recordingSegment.findMany({
-      where: {
-        status: RecordingSegmentStatus.WRITING,
-        recordingSession: {
-          status: RecordingSessionStatus.CLOSED,
-          closedAt: { lte: closedCutoff },
-        },
-      },
-      include: {
-        recordingSession: {
-          select: {
-            id: true,
-            repositoryId: true,
-            userId: true,
-            streamPath: true,
-            deviceType: true,
-            readyAt: true,
-            closedAt: true,
-            createdAt: true,
-            endReason: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "asc" },
-      take: 50,
-    });
-
-    for (const segment of segments) {
-      const session = segment.recordingSession;
-      const fileStat = await this.getRawSegmentFileStat(segment.rawPath);
-
-      if (!fileStat || fileStat.size === 0) {
-        const reason = fileStat
-          ? "Raw segment file stayed empty after stream closure."
-          : "Raw segment file was not found after stream closure.";
-        const failed = await this.markClosedWritingSegmentFailed(segment, reason);
-        if (failed) {
-          console.warn("[rtmp-finalize] stale-writing-segment-failed", {
-            recordingSessionId: session.id,
-            repositoryId: session.repositoryId,
-            repositoryName: this.extractRepositoryName(session.streamPath),
-            rawPath: segment.rawPath,
-            reason,
-            closedAt: session.closedAt?.toISOString() ?? null,
-            endReason: session.endReason ?? null,
-          });
-        }
-        continue;
-      }
-
-      const fileStableAgeMs = nowMs - fileStat.mtimeMs;
-      if (fileStableAgeMs < RECORDING_WRITING_SEGMENT_FILE_STABLE_GRACE_MS) {
-        console.info("[rtmp-finalize] stale-writing-segment-waiting-file-stability", {
-          recordingSessionId: session.id,
-          repositoryId: session.repositoryId,
-          repositoryName: this.extractRepositoryName(session.streamPath),
-          rawPath: segment.rawPath,
-          sizeBytes: fileStat.size,
-          fileStableAgeMs,
-          fileStableGraceMs: RECORDING_WRITING_SEGMENT_FILE_STABLE_GRACE_MS,
-        });
-        continue;
-      }
-
-      const promoted = await prisma.recordingSegment.updateMany({
-        where: {
-          id: segment.id,
-          status: RecordingSegmentStatus.WRITING,
-        },
-        data: {
-          status: RecordingSegmentStatus.WRITE_DONE,
-          completedAt: new Date(),
-        },
-      });
-
-      if (promoted.count !== 1) {
-        continue;
-      }
-
-      console.warn("[rtmp-finalize] stale-writing-segment-promoted", {
-        recordingSessionId: session.id,
-        repositoryId: session.repositoryId,
-        repositoryName: this.extractRepositoryName(session.streamPath),
-        rawPath: segment.rawPath,
-        sizeBytes: fileStat.size,
-        closedAt: session.closedAt?.toISOString() ?? null,
-        endReason: session.endReason ?? null,
-      });
-
-      await this.tryEnqueueFinalize(session.id);
-    }
-  }
-
-  private async getRawSegmentFileStat(rawPath: string): Promise<{ size: number; mtimeMs: number } | null> {
-    try {
-      const stat = await fs.stat(rawPath);
-      return {
-        size: stat.size,
-        mtimeMs: stat.mtimeMs,
-      };
-    } catch (error) {
-      if (
-        error &&
-        typeof error === "object" &&
-        "code" in error &&
-        (error as { code?: string }).code === "ENOENT"
-      ) {
-        return null;
-      }
-      throw error;
-    }
-  }
-
-  private async markClosedWritingSegmentFailed(
-    segment: {
-      id: string;
-      recordingSessionId: string;
-      rawPath: string;
-      recordingSession: {
-        id: string;
-        repositoryId: string;
-        userId: string;
-        streamPath: string;
-        deviceType: string | null;
-        readyAt: Date | null;
-        createdAt: Date;
-      };
-    },
-    errorMessage: string,
-  ) {
-    return prisma.$transaction(async (tx) => {
-      const failed = await tx.recordingSegment.updateMany({
-        where: {
-          id: segment.id,
-          status: RecordingSegmentStatus.WRITING,
-        },
-        data: {
-          status: RecordingSegmentStatus.FAILED,
-          completedAt: new Date(),
-        },
-      });
-
-      if (failed.count !== 1) {
-        return false;
-      }
-
-      const existingVideo = await tx.video.findUnique({
-        where: { recordingSessionId: segment.recordingSessionId },
-        select: { id: true },
-      });
-      if (existingVideo) {
-        return true;
-      }
-
-      await tx.video.create({
-        data: {
-          id: randomUUID(),
-          repositoryId: segment.recordingSession.repositoryId,
-          recordingSessionId: segment.recordingSessionId,
-          rawRecordingPath: segment.rawPath,
-          streamPath: segment.recordingSession.streamPath,
-          deviceType: segment.recordingSession.deviceType,
-          recorder: segment.recordingSession.userId,
-          recordedAt: segment.recordingSession.readyAt ?? segment.recordingSession.createdAt,
-          status: VideoStatus.FAILED,
-          errorMessage,
-          processingStartedAt: new Date(),
-          processingCompletedAt: new Date(),
-        },
-      });
-
-      return true;
-    });
-  }
-
-  private async requeueWriteDoneSegmentProcessing() {
-    const segments = await prisma.recordingSegment.findMany({
-      where: {
-        status: RecordingSegmentStatus.WRITE_DONE,
-        recordingSession: {
-          status: RecordingSessionStatus.CLOSED,
-        },
-      },
-      include: {
-        recordingSession: {
-          select: {
-            id: true,
-            repositoryId: true,
-            ownerId: true,
-            streamPath: true,
-            targetDirectory: true,
-          },
-        },
-      },
-      take: 50,
-    });
-
-    for (const segment of segments) {
-      const session = segment.recordingSession;
-      await processingService.enqueueRecordingFinalize({
-        recordingSessionId: session.id,
-        videoId: randomUUID(),
-        repositoryId: session.repositoryId,
-        ownerId: session.ownerId,
-        repoName: this.extractRepositoryName(session.streamPath),
-        targetDirectory: session.targetDirectory,
-      });
-
-      console.info("[rtmp-finalize] write-done-segment-requeued", {
-        recordingSessionId: session.id,
-        repositoryId: session.repositoryId,
-        repositoryName: this.extractRepositoryName(session.streamPath),
-      });
-    }
   }
 
   /**

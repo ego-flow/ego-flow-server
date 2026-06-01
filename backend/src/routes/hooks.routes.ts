@@ -54,8 +54,7 @@ router.post(
 /**
  * [MediaMTX hook: segment-create]
  * MediaMTX가 새 녹화 세그먼트 파일을 생성하기 시작할 때 호출.
- * stream path의 recordingSessionId로 세션을 찾고 segment path -> recordingSessionId mapping을 저장한 뒤
- * RecordingSegment를 WRITING 상태로 upsert한다.
+ * stream path의 recordingSessionId로 세션을 찾고 RecordingSegment를 WRITING 상태로 upsert한다.
  */
 // POST /api/v1/hooks/recording-segment-create
 router.post(
@@ -74,7 +73,7 @@ router.post(
 /**
  * [MediaMTX hook: segment-complete]
  * MediaMTX가 녹화 세그먼트 파일 쓰기를 완료했을 때 호출.
- * stream path의 recordingSessionId를 기준으로 RecordingSegment를 WRITE_DONE 상태로 전환한다.
+ * stream path의 recordingSessionId를 기준으로 기존 RecordingSegment를 WRITE_DONE 상태로 전환한다.
  * RecordingSession 상태는 변경하지 않고, 이미 CLOSED인 session에 대해서만 Video 후처리 job enqueue를 시도한다.
  */
 // POST /api/v1/hooks/recording-segment-complete

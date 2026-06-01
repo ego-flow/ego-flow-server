@@ -1,0 +1,114 @@
+sequenceDiagram
+  autonumber
+  participant Dashboard as [Dashboard Live Tab]
+  participant Backend as [Backend]
+  participant DB as [DB]
+  participant Redis as [Redis]
+  participant Caddy as [Caddy]
+  participant MTX as [MediaMTX]
+
+  Dashboard->>Backend: live stream 목록 요청
+  Note over Dashboard,Backend: API<br/>GET /api/v1/live-streams<br/><br/>Headers<br/>Cookie: egoflow_session={dashboard_session}<br/>또는 Authorization: Bearer {app_or_python_token}<br/><br/>Dashboard 구현<br/>React Query queryKey=["live-streams"]<br/>refetchInterval=2000ms
+
+  Backend->>Backend: requireDashboardOrAppOrPython
+  Note over Backend: dashboard cookie, app JWT, python token 중 하나를 검증<br/>검증된 userId/userRole/rawCredential을 request context에 저장
+
+  Backend->>DB: 접근 가능한 repository id 계산
+  Note over Backend,DB: admin이면 전체 접근 허용<br/>일반 사용자는 owner/member/visibility 기준으로 read 가능한 repository set 계산
+
+  Backend->>Redis: active live session 후보 조회
+  Note over Backend,Redis: set key<br/>stream:active:sessions<br/><br/>action<br/>SMEMBERS로 recordingSessionId 후보 획득
+
+  alt active session 후보 없음
+    Redis-->>Backend: []
+    Backend-->>Dashboard: 200 OK
+    Note over Backend,Dashboard: Response Body<br/>streams: []
+  else active session 후보 있음
+    Redis-->>Backend: recordingSessionIds[]
+    Backend->>Redis: live cache batch 조회
+    Note over Backend,Redis: keys<br/>stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: {repositoryId}<br/>repositoryName: {repositoryName}<br/>userId: {userId}<br/>deviceType: {optional_device_type}<br/>status: STREAMING<br/><br/>live cache TTL<br/>7200 seconds
+
+    Redis-->>Backend: live cache records
+    Backend->>Backend: STREAMING cache + repository access 필터링
+    Note over Backend: cache.status == STREAMING만 live로 취급<br/>요청자가 read 가능한 repositoryId만 응답에 포함<br/>MediaMTX active path는 list 단계에서 직접 조회하지 않는다.
+
+    Backend-->>Dashboard: 200 OK
+    Note over Backend,Dashboard: Response Body<br/>streams[] item<br/>stream_id: {recordingSessionId}<br/>repository_id: {repositoryId}<br/>repository_name: {repositoryName}<br/>user_id: {publisherUserId}<br/>device_type: {optional_device_type_or_null}<br/>status: live<br/>hls_path: /hls/live/{repositoryName}/{recordingSessionId}/index.m3u8<br/>whep_path: /live/{repositoryName}/{recordingSessionId}/whep
+  end
+
+  Dashboard->>Dashboard: live 목록 표시 및 선택 상태 갱신
+  Note over Dashboard: stream이 없으면 selectedStreamId=null<br/>선택된 stream이 목록에서 사라지면 첫 번째 stream을 자동 선택<br/>사용자가 Active Sessions 항목을 클릭하면 selectedStreamId 변경
+
+  alt selected stream 없음
+    Dashboard->>Dashboard: playback placeholder 표시
+  else selected stream 있음
+    Dashboard->>Dashboard: HlsPlayer mount
+    Note over Dashboard: src = selectedStream.hlsPath<br/>native HLS 지원 브라우저는 video.src에 직접 설정<br/>그 외 브라우저는 hls.js/light 사용<br/>xhr.withCredentials = true
+
+    Dashboard->>Caddy: HLS playlist 요청
+    Note over Dashboard,Caddy: GET /hls/live/{repositoryName}/{recordingSessionId}/index.m3u8<br/><br/>Cookie<br/>egoflow_session={dashboard_session}<br/><br/>hls.js는 playlist와 segment 요청마다<br/>same-origin cookie를 함께 전송
+
+    Caddy->>Backend: HLS forward_auth
+    Note over Caddy,Backend: API<br/>GET /api/v1/hls-auth?path=/hls/live/{repositoryName}/{recordingSessionId}/index.m3u8<br/><br/>copy_headers<br/>Cookie, Authorization
+
+    Backend->>Backend: requireDashboardOrAppOrPython
+    Backend->>Backend: HLS target path 추출
+    Note over Backend: accepted path shape<br/>/hls/live/{repositoryName}/{recordingSessionId}/...<br/>또는 /live/{repositoryName}/{recordingSessionId}/...<br/><br/>streamPath<br/>live/{repositoryName}/{recordingSessionId}
+
+    Backend->>Redis: playback auth cache 조회
+    Note over Backend,Redis: key<br/>hlsauth:{sha256(rawCredential)}:live/{repositoryName}/{recordingSessionId}<br/><br/>allow value<br/>1<br/><br/>TTL<br/>30 seconds
+
+    alt playback auth cache hit
+      Redis-->>Backend: 1
+      Backend-->>Caddy: 200 OK
+    else playback auth cache miss
+      Redis-->>Backend: null
+      Backend->>Redis: live cache 조회
+      Note over Backend,Redis: key<br/>stream:recording:{recordingSessionId}<br/><br/>required<br/>status = STREAMING
+
+      alt live cache 없음 또는 STREAMING 아님
+        Backend-->>Caddy: 404 Not Found
+        Caddy-->>Dashboard: HLS request rejected
+      else live cache valid
+        Backend->>DB: repository read 권한 확인
+        Note over Backend,DB: live cache의 repositoryId 기준<br/>요청자가 read 가능한 repository인지 확인
+
+        alt repository read 권한 없음
+          Backend-->>Caddy: 404 Not Found
+          Note over Backend,Caddy: 권한 부족과 stream 없음은 모두 404로 숨김 처리
+          Caddy-->>Dashboard: HLS request rejected
+        else repository read 권한 있음
+          Backend->>Redis: playback auth cache 저장
+          Note over Backend,Redis: key<br/>hlsauth:{sha256(rawCredential)}:live/{repositoryName}/{recordingSessionId}<br/><br/>value<br/>1<br/><br/>TTL<br/>30 seconds
+          Backend-->>Caddy: 200 OK
+        end
+      end
+    end
+
+    Caddy->>MTX: HLS request proxy
+    Note over Caddy,MTX: handle_path /hls/* 가 /hls prefix 제거<br/>proxied path<br/>/live/{repositoryName}/{recordingSessionId}/index.m3u8<br/><br/>target<br/>mediamtx:8888
+
+    MTX-->>Caddy: HLS playlist
+    Note over MTX,Caddy: MediaMTX HLS<br/>hlsAlwaysRemux: yes<br/>hlsVariant: fmp4<br/>recording raw segment와 별개로 live HLS remux 제공
+    Caddy-->>Dashboard: index.m3u8
+
+    loop while player is mounted and stream is live
+      Dashboard->>Caddy: HLS media playlist / fMP4 segment 요청
+      Caddy->>Backend: forward_auth 재검증
+      Note over Caddy,Backend: 각 HLS request마다 forward_auth 수행<br/>30초 auth cache hit 시 Redis/DB 확인 비용 감소
+      Backend-->>Caddy: 200 OK
+      Caddy->>MTX: proxy to mediamtx:8888
+      MTX-->>Caddy: playlist or fMP4 media bytes
+      Caddy-->>Dashboard: playlist or fMP4 media bytes
+      Dashboard->>Dashboard: hls.js/video element playback
+    end
+  end
+
+%% 참고:
+%% Dashboard live tab은 별도 playback token을 발급받지 않는다.
+%% Backend가 반환한 origin-relative hls_path를 그대로 HlsPlayer에 넘기고,
+%% browser는 현재 dashboard origin 기준으로 /hls/... 요청을 보낸다.
+%% HLS playback 권한 검증은 /api/v1/auth/rtmp가 아니라 Caddy forward_auth -> /api/v1/hls-auth가 담당한다.
+%% MediaMTX read/playback authHTTP callback은 mediamtx.yml authHTTPExclude로 제외되어 있다.
+%% stream-not-ready 또는 reconcile로 live pointer가 제거되면 stream:active:sessions와 stream:recording:{recordingSessionId}가 정리되고,
+%% 다음 live list에서는 해당 stream이 사라진다. 이후 HLS auth도 stream-not-found로 거절될 수 있다.

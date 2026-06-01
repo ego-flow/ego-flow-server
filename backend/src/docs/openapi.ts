@@ -1673,7 +1673,7 @@ export const openApiDocument = {
     "/hooks/recording-segment-complete": {
       post: {
         tags: ["Hooks"],
-        summary: "Handle MediaMTX recording-segment-complete hook with segment session mapping",
+        summary: "Handle MediaMTX recording-segment-complete hook",
         security: [],
         requestBody: {
           required: true,

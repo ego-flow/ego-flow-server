@@ -63,9 +63,6 @@ stateDiagram-v2
 
     SEG_WRITING --> SEG_WRITING: duplicate segment-create<br/>same recordingSessionId/rawPath<br/>upsert no-op update
     SEG_WRITING --> SEG_WRITE_DONE: recording-segment-complete hook<br/>raw file write finished
-    SEG_WRITING --> SEG_WRITE_DONE: reconcile recovery<br/>CLOSED session + stable non-empty raw file
-    SEG_WRITING --> SEG_FAILED: reconcile cleanup<br/>CLOSED session + stale empty/missing raw file
-    [*] --> SEG_WRITE_DONE: segment-complete recovery<br/>create hook missing<br/>single segment row created directly
     SEG_WRITE_DONE --> SEG_PROCESSING: finalize worker claim<br/>atomic WRITE_DONE -> PROCESSING
     SEG_PROCESSING --> SEG_WRITE_DONE: retryable processing failure<br/>reset before BullMQ retry
     SEG_PROCESSING --> SEG_COMPLETED: encoding success<br/>Video row created
@@ -75,7 +72,7 @@ stateDiagram-v2
       Entry action:
       completedAt is recorded.
       finalize enqueue is attempted only when RecordingSession is already CLOSED.
-      Missing enqueue is retried by reconcile.
+      Missing enqueue is not retried by reconcile.
     end note
 
     note right of SEG_PROCESSING
@@ -90,7 +87,7 @@ stateDiagram-v2
 
   state "Video" as Video {
     [*] --> VIDEO_COMPLETED: finalize success<br/>create videos row
-    [*] --> VIDEO_FAILED: finalize final failure<br/>or stale empty segment cleanup<br/>create failed videos row
+    [*] --> VIDEO_FAILED: finalize final failure<br/>create failed videos row
 
     state "COMPLETED" as VIDEO_COMPLETED
     state "FAILED" as VIDEO_FAILED
@@ -122,7 +119,8 @@ stateDiagram-v2
 %% publisher connection 종료는 stream-not-ready hook 또는 reconcile이 CLOSED로 반영한다.
 %% MediaMTX stream-not-ready hook payload만으로 정상 close와 crash/reset을 완벽히 구분할 수는 없다.
 %% recording session 하나는 RecordingSegment 하나만 가진다.
-%% 최초 segment 진입은 segment-create hook의 WRITING row 생성이며, create hook이 누락된 경우 segment-complete가 WRITE_DONE row를 복구 생성할 수 있다.
-%% segment-complete는 RecordingSession을 직접 닫지 않고 단일 RecordingSegment를 WRITE_DONE으로 확정한 뒤 enqueue를 시도한다.
+%% 최초 segment 진입은 segment-create hook의 WRITING row 생성이다.
+%% segment-complete는 누락된 segment를 복구 생성하지 않고, 기존 단일 RecordingSegment만 WRITE_DONE으로 확정한 뒤 enqueue를 시도한다.
+%% segment-complete hook이 누락되면 WRITING segment는 자동으로 WRITE_DONE/FAILED로 보정하지 않는다.
 %% RecordingSegment.status가 raw segment write와 후처리 상태를 표현한다.
 %% Video row는 finalize가 성공하거나 최종 실패했을 때 생성된다.
