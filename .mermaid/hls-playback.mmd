@@ -118,7 +118,7 @@ sequenceDiagram
 %% Dashboard live tab은 별도 playback token을 발급받지 않는다.
 %% Backend가 반환한 origin-relative hls_path를 그대로 HlsPlayer에 넘기고,
 %% browser는 현재 dashboard origin 기준으로 /hls/... 요청을 보낸다.
-%% HLS playback 권한 검증은 /api/v1/auth/rtmp가 아니라 Caddy forward_auth -> /api/v1/hls-auth가 담당한다.
+%% HLS playback 권한 검증은 /api/v1/auth/publish가 아니라 Caddy forward_auth -> /api/v1/hls-auth가 담당한다.
 %% MediaMTX read/playback authHTTP callback은 mediamtx.yml authHTTPExclude로 제외되어 있다.
 %% stream-not-ready 또는 reconcile로 live pointer가 제거되면 stream:active:sessions와 stream:recording:{recordingSessionId}가 정리되고,
 %% 다음 live list에서는 해당 stream이 사라진다. 이후 HLS auth도 stream-not-found로 거절될 수 있다.

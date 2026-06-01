@@ -8,7 +8,7 @@ import { requireDashboardOrAppOrPython, requireDashboardSession } from "../middl
 import { validate } from "../middleware/validate.middleware";
 import type { ApiTokenIdParamInput } from "../schemas/api-token.schema";
 import { apiTokenIdParamSchema, createApiTokenSchema } from "../schemas/api-token.schema";
-import { dashboardLoginSchema, loginSchema, rtmpAuthSchema } from "../schemas/auth.schema";
+import { dashboardLoginSchema, loginSchema, publishAuthSchema } from "../schemas/auth.schema";
 import { apiTokenService } from "../services/api-token.service";
 import { authService } from "../services/auth.service";
 import { dashboardSessionService } from "../services/dashboard-session.service";
@@ -143,13 +143,13 @@ router.delete(
  * - read/playback: mediamtx.yml authHTTPExclude로 우회되며, playback 권한은 Caddy forward_auth가 담당한다.
  * MediaMTX는 단순 status code(200/401)만 보므로 의도적으로 빈 응답을 돌려준다.
  */
-// POST /api/v1/auth/rtmp
+// POST /api/v1/auth/publish
 router.post(
-  "/rtmp",
+  "/publish",
   asyncHandler(async (req, res) => {
-    const parsed = rtmpAuthSchema.safeParse(req.body);
+    const parsed = publishAuthSchema.safeParse(req.body);
     if (!parsed.success) {
-      console.warn("[rtmp-auth] invalid payload", {
+      console.warn("[publish-auth] invalid payload", {
         action: req.body?.action,
         path: req.body?.path,
         protocol: req.body?.protocol,
@@ -166,7 +166,7 @@ router.post(
       return;
     }
 
-    const isAuthorized = await authService.verifyRtmpAuthorization(parsed.data);
+    const isAuthorized = await authService.verifyPublishAuthorization(parsed.data);
     if (!isAuthorized) {
       res.status(401).end();
       return;

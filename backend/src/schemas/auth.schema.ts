@@ -25,7 +25,7 @@ const optionalCredential = z.preprocess((value) => {
   return value;
 }, z.string().min(1).optional());
 
-export const rtmpAuthSchema = z.object({
+export const publishAuthSchema = z.object({
   user: z.preprocess((value) => {
     if (value === "" || value === null || value === undefined) {
       return undefined;
@@ -45,4 +45,4 @@ export const rtmpAuthSchema = z.object({
 
 export type LoginInput = z.infer<typeof loginSchema>;
 export type DashboardLoginInput = z.infer<typeof dashboardLoginSchema>;
-export type RtmpAuthInput = z.infer<typeof rtmpAuthSchema>;
+export type PublishAuthInput = z.infer<typeof publishAuthSchema>;

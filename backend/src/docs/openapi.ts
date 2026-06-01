@@ -1103,11 +1103,11 @@ export const openApiDocument = {
         },
       },
     },
-    "/auth/rtmp": {
+    "/auth/publish": {
       post: {
         tags: ["Auth"],
-        summary: "MediaMTX RTMP/HLS authorization hook",
-        description: "Internal endpoint used by MediaMTX for publish/read/playback authorization.",
+        summary: "MediaMTX publish authorization hook",
+        description: "Internal endpoint used by MediaMTX for RTMP/WHIP publish authorization.",
         security: [],
         requestBody: {
           required: true,

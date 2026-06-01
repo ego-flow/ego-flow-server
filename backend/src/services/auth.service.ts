@@ -4,7 +4,7 @@ import { UserRole } from "@prisma/client";
 import { ErrorCode, Unauthorized } from "../lib/errors";
 import { signAccessToken } from "../lib/jwt";
 import { prisma } from "../lib/prisma";
-import type { LoginInput, RtmpAuthInput } from "../schemas/auth.schema";
+import type { LoginInput, PublishAuthInput } from "../schemas/auth.schema";
 import type { ChangeMyPasswordInput } from "../schemas/user.schema";
 import type { AppUserRole } from "../types/auth";
 import { streamOwnershipService } from "./stream-ownership.service";
@@ -12,9 +12,9 @@ import { streamService } from "./stream.service";
 import { dashboardSessionService } from "./dashboard-session.service";
 
 export class AuthService {
-  private logRtmpAuthDecision(
+  private logPublishAuthDecision(
     outcome: "allowed" | "denied",
-    input: Partial<RtmpAuthInput>,
+    input: Partial<PublishAuthInput>,
     details: Record<string, unknown> = {},
   ) {
     const path = typeof input.path === "string" ? input.path : null;
@@ -40,11 +40,11 @@ export class AuthService {
     };
 
     if (outcome === "allowed") {
-      console.info("[rtmp-auth] allowed", payload);
+      console.info("[publish-auth] allowed", payload);
       return;
     }
 
-    console.warn("[rtmp-auth] denied", payload);
+    console.warn("[publish-auth] denied", payload);
   }
 
   private async authenticatePassword(input: LoginInput) {
@@ -106,14 +106,14 @@ export class AuthService {
 
   /**
    * [Publish 인증 (RTMP / WHIP 공통)]
-   * MediaMTX가 POST /api/v1/auth/rtmp로 전달한 publish 요청을 검증한다.
+   * MediaMTX가 POST /api/v1/auth/publish로 전달한 publish 요청을 검증한다.
    * - RTMP publish, WHIP publish 모두 같은 callback을 받으며 `protocol` 필드만 다르다.
    * - short-lived publish ticket만 검증한다.
    * - ticket consume과 상태 승격은 stream-ready hook이 담당한다.
    * - read/playback action은 mediamtx.yml `authHTTPExclude`로 우회되므로 호출되지 않는다.
    *   혹시 우회 설정이 누락되어 들어오면 deny한다 (Caddy `forward_auth`가 진짜 gate).
    */
-  async verifyRtmpAuthorization(input: RtmpAuthInput): Promise<boolean> {
+  async verifyPublishAuthorization(input: PublishAuthInput): Promise<boolean> {
     try {
       const queryParams = new URLSearchParams(input.query ?? "");
       const publishTicketId = streamOwnershipService.extractTicketId(input.query);
@@ -130,7 +130,7 @@ export class AuthService {
               : null;
 
       if (input.action !== "publish") {
-        this.logRtmpAuthDecision("denied", input, {
+        this.logPublishAuthDecision("denied", input, {
           reason: "non-publish-action-not-handled-here",
           credentialSource,
         });
@@ -138,7 +138,7 @@ export class AuthService {
       }
 
       if (input.password || input.token || queryParams.get("pass") || queryParams.get("token")) {
-        this.logRtmpAuthDecision("denied", input, {
+        this.logPublishAuthDecision("denied", input, {
           reason: "legacy-publish-credential-not-allowed",
           credentialSource,
           ticketId: publishTicketId,
@@ -148,7 +148,7 @@ export class AuthService {
 
       const validation = await streamOwnershipService.validatePublishTicket(input.path, publishTicketId);
       if (!validation.ok) {
-        this.logRtmpAuthDecision("denied", input, {
+        this.logPublishAuthDecision("denied", input, {
           reason: validation.reason,
           credentialSource,
           ticketId: validation.ticketId,
@@ -156,7 +156,7 @@ export class AuthService {
         return false;
       }
 
-      this.logRtmpAuthDecision("allowed", input, {
+      this.logPublishAuthDecision("allowed", input, {
         authenticatedUserId: validation.ticket.userId,
         recordingSessionId: validation.ticket.recordingSessionId,
         repositoryId: validation.ticket.repositoryId,
@@ -165,7 +165,7 @@ export class AuthService {
       });
       return true;
     } catch (_error) {
-      this.logRtmpAuthDecision("denied", input, {
+      this.logPublishAuthDecision("denied", input, {
         reason: "exception",
       });
       return false;

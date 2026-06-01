@@ -163,7 +163,7 @@ test("GET /auth/validate returns 401 for an invalid token", async () => {
   assert.equal(body.error.code, "UNAUTHORIZED");
 });
 
-test("POST /auth/rtmp accepts WebRTC publish when ticket matches stream path", async () => {
+test("POST /auth/publish accepts WebRTC publish when ticket matches stream path", async () => {
   const baseUrl = await startServer();
   await fakeRedisModule.redis.set(
     "stream:ticket:t_webrtc",
@@ -178,7 +178,7 @@ test("POST /auth/rtmp accepts WebRTC publish when ticket matches stream path", a
     60,
   );
 
-  const response = await fetch(`${baseUrl}/api/v1/auth/rtmp`, {
+  const response = await fetch(`${baseUrl}/api/v1/auth/publish`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -197,7 +197,7 @@ test("POST /auth/rtmp accepts WebRTC publish when ticket matches stream path", a
   assert.equal(fakeRedisModule.redis.getTtlSeconds("stream:ticket:t_webrtc"), 60);
 });
 
-test("POST /auth/rtmp rejects WebRTC publish legacy credentials", async () => {
+test("POST /auth/publish rejects WebRTC publish legacy credentials", async () => {
   const baseUrl = await startServer();
   await fakeRedisModule.redis.set(
     "stream:ticket:t_webrtc",
@@ -212,7 +212,7 @@ test("POST /auth/rtmp rejects WebRTC publish legacy credentials", async () => {
     60,
   );
 
-  const response = await fetch(`${baseUrl}/api/v1/auth/rtmp`, {
+  const response = await fetch(`${baseUrl}/api/v1/auth/publish`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
