@@ -102,15 +102,20 @@ sequenceDiagram
     Backend->>Backend: no-op
     Note over Backend: segment-create hook은 200 OK로 끝나지만<br/>RecordingSegment를 만들지 않는다.
   else session 있음
-    Backend->>DB: RecordingSegment WRITING upsert
-    Note over Backend,DB: table: recording_segments<br/>target row: recording_session_id<br/>create: rawPath=segment_path, status=WRITING<br/>update: no-op<br/>policy: one segment per recording session
+    Backend->>DB: RecordingSegment 조회 or WRITING 생성
+    Note over Backend,DB: table: recording_segments<br/>unique key: recording_session_id<br/>policy: one segment per recording session
 
-    alt 기존 segment rawPath와 segment_path가 다름
+    alt 기존 segment 없음
+      Backend->>DB: RecordingSegment 생성
+      Note over Backend,DB: recording_session_id = recordingSessionId<br/>raw_path = segment_path<br/>status = WRITING
+      Backend->>Backend: writing-created log
+    else 기존 segment rawPath == segment_path
+      Backend->>Backend: duplicate create hook no-op
+      Note over Backend,DB: update 없음<br/>status도 변경하지 않는다.
+      Backend->>Backend: writing-created log
+    else 기존 segment rawPath와 segment_path가 다름
       Backend->>Backend: additional segment ignored
       Note over Backend: 이미 session에 연결된 segment가 있으면<br/>새 segment_path는 저장하지 않는다.
-    else 신규 segment or 같은 rawPath
-      Backend->>Backend: writing-created log
-      Note over Backend: segment complete도 stream path의 recordingSessionId로<br/>같은 RecordingSegment를 찾는다.
     end
   end
 
