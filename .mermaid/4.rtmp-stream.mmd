@@ -10,6 +10,7 @@ sequenceDiagram
   participant Worker as [Finalize Worker]
 
   Note over App,MTX: App은 이미 열린 RTMP publisher socket을 유지한다.
+  Note over MTX,Backend: 전제<br/>.mermaid/3.rtmp-publish.mmd 단계에서 stream-ready hook이 처리되어<br/>live cache와 active set이 등록된 상태다.<br/><br/>recording-segment-create hook도 이미 처리되어<br/>recording_segments row가 WRITING 상태로 생성되어 있고<br/>raw_path는 MediaMTX가 열어 둔 segment_path와 같다.
 
   loop while RTMP socket is open
     App->>MTX: RTMP media chunks
@@ -61,7 +62,7 @@ sequenceDiagram
     Note over MTX,Backend: raw segment file write 완료 event<br/>path=live/{repositoryName}/{recordingSessionId}<br/>segment_path={completed_segment_path}
 
     Backend->>DB: RecordingSegment WRITE_DONE update
-    Note over Backend,DB: table: recording_segments<br/>target row: recording_session_id = recordingSessionId<br/>required status: WRITING<br/>required raw_path: completed_segment_path<br/>updated fields: status=WRITE_DONE, completed_at<br/>RecordingSession은 변경하지 않는다.
+    Note over Backend,DB: table: recording_segments<br/>target row: recording_session_id = recordingSessionId<br/>required status: WRITING<br/>required raw_path: completed_segment_path<br/>updated fields: status=WRITE_DONE, completed_at<br/>RecordingSession은 변경하지 않는다.<br/><br/>no-op cases<br/>recordingSessionId 추출 실패<br/>segment row 없음<br/>raw_path mismatch<br/>status가 WRITING이 아님
 
     Backend->>Backend: tryEnqueueFinalize(recordingSessionId)
     Backend->>DB: finalize readiness check
@@ -148,7 +149,7 @@ sequenceDiagram
 %% finalize job 중복 enqueue는 jobId=finalize-{recordingSessionId}로 dedupe된다.
 %% worker는 session status와 existing Video를 사전 재검증하지 않는다.
 %% 처리 권한은 RecordingSegment WRITE_DONE -> PROCESSING atomic claim으로 보장한다.
-%% 성공 시 videos row는 recording_session_id unique key 기준 upsert한다.
+%% 성공 시 videos row는 recording_session_id unique key 기준 upsert한다. 이는 현재 코드 기준 의도된 동작이다.
 %% semantic metadata는 video_semantic_metadata 별도 table에서 status/data를 관리한다.
 %% WRITE_DONE segment를 reconcile에서 다시 찾아 enqueue하는 보정 loop는 두지 않는다.
 %% retry 가능한 worker 실패에서는 PROCESSING을 WRITE_DONE으로 되돌린 뒤 BullMQ retry에 맡긴다.

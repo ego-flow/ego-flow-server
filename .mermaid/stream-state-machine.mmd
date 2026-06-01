@@ -17,7 +17,7 @@ stateDiagram-v2
 
     RS_PENDING --> RS_PENDING: register reuse<br/>same user/repository/deviceType<br/>updatedAt + Redis TTL refresh
     RS_PENDING --> RS_STREAMING: stream-ready hook<br/>ticket validated and consumed
-    RS_PENDING --> RS_CLOSED: access forbidden cleanup<br/>register permission check failed
+    RS_PENDING --> RS_CLOSED: access failure cleanup<br/>register permission check failed or repository missing
 
     note right of RS_STREAMING
       Entry action:
@@ -38,7 +38,7 @@ stateDiagram-v2
       If close-intent was recorded, endReason=NORMAL_DISCONNECT is preserved.
       If close-intent was not recorded, endReason=UNEXPECTED_DISCONNECT is recorded.
       reconcile fallback records closedAt and endReason=UNEXPECTED_DISCONNECT.
-      PENDING access-forbidden cleanup records closedAt and endReason=ACCESS_FORBIDDEN.
+      PENDING access-failure cleanup records closedAt and endReason=ACCESS_FORBIDDEN.
       Redis stream:recording:{recordingSessionId} and stream:active:sessions membership are removed.
       Session status no longer represents processing progress.
     end note

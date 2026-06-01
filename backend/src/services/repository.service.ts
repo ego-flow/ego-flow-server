@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 
-import { Prisma, RecordingSessionStatus, RepoRole, RepoVisibility } from "@prisma/client";
+import { Prisma, RecordingSegmentStatus, RecordingSessionStatus, RepoRole, RepoVisibility } from "@prisma/client";
 
 import { BadRequest, Conflict, Forbidden, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
@@ -364,7 +364,7 @@ export class RepositoryService {
 
   async deleteRepository(userId: string, userRole: AppUserRole, repositoryId: string) {
     const access = await this.assertRepositoryAccess(userId, userRole, repositoryId, "admin");
-    await this.ensureRepositoryIsIdle(access.repository.id, access.repository.name);
+    await this.ensureRepositoryIsIdle(access.repository.id, access.repository.name, { blockPending: false });
 
     const videos = await prisma.video.findMany({
       where: { repositoryId },
@@ -390,6 +390,10 @@ export class RepositoryService {
     await prisma.$transaction([
       prisma.repoMember.deleteMany({ where: { repositoryId } }),
       prisma.video.deleteMany({ where: { repositoryId } }),
+      prisma.recordingSegment.deleteMany({
+        where: { recordingSession: { repositoryId } },
+      }),
+      prisma.recordingSession.deleteMany({ where: { repositoryId } }),
       prisma.repository.delete({ where: { id: repositoryId } }),
     ]);
 
@@ -667,22 +671,48 @@ export class RepositoryService {
     }
   }
 
-  private async ensureRepositoryIsIdle(repositoryId: string, _repositoryName: string) {
-    const activeSession = await prisma.recordingSession.findFirst({
-      where: {
-        repositoryId,
-        status: {
+  private async ensureRepositoryIsIdle(
+    repositoryId: string,
+    _repositoryName: string,
+    options: { blockPending?: boolean } = { blockPending: true },
+  ) {
+    const sessionStatusFilter = options.blockPending
+      ? {
           in: [
             RecordingSessionStatus.PENDING,
             RecordingSessionStatus.STREAMING,
           ],
-        },
+        }
+      : RecordingSessionStatus.STREAMING;
+    const activeSession = await prisma.recordingSession.findFirst({
+      where: {
+        repositoryId,
+        status: sessionStatusFilter,
       },
       select: { id: true },
     });
 
     if (activeSession) {
       throw Conflict("Repository cannot be modified while a stream is active.");
+    }
+
+    const finalizingSegment = await prisma.recordingSegment.findFirst({
+      where: {
+        status: {
+          in: [
+            RecordingSegmentStatus.WRITE_DONE,
+            RecordingSegmentStatus.PROCESSING,
+          ],
+        },
+        recordingSession: {
+          repositoryId,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (finalizingSegment) {
+      throw Conflict("Repository cannot be modified while recording finalization is in progress.");
     }
   }
 

@@ -14,13 +14,26 @@ sequenceDiagram
   Backend->>Backend: validate(streamRegisterSchema)
   Note over Backend: repositoryId: uuid<br/>deviceType: optional string, max 100
 
+  alt auth or validation failed
+    Backend-->>App: 401 Unauthorized or 400 Validation Error
+    Note over Backend,App: App JWT가 없거나 유효하지 않으면 401<br/>repositoryId UUID 또는 deviceType max length 검증 실패 시 400
+  else auth and validation passed
   Backend->>DB: repository 접근 정보 조회
-  Note over Backend,DB: repositories: id = repositoryId row<br/>repo_members: repositoryId + userId row
-  DB-->>Backend: repository 기본 정보 + 사용자의 repository role
+  Note over Backend,DB: repositories: id = repositoryId row<br/>일반 user는 repo_members: repositoryId + userId row 조회<br/>system admin은 repo_members 없이 admin role로 통과
+  DB-->>Backend: repository 기본 정보 + 사용자의 effective repository role
   Backend->>Backend: repository maintain 권한 검증
-  Note over Backend: assertRepositoryAccess<br/>required role: maintain<br/>admin 또는 maintain 이상만 통과
+  Note over Backend: assertRepositoryAccess<br/>required role: maintain<br/>system admin, repository admin, maintain만 통과<br/>public read 권한만으로는 실패
 
-  alt maintain 권한 없음
+  alt repository 없음
+    Backend->>DB: 기존 PENDING session 정리
+    Note over Backend,DB: recording_sessions에서<br/>동일 repository/user/deviceType의 PENDING 세션을<br/>repository missing cleanup으로 CLOSED 처리
+    Note over Backend,DB: status = CLOSED<br/>end_reason = ACCESS_FORBIDDEN<br/>closed_at = now
+    DB-->>Backend: closed recordingSessionIds
+    Backend->>Redis: closed PENDING cache 삭제
+    Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>action: delete for each closed recordingSessionId
+    Backend-->>App: 404 Not Found
+    Note over Backend: repository row가 없으면 cleanup 후 NOT_FOUND 반환
+  else maintain 권한 없음
     Backend->>DB: 기존 PENDING session 정리
     Note over Backend,DB: recording_sessions에서<br/>동일 repository/user/deviceType의 PENDING 세션을<br/>ACCESS_FORBIDDEN 사유로 CLOSED 처리
     Note over Backend,DB: status = CLOSED<br/>end_reason = ACCESS_FORBIDDEN<br/>closed_at = now
@@ -56,9 +69,13 @@ sequenceDiagram
       Note over App,Backend: Response Body<br/>recordingSessionId: new_recording_session_id
     end
   end
+  end
 
 %% 참고:
-%% Background reconcile loop는 PENDING recording_sessions를 CLOSED로 정리하지 않는다.
+%% PENDING session을 별도로 CLOSED 정리하는 background reconcile loop는 없다.
 %% PENDING Redis cache TTL은 300초이며, publish-ticket은 이 cache가 남아 있는 PENDING session만 허용한다.
 %% Redis cache가 만료된 old PENDING DB row는 다음 register에서 재사용되면 cache가 다시 갱신된다.
+%% Access failure cleanup은 repository가 삭제되어 NOT_FOUND가 발생했거나,
+%% repository는 존재하지만 현재 사용자가 maintain 권한을 잃어 FORBIDDEN이 발생한 경우에 수행된다.
+%% repository missing cleanup은 이미 삭제된 repository를 가리키는 PENDING session이 DB에 영구히 남지 않도록 정리한다.
 %% 다음 단계는 App이 반환받은 recordingSessionId로 POST /api/v1/streams/{recordingSessionId}/publish-ticket을 호출하는 흐름이다.

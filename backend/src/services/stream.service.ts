@@ -49,11 +49,12 @@ export class StreamService {
     try {
       access = await repositoryService.assertRepositoryAccess(userId, userRole, input.repositoryId, "maintain");
     } catch (error) {
-      if (this.isForbiddenError(error)) {
-        await this.completePendingSessionsAfterForbiddenAccess(
+      if (this.isForbiddenError(error) || this.isNotFoundError(error)) {
+        await this.completePendingSessionsAfterAccessFailure(
           input.repositoryId,
           userId,
           input.deviceType ?? null,
+          this.isNotFoundError(error) ? "REPOSITORY_NOT_FOUND" : RecordingSessionEndReason.ACCESS_FORBIDDEN,
         );
       }
       throw error;
@@ -118,10 +119,15 @@ export class StreamService {
     return error instanceof AppError && error.code === ErrorCode.FORBIDDEN;
   }
 
-  private async completePendingSessionsAfterForbiddenAccess(
+  private isNotFoundError(error: unknown) {
+    return error instanceof AppError && error.code === ErrorCode.NOT_FOUND;
+  }
+
+  private async completePendingSessionsAfterAccessFailure(
     repositoryId: string,
     userId: string,
     deviceType: string | null,
+    cleanupReason: string,
   ) {
     const pendingSessions = await prisma.recordingSession.findMany({
       where: {
@@ -163,11 +169,12 @@ export class StreamService {
 
     await redis.del(...closedSessionIds.map(streamRecordingKey));
 
-    console.info("[rtmp-register] forbidden-pending-closed", {
+    console.info("[rtmp-register] access-failure-pending-closed", {
       repositoryId,
       userId,
       deviceType,
       recordingSessionIds: closedSessionIds,
+      cleanupReason,
       endReason: RecordingSessionEndReason.ACCESS_FORBIDDEN,
     });
   }

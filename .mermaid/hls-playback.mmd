@@ -14,7 +14,7 @@ sequenceDiagram
   Note over Backend: dashboard cookie, app JWT, python token 중 하나를 검증<br/>검증된 userId/userRole/rawCredential을 request context에 저장
 
   Backend->>DB: 접근 가능한 repository id 계산
-  Note over Backend,DB: admin이면 전체 접근 허용<br/>일반 사용자는 owner/member/visibility 기준으로 read 가능한 repository set 계산
+  Note over Backend,DB: admin이면 null filter로 전체 접근 허용<br/>일반 사용자는 repo_members row와 public repository를 합쳐<br/>read 가능한 repository id set 계산
 
   Backend->>Redis: active live session 후보 조회
   Note over Backend,Redis: set key<br/>stream:active:sessions<br/><br/>action<br/>SMEMBERS로 recordingSessionId 후보 획득
@@ -22,7 +22,7 @@ sequenceDiagram
   alt active session 후보 없음
     Redis-->>Backend: []
     Backend-->>Dashboard: 200 OK
-    Note over Backend,Dashboard: Response Body<br/>streams: []
+    Note over Backend,Dashboard: Headers<br/>Cache-Control: no-store<br/><br/>Response Body<br/>streams: []
   else active session 후보 있음
     Redis-->>Backend: recordingSessionIds[]
     Backend->>Redis: live cache batch 조회
@@ -33,7 +33,7 @@ sequenceDiagram
     Note over Backend: cache.status == STREAMING만 live로 취급<br/>요청자가 read 가능한 repositoryId만 응답에 포함<br/>MediaMTX active path는 list 단계에서 직접 조회하지 않는다.
 
     Backend-->>Dashboard: 200 OK
-    Note over Backend,Dashboard: Response Body<br/>streams[] item<br/>stream_id: {recordingSessionId}<br/>repository_id: {repositoryId}<br/>repository_name: {repositoryName}<br/>user_id: {publisherUserId}<br/>device_type: {optional_device_type_or_null}<br/>status: live<br/>hls_path: /hls/live/{repositoryName}/{recordingSessionId}/index.m3u8<br/>whep_path: /live/{repositoryName}/{recordingSessionId}/whep
+    Note over Backend,Dashboard: Headers<br/>Cache-Control: no-store<br/><br/>Response Body<br/>streams[] item<br/>stream_id: {recordingSessionId}<br/>repository_id: {repositoryId}<br/>repository_name: {repositoryName}<br/>user_id: {publisherUserId}<br/>device_type: {optional_device_type_or_null}<br/>status: live<br/>hls_path: /hls/live/{repositoryName}/{recordingSessionId}/index.m3u8<br/>whep_path: /live/{repositoryName}/{recordingSessionId}/whep
   end
 
   Dashboard->>Dashboard: live 목록 표시 및 선택 상태 갱신
@@ -53,10 +53,10 @@ sequenceDiagram
 
     Backend->>Backend: requireDashboardOrAppOrPython
     Backend->>Backend: HLS target path 추출
-    Note over Backend: accepted path shape<br/>/hls/live/{repositoryName}/{recordingSessionId}/...<br/>또는 /live/{repositoryName}/{recordingSessionId}/...<br/><br/>streamPath<br/>live/{repositoryName}/{recordingSessionId}
+    Note over Backend: accepted path shape<br/>/hls/live/{repositoryName}/{recordingSessionId}/...<br/>또는 /live/{repositoryName}/{recordingSessionId}/...<br/><br/>streamPath<br/>live/{repositoryName}/{recordingSessionId}<br/><br/>invalid or missing path는 404로 거절
 
     Backend->>Redis: playback auth cache 조회
-    Note over Backend,Redis: key<br/>hlsauth:{sha256(rawCredential)}:live/{repositoryName}/{recordingSessionId}<br/><br/>allow value<br/>1<br/><br/>TTL<br/>30 seconds
+    Note over Backend,Redis: key<br/>hlsauth:{sha256(rawCredential)}:{streamPath}<br/><br/>example<br/>hlsauth:{credentialHash}:live/{repositoryName}/{recordingSessionId}<br/><br/>allow value<br/>1<br/><br/>TTL<br/>30 seconds
 
     alt playback auth cache hit
       Redis-->>Backend: 1
@@ -79,14 +79,14 @@ sequenceDiagram
           Caddy-->>Dashboard: HLS request rejected
         else repository read 권한 있음
           Backend->>Redis: playback auth cache 저장
-          Note over Backend,Redis: key<br/>hlsauth:{sha256(rawCredential)}:live/{repositoryName}/{recordingSessionId}<br/><br/>value<br/>1<br/><br/>TTL<br/>30 seconds
+          Note over Backend,Redis: key<br/>hlsauth:{sha256(rawCredential)}:{streamPath}<br/><br/>value<br/>1<br/><br/>TTL<br/>30 seconds
           Backend-->>Caddy: 200 OK
         end
       end
     end
 
     Caddy->>MTX: HLS request proxy
-    Note over Caddy,MTX: handle_path /hls/* 가 /hls prefix 제거<br/>proxied path<br/>/live/{repositoryName}/{recordingSessionId}/index.m3u8<br/><br/>target<br/>mediamtx:8888
+    Note over Caddy,MTX: handle_path /hls/* 가 /hls prefix 제거<br/>proxied path<br/>/live/{repositoryName}/{recordingSessionId}/index.m3u8<br/><br/>target<br/>mediamtx:8888<br/><br/>header_down<br/>MediaMTX Location: /... redirect는 /hls/...로 다시 prefix
 
     MTX-->>Caddy: HLS playlist
     Note over MTX,Caddy: MediaMTX HLS<br/>hlsAlwaysRemux: yes<br/>hlsVariant: fmp4<br/>recording raw segment와 별개로 live HLS remux 제공
@@ -95,7 +95,7 @@ sequenceDiagram
     loop while player is mounted and stream is live
       Dashboard->>Caddy: HLS media playlist / fMP4 segment 요청
       Caddy->>Backend: forward_auth 재검증
-      Note over Caddy,Backend: 각 HLS request마다 forward_auth 수행<br/>30초 auth cache hit 시 Redis/DB 확인 비용 감소
+      Note over Caddy,Backend: 각 HLS request마다 forward_auth 수행<br/>30초 auth cache hit 시 live cache/repository 권한 재조회 생략
       Backend-->>Caddy: 200 OK
       Caddy->>MTX: proxy to mediamtx:8888
       MTX-->>Caddy: playlist or fMP4 media bytes
