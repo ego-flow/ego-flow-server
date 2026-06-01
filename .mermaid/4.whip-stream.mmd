@@ -163,4 +163,5 @@ sequenceDiagram
 %% pain point: worker process crash, OOM, host kill처럼 catch/failed handler가 실행되지 않는 장애에서는 PROCESSING -> WRITE_DONE reset이 누락될 수 있다.
 %% 현재 단계에서는 stale PROCESSING 복구를 구현하지 않는다. 필요해지면 reconcile 또는 processing lease 기반 복구를 추가해야 한다.
 %% worker processing의 상세 구현 상태와 VLM semantic metadata 확장 지점은 .mermaid/5.video-processing.mmd에서 다룬다.
+%% WHIP/WebRTC publisher session 종료와 CLOSED 기록 정책은 .mermaid/whip-connection-closure.mmd에서 따로 다룬다.
 %% RTMP media 전송 흐름은 .mermaid/4.rtmp-stream.mmd에서 따로 다룬다.

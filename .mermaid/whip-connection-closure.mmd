@@ -1,0 +1,112 @@
+sequenceDiagram
+  autonumber
+  participant App as [Android App]
+  participant Caddy as [Caddy]
+  participant MTX as [MediaMTX]
+  participant Backend as [Backend]
+  participant DB as [DB]
+  participant Redis as [Redis]
+
+  Note over App,MTX: 전제<br/>RecordingSession은 STREAMING 상태이고,<br/>App은 WHIP POST를 완료해 WebRTC publisher session을 가진 상태다.<br/>App은 MediaMTX가 반환한 WHIP Location을 저장하고 있다.<br/>MediaMTX path는 live/{repositoryName}/{recordingSessionId} 이다.
+
+  alt normal disconnect requested by App
+    App->>Backend: close-intent API
+    Note over App,Backend: API<br/>POST /api/v1/recordings/{recordingSessionId}/close-intent<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>reason: NORMAL_DISCONNECT
+
+    Backend->>Backend: requireAppJwt + validate
+    Note over Backend: params.recordingSessionId: uuid<br/>body.reason: NORMAL_DISCONNECT literal
+
+    Backend->>DB: RecordingSession 조회 및 검증
+    Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>required owner: session.userId == requestUserId<br/>required status: STREAMING
+
+    alt close-intent precondition failed
+      Backend-->>App: 400/401/403/404/409 error
+      Note over App,Backend: unsupported reason, auth failure,<br/>owner mismatch, missing session,<br/>or non-STREAMING session
+    else close-intent recorded
+      Backend->>DB: NORMAL_DISCONNECT intent 기록
+      Note over Backend,DB: updated fields<br/>end_reason = NORMAL_DISCONNECT<br/><br/>unchanged<br/>status, closed_at, Redis live cache, active set
+      Backend-->>App: 200 OK
+      Note over App,Backend: Response Body<br/>ok: true
+
+      App->>Caddy: WHIP session normal close
+      Note over App,Caddy: 권장 동작<br/>DELETE {Location from WHIP 201}<br/><br/>fallback<br/>PeerConnection close로 publisher session 종료 유도
+      Caddy->>MTX: proxy WHIP DELETE
+      Note over App,MTX: App은 close-intent 200 OK 이후<br/>WHIP session 또는 PeerConnection을 정상 close한다.
+    end
+  else unexpected closure or WebRTC session timeout
+    App--xMTX: WebRTC publisher connection lost
+    Note over App,MTX: App crash, process kill, radio/network loss,<br/>ICE failure, DTLS/SRTP transport failure,<br/>half-open/stalled peer connection 등
+  end
+
+  MTX->>MTX: publisher session 종료 감지
+  Note over MTX: WHIP DELETE는 빠르게 not-ready로 이어진다.<br/>PeerConnection close, ICE failure, stalled media는<br/>MediaMTX WebRTC session 종료 감지에 의존한다.<br/><br/>Backend는 media packet 단위 heartbeat를 받지 않으므로<br/>종료 판정은 MediaMTX가 authoritative하다.
+
+  alt runOnNotReady hook delivered
+    MTX->>Backend: stream-not-ready hook
+    Note over MTX,Backend: API<br/>POST /api/v1/hooks/stream-not-ready<br/><br/>Body<br/>path: live/{repositoryName}/{recordingSessionId}<br/><br/>wrapper<br/>mediamtx-hooks/stream-not-ready-wrapper.sh
+
+    Backend->>Backend: validate + recordingSessionId 추출
+    Note over Backend: streamNotReadyHookSchema<br/>path: non-empty string<br/><br/>recordingSessionId는 stream path의 세 번째 segment에서 추출
+
+    Backend->>DB: RecordingSession 조회
+    Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId
+
+    alt invalid path, missing session, or non-STREAMING session
+      Backend->>Backend: no-op
+      Note over Backend: path invalid, session missing,<br/>or status != STREAMING이면 경고 로그만 남기고 종료
+      Backend-->>MTX: 200 OK
+    else STREAMING session found
+      Backend->>DB: RecordingSession CLOSED update
+      Note over Backend,DB: updated fields<br/>status = CLOSED<br/>closed_at = existing closed_at or now<br/>end_reason = existing end_reason or UNEXPECTED_DISCONNECT<br/><br/>close-intent가 먼저 기록되어 있으면<br/>NORMAL_DISCONNECT가 보존된다.
+
+      Backend->>Redis: live pointer cleanup
+      Note over Backend,Redis: delete key: stream:recording:{recordingSessionId}<br/>remove member from set: stream:active:sessions
+
+      Backend->>Backend: tryEnqueueFinalize(recordingSessionId)
+      Note over Backend: RecordingSession이 CLOSED이고<br/>RecordingSegment가 WRITE_DONE이면<br/>recording-finalize job enqueue를 시도한다.
+
+      Backend-->>MTX: 200 OK
+    end
+  else hook missed or wrapper request failed
+    Note over MTX,Backend: wrapper는 backend 호출 실패를 MediaMTX에 전파하지 않는다.<br/>hook이 누락되면 backend reconcile loop가 fallback으로 정리한다.
+
+    Backend->>Backend: reconcileSessions loop
+    Note over Backend: 5초 간격<br/>대상 DB row: status = STREAMING<br/>PENDING session을 별도로 정리하는 loop는 없다.
+
+    Backend->>MTX: active path list 조회
+    Note over Backend,MTX: MediaMTX API<br/>GET /v3/paths/list
+
+    alt active path query failed
+      Backend->>Backend: no-op until next reconcile
+      Note over Backend: active path 목록을 확인하지 못하면<br/>해당 loop에서는 STREAMING session을 강제로 닫지 않는다.
+    else path still active
+      Backend->>Backend: no-op
+      Note over Backend: MediaMTX active path 목록에<br/>live/{repositoryName}/{recordingSessionId}가 아직 존재
+    else path missing
+      Backend->>DB: RecordingSession CLOSED update
+      Note over Backend,DB: updated fields<br/>status = CLOSED<br/>closed_at = existing closed_at or now<br/>end_reason = existing end_reason or UNEXPECTED_DISCONNECT
+
+      Backend->>Redis: live pointer cleanup
+      Note over Backend,Redis: delete key: stream:recording:{recordingSessionId}<br/>remove member from set: stream:active:sessions
+
+      Backend->>Backend: tryEnqueueFinalize(recordingSessionId)
+      Note over Backend: segment complete가 이미 끝난 경우에만<br/>finalize enqueue가 발생한다.
+    end
+  end
+
+%% 참고:
+%% 이 문서는 WHIP/WebRTC publisher session 종료와 RecordingSession CLOSED 기록 정책을 다룬다.
+%% App은 legacy stop API를 호출하지 않는다.
+%% App은 정상 종료 시 POST /api/v1/recordings/{recordingSessionId}/close-intent 를 호출한다.
+%% close-intent body는 { "reason": "NORMAL_DISCONNECT" } 만 허용한다.
+%% close-intent는 종료 의도만 기록하며 RecordingSession을 CLOSED로 바꾸지 않는다.
+%% 실제 CLOSED 전이는 stream-not-ready hook 또는 STREAMING reconcile fallback이 담당한다.
+%% WHIP 정상 종료 권장 동작은 close-intent 200 OK 이후 WHIP Location에 DELETE를 보내는 것이다.
+%% DELETE를 사용할 수 없으면 PeerConnection close로 publisher session 종료를 유도할 수 있다.
+%% MediaMTX stream-not-ready hook payload는 path만 제공하므로 종료 원인을 직접 구분하지 않는다.
+%% close-intent가 있으면 NORMAL_DISCONNECT, 없으면 stream-not-ready/reconcile이 UNEXPECTED_DISCONNECT로 기록한다.
+%% WHIP/WebRTC 연결 소실의 timeout 조건은 backend가 정하지 않는다.
+%% MediaMTX가 WHIP session, ICE/DTLS/SRTP transport, peer connection 상태를 통해 publisher path 종료를 판단한다.
+%% stream-not-ready와 reconcile 모두 live cache와 active set을 정리한 뒤 tryEnqueueFinalize를 호출한다.
+%% reconcile은 STREAMING session만 보정한다. PENDING session을 별도로 CLOSED 정리하는 bg reconcile loop는 없다.
+%% segment-complete hook, finalize enqueue 및 worker 처리 상세 흐름은 .mermaid/4.whip-stream.mmd에서 다룬다.
