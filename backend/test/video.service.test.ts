@@ -59,8 +59,10 @@ type VideoRow = {
   sizeBytes: bigint | null;
   vlmSha256: string | null;
   recorder: string | null;
-  sceneSummary: string | null;
-  clipSegments: unknown;
+  semanticMetadata: {
+    sceneSummary: string | null;
+    clipSegments: unknown;
+  } | null;
   createdAt: Date;
   recordingSessionId: string | null;
   errorMessage: string | null;
@@ -240,8 +242,7 @@ beforeEach(() => {
     sizeBytes: 42n,
     vlmSha256: "a".repeat(64),
     recorder: "alice",
-    sceneSummary: null,
-    clipSegments: null,
+    semanticMetadata: null,
     createdAt: new Date("2026-04-12T01:05:00.000Z"),
     recordingSessionId: "session-1",
     errorMessage: null,
@@ -265,8 +266,7 @@ beforeEach(() => {
     sizeBytes: null,
     vlmSha256: null,
     recorder: "alice",
-    sceneSummary: null,
-    clipSegments: null,
+    semanticMetadata: null,
     createdAt: new Date("2026-04-13T00:00:00.000Z"),
     recordingSessionId: "session-2",
     errorMessage: null,
@@ -290,8 +290,10 @@ beforeEach(() => {
     sizeBytes: 84n,
     vlmSha256: "b".repeat(64),
     recorder: "bob",
-    sceneSummary: "Kitchen prep",
-    clipSegments: [{ start_sec: 0, end_sec: 9.5 }],
+    semanticMetadata: {
+      sceneSummary: "Kitchen prep",
+      clipSegments: [{ start_sec: 0, end_sec: 9.5 }],
+    },
     createdAt: new Date("2026-04-11T09:35:00.000Z"),
     recordingSessionId: "session-3",
     errorMessage: null,
@@ -544,8 +546,7 @@ test("getRepositoryManifest throws when a completed video lacks artifact metadat
     sizeBytes: null,
     vlmSha256: null,
     recorder: "alice",
-    sceneSummary: null,
-    clipSegments: null,
+    semanticMetadata: null,
     createdAt: new Date("2026-04-10T00:01:00.000Z"),
     recordingSessionId: "session-bad",
     errorMessage: null,

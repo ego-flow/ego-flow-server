@@ -96,6 +96,8 @@ stateDiagram-v2
       Entry action:
       final metadata is persisted: paths, duration, resolution, codec,
       recordedAt, sizeBytes, recorder, sha256, and processing timestamps.
+      VLM semantic metadata is not part of Video.status.
+      It is tracked separately in video_semantic_metadata.
     end note
 
     note right of VIDEO_FAILED

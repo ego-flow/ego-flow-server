@@ -30,8 +30,10 @@ type RepositoryVideoRecord = {
   dashboardVideoPath: string | null;
   sizeBytes: bigint | null;
   recorder: string | null;
-  sceneSummary: string | null;
-  clipSegments: Prisma.JsonValue | null;
+  semanticMetadata: {
+    sceneSummary: string | null;
+    clipSegments: Prisma.JsonValue | null;
+  } | null;
   createdAt: Date;
 };
 
@@ -129,8 +131,8 @@ const toRepoVideoResponse = (
     ...(options?.includeDashboardVideoUrl
       ? { dashboard_video_url: toSignedFileUrl(targetDirectory, video.dashboardVideoPath) }
       : {}),
-    scene_summary: video.sceneSummary,
-    clip_segments: video.clipSegments,
+    scene_summary: video.semanticMetadata?.sceneSummary ?? null,
+    clip_segments: video.semanticMetadata?.clipSegments ?? null,
     created_at: video.createdAt.toISOString(),
   };
 };
@@ -160,8 +162,12 @@ export class VideoService {
         dashboardVideoPath: true,
         sizeBytes: true,
         recorder: true,
-        sceneSummary: true,
-        clipSegments: true,
+        semanticMetadata: {
+          select: {
+            sceneSummary: true,
+            clipSegments: true,
+          },
+        },
         createdAt: true,
       },
     });
@@ -341,8 +347,12 @@ export class VideoService {
           dashboardVideoPath: true,
           sizeBytes: true,
           recorder: true,
-          sceneSummary: true,
-          clipSegments: true,
+          semanticMetadata: {
+            select: {
+              sceneSummary: true,
+              clipSegments: true,
+            },
+          },
           createdAt: true,
         },
       }),
@@ -400,8 +410,12 @@ export class VideoService {
           fps: true,
           codec: true,
           recordedAt: true,
-          sceneSummary: true,
-          clipSegments: true,
+          semanticMetadata: {
+            select: {
+              sceneSummary: true,
+              clipSegments: true,
+            },
+          },
           sizeBytes: true,
           vlmSha256: true,
           thumbnailPath: true,
@@ -436,8 +450,8 @@ export class VideoService {
           resolution_height: video.resolutionHeight,
           fps: video.fps,
           codec: video.codec,
-          scene_summary: video.sceneSummary,
-          clip_segments: video.clipSegments,
+          scene_summary: video.semanticMetadata?.sceneSummary ?? null,
+          clip_segments: video.semanticMetadata?.clipSegments ?? null,
           artifacts: {
             vlm_video: {
               download_url: toRepositoryVideoDownloadUrl(repoId, video.id),

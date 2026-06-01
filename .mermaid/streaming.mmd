@@ -91,9 +91,9 @@ sequenceDiagram
 
   Server->>Queue: recording-finalize job enqueue
   Queue->>Worker: recording-finalize job
-  Worker->>Worker: raw file 안정화 + metadata 추출 + encoding
-  Worker->>DB: Video/RecordingSegment 결과 저장
-  Note over Worker,DB: success<br/>Video.status=COMPLETED<br/>RecordingSegment.status=COMPLETED<br/><br/>failure after retries<br/>Video.status=FAILED<br/>RecordingSegment.status=FAILED
+  Worker->>Worker: raw file 안정화 + technical metadata 추출 + encoding
+  Worker->>DB: Video/RecordingSegment/SemanticMetadata 결과 저장
+  Note over Worker,DB: success<br/>Video.status=COMPLETED<br/>RecordingSegment.status=COMPLETED<br/>VideoSemanticMetadata.status=PENDING<br/><br/>failure after retries<br/>Video.status=FAILED<br/>RecordingSegment.status=FAILED
 
 %% 참고:
 %% 이 문서는 App과 server-side streaming system 사이의 계약을 한 장으로 요약한다.

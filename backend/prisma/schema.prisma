@@ -62,6 +62,13 @@ enum VideoStatus {
   FAILED
 }
 
+enum VideoSemanticMetadataStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 enum RecordingSessionStatus {
   PENDING
   STREAMING
@@ -169,10 +176,6 @@ model Video {
   sizeBytes             BigInt?
   vlmSha256             String?     @map("vlm_sha256") @db.VarChar(64)
   recorder              String?     @db.VarChar(64)
-  clipSegments          Json?       @map("clip_segments")
-  actionLabels          Json?       @map("action_labels")
-  videoTextAlignment    Json?       @map("video_text_alignment")
-  sceneSummary          String?     @map("scene_summary") @db.Text
   status                VideoStatus
   errorMessage          String?     @map("error_message") @db.Text
   processingStartedAt   DateTime?   @map("processing_started_at")
@@ -181,6 +184,7 @@ model Video {
   updatedAt             DateTime    @updatedAt @map("updated_at")
 
   recordingSession RecordingSession? @relation(fields: [recordingSessionId], references: [id])
+  semanticMetadata VideoSemanticMetadata?
 
   @@index([status])
   @@index([repositoryId], map: "idx_videos_repository_id")
@@ -188,4 +192,23 @@ model Video {
   @@index([recorder], map: "idx_videos_recorder")
   @@index([recordingSessionId], map: "idx_videos_recording_session_id")
   @@map("videos")
+}
+
+model VideoSemanticMetadata {
+  videoId               String                      @id @map("video_id") @db.Uuid
+  status                VideoSemanticMetadataStatus @default(PENDING)
+  clipSegments          Json?                       @map("clip_segments")
+  actionLabels          Json?                       @map("action_labels")
+  videoTextAlignment    Json?                       @map("video_text_alignment")
+  sceneSummary          String?                     @map("scene_summary") @db.Text
+  errorMessage          String?                     @map("error_message") @db.Text
+  processingStartedAt   DateTime?                   @map("processing_started_at")
+  processingCompletedAt DateTime?                   @map("processing_completed_at")
+  createdAt             DateTime                    @default(now()) @map("created_at")
+  updatedAt             DateTime                    @updatedAt @map("updated_at")
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([status], map: "idx_video_semantic_metadata_status")
+  @@map("video_semantic_metadata")
 }

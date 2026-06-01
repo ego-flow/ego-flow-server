@@ -86,58 +86,45 @@ sequenceDiagram
   end
 
   Queue->>Worker: finalize job
-  Worker->>DB: RecordingSession precondition 조회
-  Note over Worker,DB: target row: id = recordingSessionId<br/>required status: CLOSED
+  Worker->>DB: RecordingSession metadata 조회
+  Note over Worker,DB: target row: id = recordingSessionId<br/>status 재검증은 하지 않는다.<br/>finalize enqueue가 이미 CLOSED + WRITE_DONE readiness를 보장한다.
 
-  alt session missing or not CLOSED
-    Worker-->>Queue: job failure
-    Note over Worker,Queue: worker가 error를 throw하고<br/>BullMQ retry/final failure 정책에 맡긴다.
-  else session CLOSED
-    Worker->>DB: existing Video 조회
-    Note over Worker,DB: videos.recording_session_id = recordingSessionId<br/>이미 Video가 있으면 중복 생성하지 않는다.
+  Worker->>DB: RecordingSegment 조회
+  Note over Worker,DB: target row<br/>recording_session_id = recordingSessionId<br/>segment status는 별도 분기 검증하지 않고 atomic claim 조건으로 판단한다.
 
-    alt video already exists
+  alt segment missing
+    Worker->>Worker: no-op
+    Note over Worker: 대상 segment가 없으면<br/>현재 job은 종료한다.
+  else segment found
+    Worker->>DB: RecordingSegment atomic claim
+    Note over Worker,DB: updateMany where id = segment.id and status = WRITE_DONE
+
+    alt atomic claim missed
       Worker->>Worker: no-op
-      Note over Worker: current Video status를 로그로 남기고<br/>현재 job은 종료한다.
-    else no existing video
-      Worker->>DB: RecordingSegment 조회
-      Note over Worker,DB: target row<br/>recording_session_id = recordingSessionId<br/>processable status = WRITE_DONE only
+      Note over Worker: segment가 WRITE_DONE이 아니거나<br/>다른 worker가 먼저 claim한 것으로 보고<br/>현재 job attempt는 종료한다.
+    else atomic claim success
+      Worker->>DB: WRITE_DONE -> PROCESSING
+      Note over Worker,DB: claim count = 1인 worker만 processing 진행
 
-      alt segment missing or not WRITE_DONE
-        Worker->>Worker: no-op
-        Note over Worker: 처리 가능한 segment가 아니므로<br/>현재 job은 종료한다.
-      else segment WRITE_DONE
-        Worker->>DB: RecordingSegment atomic claim
-        Note over Worker,DB: updateMany where id = segment.id and status = WRITE_DONE
+      Worker->>Worker: process recording finalize
+      Note over Worker: progress 5<br/>raw segment file 안정화 대기<br/><br/>progress 15<br/>ffprobe technical metadata 추출<br/><br/>progress 35<br/>출력 경로 생성 및 directory 생성<br/><br/>parallel encoding<br/>VLM dataset mp4<br/>dashboard mp4<br/>thumbnail jpg<br/><br/>progress 90<br/>VLM mp4 size, sha256 계산<br/><br/>상세 processing 상태는 .mermaid/5.video-processing.mmd 참고
 
-        alt atomic claim missed
-          Worker->>Worker: no-op
-          Note over Worker: 다른 worker가 먼저 claim한 것으로 보고<br/>현재 job attempt는 종료한다.
-        else atomic claim success
-          Worker->>DB: WRITE_DONE -> PROCESSING
-          Note over Worker,DB: claim count = 1인 worker만 processing 진행
-
-          Worker->>Worker: process recording finalize
-          Note over Worker: progress 5<br/>raw segment file 안정화 대기<br/><br/>progress 15<br/>ffprobe technical metadata 추출<br/><br/>progress 35<br/>출력 경로 생성 및 directory 생성<br/><br/>parallel encoding<br/>VLM dataset mp4<br/>dashboard mp4<br/>thumbnail jpg<br/><br/>progress 90<br/>VLM mp4 size, sha256 계산<br/><br/>상세 processing 상태는 .mermaid/5.video-processing.mmd 참고
-
-          alt processing success
-            Worker->>DB: finalize transaction
-            Note over Worker,DB: videos row 생성<br/>status = COMPLETED<br/>recording_session_id unique<br/>technical metadata, output paths, size, sha256 저장<br/>VLM semantic metadata는 아직 생성하지 않음<br/><br/>recording_segments row 갱신<br/>status = COMPLETED<br/><br/>repository row lock 후 contributors refresh
-            Worker->>Storage: optional raw cleanup
-            Note over Worker,Storage: DELETE_RAW_AFTER_PROCESSING=true이면<br/>raw segment file 삭제
-            Worker->>Worker: progress 100
-          else processing failure and attempts remain
-            Worker->>DB: PROCESSING -> WRITE_DONE
-            Note over Worker,DB: retry 전에 segment 상태를 되돌린다.<br/>다음 attempt도 WRITE_DONE -> PROCESSING atomic claim부터 다시 시작한다.
-            Worker->>Queue: retry scheduled
-            Note over Worker,Queue: attempts = 3<br/>backoff = exponential<br/>initial delay = 5000ms
-          else final processing failure
-            Worker->>Worker: failed event
-            Note over Worker: attemptsMade >= attempts 일 때만<br/>실패 상태를 DB에 기록한다.
-            Worker->>DB: mark finalize failed transaction
-            Note over Worker,DB: recording_segments row 갱신<br/>status = FAILED<br/><br/>videos row 생성<br/>status = FAILED<br/>error_message = worker error
-          end
-        end
+      alt processing success
+        Worker->>DB: finalize transaction
+        Note over Worker,DB: videos row upsert<br/>status = COMPLETED<br/>recording_session_id unique<br/>technical metadata, output paths, size, sha256 저장<br/><br/>video_semantic_metadata row upsert<br/>status = PENDING<br/>semantic metadata 값은 아직 생성하지 않음<br/><br/>recording_segments row 갱신<br/>status = COMPLETED<br/><br/>repository row lock 후 contributors refresh
+        Worker->>Storage: optional raw cleanup
+        Note over Worker,Storage: DELETE_RAW_AFTER_PROCESSING=true이면<br/>raw segment file 삭제
+        Worker->>Worker: progress 100
+      else processing failure and attempts remain
+        Worker->>DB: PROCESSING -> WRITE_DONE
+        Note over Worker,DB: retry 전에 segment 상태를 되돌린다.<br/>다음 attempt도 WRITE_DONE -> PROCESSING atomic claim부터 다시 시작한다.
+        Worker->>Queue: retry scheduled
+        Note over Worker,Queue: attempts = 3<br/>backoff = exponential<br/>initial delay = 5000ms
+      else final processing failure
+        Worker->>Worker: failed event
+        Note over Worker: attemptsMade >= attempts 일 때만<br/>실패 상태를 DB에 기록한다.
+        Worker->>DB: mark finalize failed transaction
+        Note over Worker,DB: recording_segments row 갱신<br/>status = FAILED<br/><br/>videos row upsert<br/>status = FAILED<br/>error_message = worker error
       end
     end
   end
@@ -159,6 +146,10 @@ sequenceDiagram
 %% 현재 구조에서는 App이 단일 recording session을 짧게 유지하는 전제이므로
 %% 정상 흐름의 segment rollover는 별도로 다루지 않는다.
 %% finalize job 중복 enqueue는 jobId=finalize-{recordingSessionId}로 dedupe된다.
+%% worker는 session status와 existing Video를 사전 재검증하지 않는다.
+%% 처리 권한은 RecordingSegment WRITE_DONE -> PROCESSING atomic claim으로 보장한다.
+%% 성공 시 videos row는 recording_session_id unique key 기준 upsert한다.
+%% semantic metadata는 video_semantic_metadata 별도 table에서 status/data를 관리한다.
 %% WRITE_DONE segment를 reconcile에서 다시 찾아 enqueue하는 보정 loop는 두지 않는다.
 %% retry 가능한 worker 실패에서는 PROCESSING을 WRITE_DONE으로 되돌린 뒤 BullMQ retry에 맡긴다.
 %% recording-finalize queue option: attempts=3, exponential backoff delay=5000ms, removeOnComplete=1000, removeOnFail=2000.

@@ -1,7 +1,11 @@
 import fs from "fs/promises";
 
 import { Job, Worker } from "bullmq";
-import { RecordingSessionStatus, RecordingSegmentStatus, VideoStatus } from "@prisma/client";
+import {
+  RecordingSegmentStatus,
+  VideoSemanticMetadataStatus,
+  VideoStatus,
+} from "@prisma/client";
 
 import { buildBullConnection } from "../lib/bullmq";
 import { probeVideoMetadata } from "../lib/ffprobe";
@@ -48,8 +52,9 @@ const resetRecordingSegmentForRetry = async (segmentId: string, recordingSession
  * 2. raw 파일이 안정화될 때까지 대기
  * 3. ffprobe로 메타데이터(duration, resolution, fps 등) 추출
  * 4. VLM용 비디오, 대시보드용 비디오, 썸네일을 병렬로 인코딩
- * 5. Video를 생성하고 segment를 COMPLETED로 전환
- * 6. 설정에 따라 raw 세그먼트 파일 삭제
+ * 5. Video를 upsert하고 semantic metadata row를 PENDING으로 준비
+ * 6. segment를 COMPLETED로 전환
+ * 7. 설정에 따라 raw 세그먼트 파일 삭제
  */
 const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
   const { recordingSessionId, videoId, repositoryId, ownerId, repoName, targetDirectory } = job.data;
@@ -60,25 +65,13 @@ const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
   if (!session) {
     throw new Error(`Session ${recordingSessionId} not found`);
   }
-  if (session.status !== RecordingSessionStatus.CLOSED) {
-    throw new Error(`Session ${recordingSessionId} is not in CLOSED state (current: ${session.status})`);
-  }
-
-  const currentVideo = await prisma.video.findUnique({
-    where: { recordingSessionId },
-    select: { status: true },
-  });
-  if (currentVideo) {
-    console.log(`[finalize-worker] video for session ${recordingSessionId} already ${currentVideo.status}, skipping`);
-    return;
-  }
 
   const segment = await prisma.recordingSegment.findUnique({
     where: { recordingSessionId },
   });
 
-  if (!segment || segment.status !== RecordingSegmentStatus.WRITE_DONE) {
-    console.warn(`[finalize-worker] no processable segment found session=${recordingSessionId}`);
+  if (!segment) {
+    console.warn(`[finalize-worker] no segment found session=${recordingSessionId}`);
     return;
   }
 
@@ -122,8 +115,10 @@ const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
     await job.updateProgress(90);
 
     await prisma.$transaction(async (tx) => {
-      await tx.video.create({
-        data: {
+      const processedAt = new Date();
+      const video = await tx.video.upsert({
+        where: { recordingSessionId },
+        create: {
           id: videoId,
           repositoryId,
           recordingSessionId,
@@ -144,9 +139,39 @@ const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
           recorder: session.userId,
           status: VideoStatus.COMPLETED,
           errorMessage: null,
-          processingStartedAt: new Date(),
-          processingCompletedAt: new Date(),
+          processingStartedAt: processedAt,
+          processingCompletedAt: processedAt,
         },
+        update: {
+          repositoryId,
+          rawRecordingPath: rawInputPath,
+          streamPath: session.streamPath,
+          deviceType: session.deviceType,
+          durationSec: metadata.durationSec,
+          resolutionWidth: metadata.resolutionWidth,
+          resolutionHeight: metadata.resolutionHeight,
+          fps: metadata.fps,
+          codec: metadata.codec,
+          recordedAt,
+          vlmVideoPath: outputs.vlmVideoPath,
+          dashboardVideoPath: outputs.dashboardVideoPath,
+          thumbnailPath: outputs.thumbnailPath,
+          sizeBytes,
+          vlmSha256: sha256,
+          recorder: session.userId,
+          status: VideoStatus.COMPLETED,
+          errorMessage: null,
+          processingStartedAt: processedAt,
+          processingCompletedAt: processedAt,
+        },
+      });
+      await tx.videoSemanticMetadata.upsert({
+        where: { videoId: video.id },
+        create: {
+          videoId: video.id,
+          status: VideoSemanticMetadataStatus.PENDING,
+        },
+        update: {},
       });
       await tx.recordingSegment.updateMany({
         where: {
@@ -190,6 +215,7 @@ const markRecordingFinalizeFailed = async (
     throw new Error(`Segment for session ${data.recordingSessionId} not found`);
   }
 
+  const processedAt = new Date();
   await prisma.$transaction([
     prisma.recordingSegment.updateMany({
       where: {
@@ -197,8 +223,9 @@ const markRecordingFinalizeFailed = async (
       },
       data: { status: RecordingSegmentStatus.FAILED },
     }),
-    prisma.video.create({
-      data: {
+    prisma.video.upsert({
+      where: { recordingSessionId: data.recordingSessionId },
+      create: {
         id: data.videoId,
         repositoryId: data.repositoryId,
         recordingSessionId: data.recordingSessionId,
@@ -207,8 +234,17 @@ const markRecordingFinalizeFailed = async (
         deviceType: session.deviceType,
         status: VideoStatus.FAILED,
         errorMessage,
-        processingStartedAt: new Date(),
-        processingCompletedAt: new Date(),
+        processingStartedAt: processedAt,
+        processingCompletedAt: processedAt,
+      },
+      update: {
+        repositoryId: data.repositoryId,
+        rawRecordingPath: segment.rawPath,
+        streamPath: session.streamPath,
+        deviceType: session.deviceType,
+        status: VideoStatus.FAILED,
+        errorMessage,
+        processingCompletedAt: processedAt,
       },
     }),
   ]);

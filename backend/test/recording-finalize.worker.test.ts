@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import path from "path";
 import { beforeEach, test } from "node:test";
-import { RecordingSessionStatus, RecordingSegmentStatus, VideoStatus } from "@prisma/client";
+import {
+  RecordingSessionStatus,
+  RecordingSegmentStatus,
+  VideoSemanticMetadataStatus,
+  VideoStatus,
+} from "@prisma/client";
 
 process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egoflow";
 process.env.JWT_SECRET ??= "replace-this-in-tests-only";
@@ -43,6 +48,7 @@ moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
 }) as typeof moduleLoader._load;
 
 const videoUpdateCalls: Array<{ data: Record<string, unknown> }> = [];
+const videoSemanticMetadataUpsertCalls: Array<{ create: Record<string, unknown>; update: Record<string, unknown> }> = [];
 const recordingSessionUpdateCalls: Array<{ where: { id: string }; data: Record<string, unknown> }> = [];
 const recordingSegmentUpdateManyCalls: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
 let segmentStatus: RecordingSegmentStatus = RecordingSegmentStatus.WRITE_DONE;
@@ -105,6 +111,30 @@ const fakePrisma: any = {
         ...args.data,
       };
     },
+    upsert: async (args: {
+      create: Record<string, unknown>;
+      update: Record<string, unknown>;
+    }) => {
+      videoUpdateCalls.push({ data: args.create });
+      return {
+        id: args.create.id,
+        ...args.create,
+      };
+    },
+  },
+  videoSemanticMetadata: {
+    upsert: async (args: {
+      create: Record<string, unknown>;
+      update: Record<string, unknown>;
+    }) => {
+      videoSemanticMetadataUpsertCalls.push({
+        create: args.create,
+        update: args.update,
+      });
+      return {
+        ...args.create,
+      };
+    },
   },
   repoMember: {
     findMany: async () => [
@@ -146,6 +176,7 @@ beforeEach(() => {
   capturedProcessor = null;
   capturedHandlers = null;
   videoUpdateCalls.length = 0;
+  videoSemanticMetadataUpsertCalls.length = 0;
   recordingSessionUpdateCalls.length = 0;
   recordingSegmentUpdateManyCalls.length = 0;
   segmentStatus = RecordingSegmentStatus.WRITE_DONE;
@@ -229,6 +260,15 @@ test("recording finalize stores VLM SHA-256 and size metadata after encoding", a
   assert.equal(completedUpdate?.data.vlmSha256, "a".repeat(64));
   assert.equal(completedUpdate?.data.recorder, "alice");
   assert.equal(completedUpdate?.data.status, VideoStatus.COMPLETED);
+  assert.deepEqual(videoSemanticMetadataUpsertCalls, [
+    {
+      create: {
+        videoId: "video-1",
+        status: VideoSemanticMetadataStatus.PENDING,
+      },
+      update: {},
+    },
+  ]);
   assert.equal(recordingSessionUpdateCalls.length, 0);
   assert.deepEqual(progressUpdates, [5, 15, 35, 90, 100]);
   assert.deepEqual(
@@ -286,7 +326,7 @@ test("recording finalize falls back to session timing when ffprobe recordedAt is
   assert.equal(metadataUpdate?.data.recordedAt, session.readyAt);
 });
 
-test("recording finalize ignores PROCESSING segment instead of resuming without a WRITE_DONE claim", async () => {
+test("recording finalize relies on atomic claim for non-WRITE_DONE segments", async () => {
   segmentStatus = RecordingSegmentStatus.PROCESSING;
   let waitCalled = false;
 
@@ -311,7 +351,17 @@ test("recording finalize ignores PROCESSING segment instead of resuming without 
 
   assert.equal(waitCalled, false);
   assert.equal(videoUpdateCalls.length, 0);
-  assert.equal(recordingSegmentUpdateManyCalls.length, 0);
+  assert.deepEqual(recordingSegmentUpdateManyCalls, [
+    {
+      where: {
+        id: "segment-1",
+        status: RecordingSegmentStatus.WRITE_DONE,
+      },
+      data: {
+        status: RecordingSegmentStatus.PROCESSING,
+      },
+    },
+  ]);
 });
 
 test("recording finalize resets PROCESSING segment to WRITE_DONE before BullMQ retry", async () => {

@@ -1,19 +1,14 @@
 flowchart TD
   Start["recording-finalize job received"] --> SessionCheck["RecordingSession 조회"]
-  SessionCheck --> SessionClosed{"status == CLOSED?"}
-  SessionClosed -- "no" --> JobRetry["job failure<br/>BullMQ retry/final failure policy"]
-  SessionClosed -- "yes" --> ExistingVideo["Video 조회<br/>recording_session_id unique"]
+  SessionCheck --> SessionNote["metadata only<br/>status 재검증 없음"]
+  SessionNote --> SegmentLookup["RecordingSegment 조회<br/>recording_session_id unique"]
 
-  ExistingVideo --> VideoExists{"Video already exists?"}
-  VideoExists -- "yes" --> NoopExisting["no-op<br/>중복 Video 생성 방지"]
-  VideoExists -- "no" --> SegmentLookup["RecordingSegment 조회<br/>recording_session_id unique"]
-
-  SegmentLookup --> SegmentReady{"status == WRITE_DONE?"}
-  SegmentReady -- "no" --> NoopSegment["no-op<br/>처리 가능한 segment 없음"]
-  SegmentReady -- "yes" --> Claim["RecordingSegment atomic claim<br/>WRITE_DONE -> PROCESSING"]
+  SegmentLookup --> SegmentExists{"segment exists?"}
+  SegmentExists -- "no" --> NoopSegment["no-op<br/>대상 segment 없음"]
+  SegmentExists -- "yes" --> Claim["RecordingSegment atomic claim<br/>WRITE_DONE -> PROCESSING"]
 
   Claim --> ClaimOk{"claim count == 1?"}
-  ClaimOk -- "no" --> NoopClaim["no-op<br/>다른 worker가 처리 중"]
+  ClaimOk -- "no" --> NoopClaim["no-op<br/>not WRITE_DONE or 다른 worker가 처리 중"]
   ClaimOk -- "yes" --> RawStable["raw segment file 안정화 대기"]
 
   RawStable --> TechnicalProbe["ffprobe technical metadata 추출"]
@@ -29,10 +24,12 @@ flowchart TD
   Thumbnail --> Persist
   Digest --> Persist["DB transaction"]
 
-  Persist --> VideoCreate["Video row 생성<br/>status = COMPLETED"]
+  Persist --> VideoCreate["Video row upsert<br/>status = COMPLETED"]
+  Persist --> SemanticPending["VideoSemanticMetadata row upsert<br/>status = PENDING"]
   Persist --> SegmentComplete["RecordingSegment<br/>PROCESSING -> COMPLETED"]
   Persist --> Contributors["Repository contributors refresh"]
   VideoCreate --> OptionalRawCleanup["optional raw cleanup"]
+  SemanticPending --> OptionalRawCleanup
   SegmentComplete --> OptionalRawCleanup
   Contributors --> OptionalRawCleanup
   OptionalRawCleanup --> Done["job completed"]
@@ -49,7 +46,7 @@ flowchart TD
   Reset --> QueueRetry["BullMQ retry<br/>same atomic claim path"]
   RetryDecision -- "no" --> FinalFailure["final failure handler"]
   FinalFailure --> SegmentFailed["RecordingSegment status = FAILED"]
-  FinalFailure --> FailedVideo["Video row 생성<br/>status = FAILED<br/>errorMessage 기록"]
+  FinalFailure --> FailedVideo["Video row upsert<br/>status = FAILED<br/>errorMessage 기록"]
 
   subgraph CurrentMetadata["현재 저장되는 Video metadata"]
     M1["technical metadata<br/>durationSec, resolutionWidth, resolutionHeight, fps, codec, recordedAt"]
@@ -58,23 +55,25 @@ flowchart TD
     M4["processing status<br/>status, errorMessage, processingStartedAt, processingCompletedAt"]
   end
 
-  subgraph NotImplemented["현재 구현되지 않은 VLM 연구용 semantic metadata"]
-    N1["clipSegments<br/>currently null"]
-    N2["actionLabels<br/>currently null"]
-    N3["videoTextAlignment<br/>currently null"]
-    N4["sceneSummary<br/>currently null"]
+  subgraph SemanticTable["별도 semantic metadata table"]
+    N0["video_semantic_metadata.status<br/>PENDING, PROCESSING, COMPLETED, FAILED"]
+    N1["clipSegments"]
+    N2["actionLabels"]
+    N3["videoTextAlignment"]
+    N4["sceneSummary"]
+    N5["errorMessage, processing timestamps"]
   end
 
   VideoCreate -. "fills" .-> CurrentMetadata
-  VideoCreate -. "does not fill yet" .-> NotImplemented
+  SemanticPending -. "currently pending only" .-> SemanticTable
 
   subgraph ExtensionPoint["확장 지점"]
-    E1["Option A<br/>finalize worker 이후 별도 semantic-metadata job enqueue"]
-    E2["Option B<br/>model/heuristic service가 completed Video를 읽고 nullable metadata fields update"]
-    E3["Option C<br/>semantic metadata 상태를 별도 table/status로 분리해 playable Video 생성과 독립 처리"]
+    E1["별도 semantic-metadata queue"]
+    E2["semantic worker가 completed Video artifact를 입력으로 사용"]
+    E3["model/heuristic 실행 결과를 video_semantic_metadata에 update"]
   end
 
-  NotImplemented -. "future model or heuristic" .-> ExtensionPoint
+  SemanticTable -. "future model or heuristic" .-> ExtensionPoint
 
 %% 참고:
 %% 이 문서는 현재 worker processing의 실제 구현 상태를 정리한다.
@@ -84,9 +83,9 @@ flowchart TD
 %% semantic metadata 완성 여부를 의미하지 않는다.
 %% 현재 worker가 채우는 metadata는 ffprobe 기반 technical metadata,
 %% artifact path, VLM mp4 size/checksum, recorder/context, processing timestamps다.
-%% schema에는 clipSegments, actionLabels, videoTextAlignment, sceneSummary가 nullable로 열려 있지만,
-%% 현재 pipeline에서는 모두 null로 남는다.
-%% 향후 VLM model 또는 heuristic을 붙일 때는 finalize 성공 이후 별도 job으로 분리하는 편이 안전하다.
+%% semantic metadata는 videos table이 아니라 video_semantic_metadata table에서 관리한다.
+%% finalize 성공 시 semantic metadata row는 PENDING으로 준비되며,
+%% clipSegments, actionLabels, videoTextAlignment, sceneSummary는 아직 null이다.
+%% 향후 VLM model 또는 heuristic은 별도 semantic worker가 별도 transaction에서 실행한다.
 %% 이유: video artifact 생성 실패와 semantic metadata 생성 실패를 같은 failure domain으로 묶지 않기 위해서다.
-%% semantic metadata가 필수 dataset contract가 되는 시점에는 별도 status/table을 추가해
-%% Video.status=COMPLETED와 semantic metadata processing 상태를 분리하는 방식을 권장한다.
+%% semantic metadata 실패는 Video.status를 FAILED로 바꾸지 않는다.
