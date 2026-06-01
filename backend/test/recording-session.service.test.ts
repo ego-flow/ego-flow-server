@@ -533,6 +533,38 @@ test("handleSegmentCreate stores the single segment from stream path", async () 
   assert.equal(upsertCalls.length, 1);
 });
 
+test("handleSegmentCreate only requires an existing session", async () => {
+  const upsertCalls: Array<Record<string, unknown>> = [];
+
+  fakePrisma.recordingSession.findUnique = async () => ({
+    id: "session-1",
+    repositoryId: "repo-1",
+    streamPath: "live/repo-name/session-1",
+    status: RecordingSessionStatus.CLOSED,
+  });
+  fakePrisma.recordingSegment.upsert = async (args: Record<string, unknown>) => {
+    upsertCalls.push(args);
+    return {
+      id: "segment-1",
+      recordingSessionId: "session-1",
+      rawPath: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
+      status: RecordingSegmentStatus.WRITING,
+    };
+  };
+
+  await recordingSessionService.handleSegmentCreate({
+    path: "live/repo-name/session-1",
+    segment_path: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
+  });
+
+  assert.equal(upsertCalls.length, 1);
+  assert.deepEqual(upsertCalls[0]?.where, { recordingSessionId: "session-1" });
+  assert.equal(
+    (upsertCalls[0]?.create as { status?: RecordingSegmentStatus })?.status,
+    RecordingSegmentStatus.WRITING,
+  );
+});
+
 test("handleSegmentCreate stores the segment without source metadata", async () => {
   const upsertCalls: Array<Record<string, unknown>> = [];
 

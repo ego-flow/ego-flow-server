@@ -52,6 +52,8 @@ sequenceDiagram
     end
   end
 
+  Note over MTX,Backend: MediaMTX hook ordering<br/>stream-ready hook과 recording-segment-create hook의 호출 순서는 보장되지 않는다.<br/>Backend는 segment-create에서 session 존재 여부만 확인하고<br/>session status에는 의존하지 않는다.
+
   MTX->>Backend: stream-ready hook
   Note over MTX,Backend: API<br/>POST /api/v1/hooks/stream-ready<br/><br/>Payload 핵심 값<br/>path=live/{repositoryName}/{recordingSessionId}<br/>ticket=t_{uuid}
 
@@ -94,12 +96,12 @@ sequenceDiagram
   Note over MTX,Backend: API<br/>POST /api/v1/hooks/recording-segment-create<br/><br/>Payload 핵심 값<br/>path=live/{repositoryName}/{recordingSessionId}<br/>segment_path=/data/raw/live/{repositoryName}/{recordingSessionId}/{timestamp}
 
   Backend->>DB: RecordingSession 조회
-  Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId from stream path<br/>required status: STREAMING
+  Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId from stream path<br/>status check 없음
 
-  alt STREAMING session 없음
+  alt session 없음
     Backend->>Backend: no-op
     Note over Backend: segment-create hook은 200 OK로 끝나지만<br/>RecordingSegment를 만들지 않는다.
-  else STREAMING session 있음
+  else session 있음
     Backend->>DB: RecordingSegment WRITING upsert
     Note over Backend,DB: table: recording_segments<br/>target row: recording_session_id<br/>create: rawPath=segment_path, status=WRITING<br/>update: no-op<br/>policy: one segment per recording session
 

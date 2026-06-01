@@ -339,7 +339,8 @@ export class RecordingSessionService {
   /**
    * [segment-create hook 처리]
    * MediaMTX가 새 녹화 세그먼트 파일 쓰기를 시작할 때 호출.
-   * stream path의 recordingSessionId로 세션을 찾고, session 단일 RecordingSegment를 생성한다.
+   * stream-ready hook과 segment-create hook의 호출 순서는 보장되지 않으므로,
+   * stream path의 recordingSessionId에 해당하는 session 존재 여부만 검증한다.
    * RecordingSegment를 WRITING 상태로 upsert한다.
    */
   async handleSegmentCreate(input: SegmentCreateHookInput) {
@@ -647,24 +648,14 @@ export class RecordingSessionService {
     }
   }
 
-  private async resolveSegmentSession(
-    streamPath: string,
-    allowedStatuses: RecordingSessionStatus[] = [RecordingSessionStatus.STREAMING],
-  ) {
+  private async resolveSegmentSession(streamPath: string) {
     const recordingSessionId = this.extractRecordingSessionId(streamPath);
     if (!recordingSessionId) {
       return null;
     }
-    const session = await prisma.recordingSession.findUnique({
+    return prisma.recordingSession.findUnique({
       where: { id: recordingSessionId },
     });
-    if (
-      !session ||
-      !allowedStatuses.includes(session.status)
-    ) {
-      return null;
-    }
-    return session;
   }
 
   /**
