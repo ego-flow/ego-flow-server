@@ -307,7 +307,6 @@ export const openApiDocument = {
           "device_type",
           "status",
           "hls_path",
-          "whep_path",
         ],
         properties: {
           stream_id: { type: "string", format: "uuid" },
@@ -317,7 +316,6 @@ export const openApiDocument = {
           device_type: { type: ["string", "null"] },
           status: { type: "string", enum: ["live"] },
           hls_path: { type: "string", example: "/hls/live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620/index.m3u8" },
-          whep_path: { type: "string", example: "/live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620/whep" },
         },
       },
       LiveStreamListResponse: {

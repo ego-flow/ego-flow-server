@@ -273,15 +273,6 @@ export class StreamService {
   }
 
   /**
-   * [WHEP playback path 조립]
-   * MediaMTX native WHEP path인 `/live/{repository_name}/{recording_session_id}/whep` 형태의 origin-relative path를 만든다.
-   */
-  buildWhepPath(repoName: string, recordingSessionId: string) {
-    const whepBase = env.WHEP_PATH_PREFIX.replace(/\/+$/, "");
-    return `${whepBase}/${repoName}/${recordingSessionId}/whep`;
-  }
-
-  /**
    * [Live stream 목록 - Redis read-only]
    * Redis active set으로 live 후보를 좁힌 뒤 stream:recording cache로 응답을 만든다.
    * 1. 요청자가 접근 가능한 repository id set 계산 (admin이면 null)
@@ -323,7 +314,6 @@ export class StreamService {
         device_type: cache.deviceType ?? null,
         status: "live" as const,
         hls_path: this.buildHlsPath(cache.repositoryName, recordingSessionId),
-        whep_path: this.buildWhepPath(cache.repositoryName, recordingSessionId),
       };
     });
 

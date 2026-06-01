@@ -138,7 +138,6 @@ export class AdminService {
         entries: [
           { key: "HLS_PATH_PREFIX", value: runtimeConfig.HLS_PATH_PREFIX },
           { key: "WHIP_PATH_PREFIX", value: runtimeConfig.WHIP_PATH_PREFIX },
-          { key: "WHEP_PATH_PREFIX", value: runtimeConfig.WHEP_PATH_PREFIX },
           { key: "MEDIAMTX_API_URL", value: runtimeConfig.MEDIAMTX_API_URL },
         ],
       },

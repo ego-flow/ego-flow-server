@@ -33,7 +33,7 @@ sequenceDiagram
     Note over Backend: cache.status == STREAMING만 live로 취급<br/>요청자가 read 가능한 repositoryId만 응답에 포함<br/>MediaMTX active path는 list 단계에서 직접 조회하지 않는다.
 
     Backend-->>Dashboard: 200 OK
-    Note over Backend,Dashboard: Headers<br/>Cache-Control: no-store<br/><br/>Response Body<br/>streams[] item<br/>stream_id: {recordingSessionId}<br/>repository_id: {repositoryId}<br/>repository_name: {repositoryName}<br/>user_id: {publisherUserId}<br/>device_type: {optional_device_type_or_null}<br/>status: live<br/>hls_path: /hls/live/{repositoryName}/{recordingSessionId}/index.m3u8<br/>whep_path: /live/{repositoryName}/{recordingSessionId}/whep
+    Note over Backend,Dashboard: Headers<br/>Cache-Control: no-store<br/><br/>Response Body<br/>streams[] item<br/>stream_id: {recordingSessionId}<br/>repository_id: {repositoryId}<br/>repository_name: {repositoryName}<br/>user_id: {publisherUserId}<br/>device_type: {optional_device_type_or_null}<br/>status: live<br/>hls_path: /hls/live/{repositoryName}/{recordingSessionId}/index.m3u8
   end
 
   Dashboard->>Dashboard: live 목록 표시 및 선택 상태 갱신

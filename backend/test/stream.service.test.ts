@@ -487,7 +487,6 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
       device_type: "phone_android",
       status: "live",
       hls_path: "/hls/live/test2/session-1/index.m3u8",
-      whep_path: "/live/test2/session-1/whep",
     },
   ]);
 });

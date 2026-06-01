@@ -10,5 +10,4 @@ export const LIVE_PLAYBACK_AUTH_CACHE_ALLOW_VALUE = "1";
 
 export enum LivePlaybackAuthCachePrefix {
   Hls = "hlsauth",
-  Whep = "whepauth",
 }

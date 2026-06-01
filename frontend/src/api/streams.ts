@@ -9,7 +9,6 @@ export interface LiveStreamSummary {
 	deviceType: string | null;
 	status: "live";
 	hlsPath: string;
-	whepPath: string;
 }
 
 export async function requestLiveStreams() {
@@ -22,7 +21,6 @@ export async function requestLiveStreams() {
 			device_type: string | null;
 			status: "live";
 			hls_path: string;
-			whep_path: string;
 		}>;
 	}>(ApiEndpoint.LiveStreams);
 
@@ -35,7 +33,6 @@ export async function requestLiveStreams() {
 			deviceType: stream.device_type,
 			status: stream.status,
 			hlsPath: stream.hls_path,
-			whepPath: stream.whep_path,
 		};
 	}) satisfies LiveStreamSummary[];
 }

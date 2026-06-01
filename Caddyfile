@@ -23,18 +23,6 @@
 		reverse_proxy mediamtx:8889
 	}
 
-	# WHEP playback ingress.
-	# HLS와 동일하게 backend forward_auth로 권한을 검증한 뒤 MediaMTX로 proxy한다.
-	# MediaMTX native WHEP path(`/live/{repo}/{recordingSessionId}/whep`)를 그대로 노출해 Location 기반 PATCH/DELETE도 같은 route로 처리한다.
-	@whep path_regexp whep ^/live/[^/]+/[^/]+/whep(?:/.*)?$
-	handle @whep {
-		forward_auth backend:3000 {
-			uri /api/v1/whep-auth?path={http.request.orig_uri.path}
-			copy_headers Cookie Authorization
-		}
-		reverse_proxy mediamtx:8889
-	}
-
 	@backend path /api* /api-docs* /files*
 	handle @backend {
 		reverse_proxy backend:3000

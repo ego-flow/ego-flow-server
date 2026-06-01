@@ -564,7 +564,7 @@ export class RecordingSessionService {
   /**
    * [Live session 조회]
    * stream path에서 recordingSessionId를 추출하여 Redis live/pending cache를 조회한다.
-   * RTMP/HLS/WHEP 인증에서 사용된다.
+   * RTMP/HLS 인증에서 사용된다.
    */
   async getLiveCacheByPath(streamPath: string): Promise<RecordingSessionLiveCache | null> {
     const recordingSessionId = this.extractRecordingSessionId(streamPath);

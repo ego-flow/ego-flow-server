@@ -38,6 +38,5 @@ export const runtimeConfig = {
   RTMPS_KEY_PATH: env.RTMPS_KEY_PATH ?? "/certs/server.key",
   HLS_PATH_PREFIX: "/hls",
   WHIP_PATH_PREFIX: "/live",
-  WHEP_PATH_PREFIX: "/live",
   MEDIAMTX_API_URL: FIXED_MEDIAMTX_API_URL,
 } as const;

@@ -203,18 +203,12 @@ function LivePage() {
 							>
 								<HlsPlayer src={selectedStream.hlsPath} />
 							</Suspense>
-							<dl className="mt-5 grid gap-3 text-sm text-[var(--sea-ink-soft)] sm:grid-cols-2">
+							<dl className="mt-5 grid gap-3 text-sm text-[var(--sea-ink-soft)]">
 								<div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
 									<dt className="font-semibold text-[var(--sea-ink)]">
 										HLS path
 									</dt>
 									<dd className="mt-1 break-all">{selectedStream.hlsPath}</dd>
-								</div>
-								<div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
-									<dt className="font-semibold text-[var(--sea-ink)]">
-										WHEP path
-									</dt>
-									<dd className="mt-1 break-all">{selectedStream.whepPath}</dd>
 								</div>
 							</dl>
 						</>
