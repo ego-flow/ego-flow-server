@@ -78,7 +78,6 @@ enum RecordingSessionStatus {
 enum RecordingSessionEndReason {
   NORMAL_DISCONNECT
   UNEXPECTED_DISCONNECT
-  REGISTRATION_TIMEOUT
   ACCESS_FORBIDDEN
   INTERNAL_ERROR
 }

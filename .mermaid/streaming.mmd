@@ -26,7 +26,7 @@ sequenceDiagram
     Note over App,Server: Response<br/>stream_path: live/{repositoryName}/{recordingSessionId}<br/>publish_ticket: t_{uuid}
   else publish-ticket error
     Server-->>App: error
-    Note over App,Server: Possible errors<br/>400 VALIDATION_ERROR: recordingSessionId path validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: 요청 user가 recording session 생성자가 아님<br/>404 NOT_FOUND: recording session 없음<br/>409 CONFLICT: recording session이 PENDING 상태가 아니므로 publish-ticket 발급 불가
+    Note over App,Server: Possible errors<br/>400 VALIDATION_ERROR: recordingSessionId path validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: 요청 user가 recording session 생성자가 아님<br/>404 NOT_FOUND: recording session 없음<br/>409 CONFLICT: recording session이 PENDING 상태가 아님<br/>412 PRECONDITION_FAILED: Redis PENDING cache가 만료되어 register부터 다시 시작 필요
   end
 
   App->>App: RTMP publish URL 구성

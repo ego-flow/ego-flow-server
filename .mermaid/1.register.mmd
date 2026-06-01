@@ -58,6 +58,7 @@ sequenceDiagram
   end
 
 %% 참고:
-%% Background reconcile loop는 DB에 남아 있는 PENDING recording_sessions를 등록 TTL 경과 후 CLOSED + REGISTRATION_TIMEOUT으로 정리한다.
-%% 관련 Redis PENDING cache도 함께 삭제된다.
+%% Background reconcile loop는 PENDING recording_sessions를 CLOSED로 정리하지 않는다.
+%% PENDING Redis cache TTL은 300초이며, publish-ticket은 이 cache가 남아 있는 PENDING session만 허용한다.
+%% Redis cache가 만료된 old PENDING DB row는 다음 register에서 재사용되면 cache가 다시 갱신된다.
 %% 다음 단계는 App이 반환받은 recordingSessionId로 POST /api/v1/streams/{recordingSessionId}/publish-ticket을 호출하는 흐름이다.

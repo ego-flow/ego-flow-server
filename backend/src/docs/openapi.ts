@@ -842,6 +842,14 @@ export const openApiDocument = {
           },
         },
       },
+      PreconditionFailed: {
+        description: "Precondition failed",
+        content: {
+          "application/json": {
+            schema: { $ref: "#/components/schemas/ErrorResponse" },
+          },
+        },
+      },
     },
   },
   security: [{ bearerAuth: [] }],
@@ -1488,6 +1496,7 @@ export const openApiDocument = {
           "403": { $ref: "#/components/responses/Forbidden" },
           "404": { $ref: "#/components/responses/NotFound" },
           "409": { $ref: "#/components/responses/Conflict" },
+          "412": { $ref: "#/components/responses/PreconditionFailed" },
         },
       },
     },

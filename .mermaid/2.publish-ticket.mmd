@@ -32,23 +32,33 @@ sequenceDiagram
       alt PENDING 아님
         Backend-->>App: 409 Conflict
         Note over App,Backend: Error<br/>Recording session is already in {status} state.
-      else ticket 발급 가능
-        Backend->>Backend: ticket metadata 생성
-        Note over Backend: ticketId = t_{uuid}<br/>streamPath = session.streamPath
+      else PENDING session
+        Backend->>Redis: PENDING session cache 존재 확인
+        Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>required<br/>Redis value exists
+        Redis-->>Backend: cache lookup result
 
-        Backend->>Redis: publish ticket 저장
-        Note over Backend,Redis: key: stream:ticket:{ticketId}<br/><br/>value fields<br/>recordingSessionId: {recordingSessionId}<br/>repositoryId: {repositoryId}<br/>userId: {userId}<br/>streamPath: live/{repositoryName}/{recordingSessionId}<br/>status: active<br/>TTL: 60 seconds
-        Redis-->>Backend: ticket 저장 완료
+        alt cache 없음
+          Backend-->>App: 412 Precondition Failed
+          Note over App,Backend: Error<br/>Recording session registration has expired. Please register again.
+        else ticket 발급 가능
+          Backend->>Backend: ticket metadata 생성
+          Note over Backend: ticketId = t_{uuid}<br/>streamPath = session.streamPath
 
-        Backend-->>App: 200 OK
-        Note over App,Backend: Response Body<br/>stream_path: live/{repositoryName}/{recordingSessionId}<br/>publish_ticket: t_{uuid}
+          Backend->>Redis: publish ticket 저장
+          Note over Backend,Redis: key: stream:ticket:{ticketId}<br/><br/>value fields<br/>recordingSessionId: {recordingSessionId}<br/>repositoryId: {repositoryId}<br/>userId: {userId}<br/>streamPath: live/{repositoryName}/{recordingSessionId}<br/>status: active<br/>TTL: 60 seconds
+          Redis-->>Backend: ticket 저장 완료
+
+          Backend-->>App: 200 OK
+          Note over App,Backend: Response Body<br/>stream_path: live/{repositoryName}/{recordingSessionId}<br/>publish_ticket: t_{uuid}
+        end
       end
     end
   end
 
 %% 참고:
 %% publish-ticket 단계에서는 repository 권한을 재검증하지 않는다.
-%% PENDING 등록 유효시간 만료도 검사하지 않고 recording_sessions row도 갱신하지 않는다.
+%% PENDING 등록 유효성은 Redis stream:recording:{recordingSessionId} cache 존재 여부로만 검사한다.
+%% recording_sessions row는 갱신하지 않는다.
 %% publish-ticket 단계에서 Redis에 쓰는 값은 stream:ticket:{ticketId} 하나다.
 %% expiresAt은 JSON에 저장하지 않고 Redis TTL만 사용한다.
 %% 이후 RTMP publish/auth/stream-ready 흐름은 .mermaid/3.rtmp-publish.mmd에서 다룬다.

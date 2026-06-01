@@ -7,7 +7,7 @@ import {
   STREAM_ACTIVE_SET_KEY,
   STREAM_RECONCILE_INTERVAL_MS,
 } from "../constants/stream/stream-constants";
-import { AppError, Conflict, ErrorCode, Forbidden, NotFound } from "../lib/errors";
+import { AppError, Conflict, ErrorCode, Forbidden, NotFound, PreconditionFailed } from "../lib/errors";
 import { redis } from "../lib/redis";
 import { getTargetDirectory } from "../lib/storage";
 import { prisma } from "../lib/prisma";
@@ -226,6 +226,11 @@ export class StreamService {
 
     if (session.status !== RecordingSessionStatus.PENDING) {
       throw Conflict(`Recording session is already in ${session.status} state.`);
+    }
+
+    const pendingCache = await redis.get(streamRecordingKey(session.id));
+    if (!pendingCache) {
+      throw PreconditionFailed("Recording session registration has expired. Please register again.");
     }
 
     const ticketGrant = await streamOwnershipService.issuePublishTicket({

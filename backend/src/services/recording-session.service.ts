@@ -30,20 +30,20 @@ import type {
  *
  * 상태 흐름:
  *   PENDING → STREAMING → CLOSED
- *   PENDING → CLOSED (등록 타임아웃 또는 권한 회수)
+ *   PENDING → CLOSED (권한 회수)
  *
  * RecordingSession.status는 RTMP streaming session 자체의 상태만 표현한다.
  * raw segment 기록 및 후처리 상태는 RecordingSegment.status가 담당한다.
  *
  * Redis live/pending cache를 함께 관리하며,
- * MediaMTX hook 이벤트와 reconcile 루프를 통해 상태를 진행시킨다.
+ * MediaMTX hook 이벤트와 STREAMING reconcile 루프를 통해 상태를 진행시킨다.
  */
 export class RecordingSessionService {
   /**
    * [세션 생성 - PENDING]
    * stream 등록 시 호출. RecordingSession을 PENDING 상태로 DB에 생성하고,
    * Redis에 PENDING cache를 5분 TTL로 저장한다.
-   * 5분 이내에 첫 RTMP publish가 시작되지 않으면 reconcile에서 CLOSED로 닫힌다.
+   * publish-ticket은 이 Redis cache가 살아 있는 PENDING session에만 발급된다.
    */
   async createSession(params: {
     id?: string;
@@ -524,18 +524,12 @@ export class RecordingSessionService {
   /**
    * [상태 정합성 보정 - reconcile]
    * 5초 간격으로 실행. 비정상 종료로 인한 상태 불일치를 보정한다.
-   * - PENDING: register timeout 시 CLOSED
    * - STREAMING: active path가 없거나 closedAt이 기록되어 있으면 CLOSED로 보정 후 segment complete 기반 enqueue 시도
    */
   async reconcileSessions() {
     const activeSessions = await prisma.recordingSession.findMany({
       where: {
-        status: {
-          in: [
-            RecordingSessionStatus.PENDING,
-            RecordingSessionStatus.STREAMING,
-          ],
-        },
+        status: RecordingSessionStatus.STREAMING,
       },
     });
 
@@ -544,47 +538,24 @@ export class RecordingSessionService {
     for (const session of activeSessions) {
       const repoName = this.extractRepositoryName(session.streamPath);
 
-      if (session.status === RecordingSessionStatus.PENDING) {
-        const age = Date.now() - this.getPendingRegistrationReferenceAt(session).getTime();
-        if (age > RECORDING_REGISTRATION_TTL_SECONDS * 1000) {
-          const closed = await this.closePendingSessionIfStillCurrent(
-            session,
-            RecordingSessionEndReason.REGISTRATION_TIMEOUT,
-          );
-          if (closed) {
-            await this.clearLivePointers(session.id, session.repositoryId, repoName);
-            console.info("[rtmp-reconcile] pending-timeout-closed", {
-              recordingSessionId: session.id,
-              repositoryId: session.repositoryId,
-              repositoryName: repoName,
-              ageMs: age,
-              registrationTtlSec: RECORDING_REGISTRATION_TTL_SECONDS,
-            });
-          }
-        }
+      if (session.closedAt) {
+        await this.closeStreamingSession(session, {
+          endReason: session.endReason ?? RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
+          logPrefix: "[rtmp-reconcile] not-ready-streaming-closed",
+        });
+        await this.tryEnqueueFinalize(session.id);
         continue;
       }
 
-      if (session.status === RecordingSessionStatus.STREAMING) {
-        if (session.closedAt) {
-          await this.closeStreamingSession(session, {
-            endReason: session.endReason ?? RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
-            logPrefix: "[rtmp-reconcile] not-ready-streaming-closed",
-          });
-          await this.tryEnqueueFinalize(session.id);
-          continue;
-        }
-
-        const activePathMissing = activeStreamPaths ? !activeStreamPaths.has(this.normalizeStreamPath(session.streamPath)) : false;
-        if (activePathMissing) {
-          await this.closeStreamingSession(session, {
-            endReason: session.endReason ?? RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
-            logPrefix: "[rtmp-reconcile] missing-active-path-closed",
-            repositoryName: repoName,
-            activeStreamPaths: activeStreamPaths ? Array.from(activeStreamPaths.values()) : null,
-          });
-          await this.tryEnqueueFinalize(session.id);
-        }
+      const activePathMissing = activeStreamPaths ? !activeStreamPaths.has(this.normalizeStreamPath(session.streamPath)) : false;
+      if (activePathMissing) {
+        await this.closeStreamingSession(session, {
+          endReason: session.endReason ?? RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
+          logPrefix: "[rtmp-reconcile] missing-active-path-closed",
+          repositoryName: repoName,
+          activeStreamPaths: activeStreamPaths ? Array.from(activeStreamPaths.values()) : null,
+        });
+        await this.tryEnqueueFinalize(session.id);
       }
     }
   }
@@ -721,36 +692,6 @@ export class RecordingSessionService {
 
   private normalizeStreamPath(streamPath: string): string {
     return streamPath.trim().replace(/^\/+|\/+$/g, "");
-  }
-
-  private getPendingRegistrationReferenceAt(session: { createdAt: Date; updatedAt?: Date | null }) {
-    return session.updatedAt ?? session.createdAt;
-  }
-
-  private async closePendingSessionIfStillCurrent(
-    session: {
-      id: string;
-      createdAt: Date;
-      updatedAt?: Date | null;
-    },
-    endReason: RecordingSessionEndReason,
-  ) {
-    const snapshotUpdatedAt = this.getPendingRegistrationReferenceAt(session);
-    const closedAt = new Date();
-    const result = await prisma.recordingSession.updateMany({
-      where: {
-        id: session.id,
-        status: RecordingSessionStatus.PENDING,
-        updatedAt: { lte: snapshotUpdatedAt },
-      },
-      data: {
-        status: RecordingSessionStatus.CLOSED,
-        endReason,
-        closedAt,
-      },
-    });
-
-    return result.count > 0;
   }
 
   /**

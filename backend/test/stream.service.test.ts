@@ -175,8 +175,8 @@ test("registerSession reuses a non-expired pending session for the same user rep
   assert.equal(fakeRedis.getTtlSeconds(`stream:recording:${existingSession.id}`), 300);
 });
 
-test("registerSession reuses pending sessions regardless of age and leaves cleanup to reconcile", async () => {
-  const expiredSession = {
+test("registerSession reuses pending sessions regardless of age and refreshes Redis cache", async () => {
+  const stalePendingSession = {
     id: "22222222-2222-4222-8222-222222222222",
     repositoryId: repository.id,
     ownerId: repository.ownerId,
@@ -191,11 +191,11 @@ test("registerSession reuses pending sessions regardless of age and leaves clean
   const updateCalls: Array<Record<string, unknown>> = [];
   const updateManyCalls: Array<Record<string, unknown>> = [];
 
-  fakePrisma.recordingSession.findMany = async () => [expiredSession];
+  fakePrisma.recordingSession.findMany = async () => [stalePendingSession];
   fakePrisma.recordingSession.update = async (args: Record<string, unknown>) => {
     updateCalls.push(args);
     return {
-      ...expiredSession,
+      ...stalePendingSession,
       ...((args as any).data as Record<string, unknown>),
     };
   };
@@ -210,12 +210,12 @@ test("registerSession reuses pending sessions regardless of age and leaves clean
   });
 
   assert.equal(updateCalls.length, 1);
-  assert.equal((updateCalls[0] as any).where.id, expiredSession.id);
+  assert.equal((updateCalls[0] as any).where.id, stalePendingSession.id);
   assert.equal((updateCalls[0] as any).data.status, RecordingSessionStatus.PENDING);
   assert.ok((updateCalls[0] as any).data.updatedAt instanceof Date);
   assert.equal(updateManyCalls.length, 0);
-  assert.equal(response.recordingSessionId, expiredSession.id);
-  assert.equal(fakeRedis.getJson<RecordingSessionLiveCache>(`stream:recording:${expiredSession.id}`)?.status, "PENDING");
+  assert.equal(response.recordingSessionId, stalePendingSession.id);
+  assert.equal(fakeRedis.getJson<RecordingSessionLiveCache>(`stream:recording:${stalePendingSession.id}`)?.status, "PENDING");
 });
 
 test("registerSession completes pending sessions when maintain access is forbidden", async () => {
@@ -280,7 +280,7 @@ test("registerSession completes pending sessions when maintain access is forbidd
 });
 
 test("issuePublishTicket skips repository recheck and stores only ticket metadata", async () => {
-  const stalePendingSession = {
+  const pendingSession = {
     id: "44444444-4444-4444-8444-444444444444",
     repositoryId: repository.id,
     ownerId: repository.ownerId,
@@ -296,15 +296,23 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
   };
   let repositoryAccessChecked = false;
 
-  fakePrisma.recordingSession.findUnique = async () => stalePendingSession;
+  fakePrisma.recordingSession.findUnique = async () => pendingSession;
   repositoryService.assertRepositoryAccess = async () => {
     repositoryAccessChecked = true;
     throw Forbidden("Repository access should not be rechecked.");
   };
-  const response = await streamService.issuePublishTicket("maintainer-1", "user", stalePendingSession.id);
+  fakeRedis.setJson(`stream:recording:${pendingSession.id}`, {
+    repositoryId: repository.id,
+    repositoryName: repository.name,
+    userId: "maintainer-1",
+    deviceType: "phone_android",
+    status: "PENDING",
+  } satisfies RecordingSessionLiveCache);
+
+  const response = await streamService.issuePublishTicket("maintainer-1", "user", pendingSession.id);
 
   assert.equal(repositoryAccessChecked, false);
-  assert.equal(response.stream_path, stalePendingSession.streamPath);
+  assert.equal(response.stream_path, pendingSession.streamPath);
   assert.ok(response.publish_ticket.startsWith("t_"));
   assert.deepEqual(Object.keys(response).sort(), ["publish_ticket", "stream_path"]);
   assert.equal(Object.hasOwn(response, "recording_session_id"), false);
@@ -316,13 +324,42 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
   assert.equal(Object.hasOwn(response, "whip_publish_url"), false);
 
   const ticket = fakeRedis.getJson<Record<string, unknown>>(`stream:ticket:${response.publish_ticket}`);
-  assert.equal(ticket?.recordingSessionId, stalePendingSession.id);
+  assert.equal(ticket?.recordingSessionId, pendingSession.id);
   assert.equal(ticket?.repositoryId, repository.id);
   assert.equal(ticket?.userId, "maintainer-1");
-  assert.equal(ticket?.streamPath, stalePendingSession.streamPath);
+  assert.equal(ticket?.streamPath, pendingSession.streamPath);
   assert.equal(ticket?.status, "active");
   assert.equal(Object.hasOwn(ticket ?? {}, "repositoryName"), false);
-  assert.equal(await fakeRedis.get(`stream:recording:${stalePendingSession.id}`), null);
+});
+
+test("issuePublishTicket rejects a PENDING recording session without Redis registration cache", async () => {
+  const pendingSession = {
+    id: "44444444-4444-4444-8444-444444444444",
+    repositoryId: repository.id,
+    ownerId: repository.ownerId,
+    userId: "maintainer-1",
+    deviceType: "phone_android",
+    streamPath: "live/test2/44444444-4444-4444-8444-444444444444",
+    status: RecordingSessionStatus.PENDING,
+    targetDirectory: "/data",
+    readyAt: null,
+    closedAt: null,
+    createdAt: new Date(Date.now() - 10 * 60_000),
+    updatedAt: new Date(Date.now() - 10 * 60_000),
+  };
+
+  fakePrisma.recordingSession.findUnique = async () => pendingSession;
+
+  await assert.rejects(
+    () => streamService.issuePublishTicket("maintainer-1", "user", pendingSession.id),
+    (error: any) =>
+      error?.statusCode === 412 &&
+      error?.code === "PRECONDITION_FAILED" &&
+      error?.message === "Recording session registration has expired. Please register again.",
+  );
+
+  const [_cursor, ticketKeys] = (await fakeRedis.scan("0", "MATCH", "stream:ticket:*")) as [string, string[]];
+  assert.deepEqual(ticketKeys, []);
 });
 
 test("issuePublishTicket only allows PENDING recording sessions", async () => {

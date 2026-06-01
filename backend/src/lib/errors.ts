@@ -13,8 +13,8 @@ export const ErrorCode = {
   FORBIDDEN: "FORBIDDEN",
   NOT_FOUND: "NOT_FOUND",
   CONFLICT: "CONFLICT",
+  PRECONDITION_FAILED: "PRECONDITION_FAILED",
   INTERNAL_ERROR: "INTERNAL_ERROR",
-  REGISTRATION_TIMEOUT: "REGISTRATION_TIMEOUT",
   INVALID_FILE_PATH: "INVALID_FILE_PATH",
   INVALID_SLUG: "INVALID_SLUG",
 } as const;
@@ -57,6 +57,11 @@ export const Conflict = (
   code: ErrorCode = ErrorCode.CONFLICT,
   details?: unknown,
 ) => new AppError(409, code, message, details);
+
+export const PreconditionFailed = (
+  message: string,
+  details?: unknown,
+) => new AppError(412, ErrorCode.PRECONDITION_FAILED, message, details);
 
 export const Internal = (
   message = "Unexpected server error.",
