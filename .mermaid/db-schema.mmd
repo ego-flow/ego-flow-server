@@ -1,0 +1,163 @@
+erDiagram
+  %% Source of truth: backend/prisma/schema.prisma
+  %% Solid lines are Prisma-declared relations that create DB-level references.
+  %% Dotted lines are logical references stored as id fields without Prisma @relation.
+
+  users ||--o| api_tokens : owns
+  recording_sessions ||--o| recording_segments : has
+  recording_sessions |o--o| videos : produces
+  videos ||--o| video_semantic_metadata : has
+
+  users ||..o{ repositories : owner_id
+  users ||..o{ repo_members : user_id
+  repositories ||..o{ repo_members : repository_id
+  repositories ||..o{ recording_sessions : repository_id
+  users ||..o{ recording_sessions : owner_id
+  users ||..o{ recording_sessions : user_id
+  repositories ||..o{ videos : repository_id
+  users ||..o{ videos : recorder
+
+  users {
+    varchar id PK "varchar(64)"
+    varchar password_hash "varchar(255)"
+    UserRole role "default user"
+    boolean is_active "default true"
+    varchar display_name "varchar(255)"
+    timestamp created_at "default now"
+    timestamp updated_at "updatedAt"
+  }
+
+  api_tokens {
+    uuid id PK "default uuid"
+    varchar user_id FK "users.id, unique, varchar(64), cascade delete"
+    varchar name "varchar(100)"
+    varchar token_hash UK "varchar(64)"
+    timestamp last_used_at "nullable"
+    timestamp created_at "default now"
+  }
+
+  settings {
+    varchar key PK "varchar(255)"
+    text value
+    timestamp updated_at "updatedAt"
+  }
+
+  repositories {
+    uuid id PK "default uuid"
+    varchar name "varchar(64), unique(owner_id,name)"
+    varchar owner_id "varchar(64), logical users.id, unique(owner_id,name)"
+    RepoVisibility visibility "default public"
+    varchar description "varchar(500), nullable"
+    json contributors "default []"
+    timestamp created_at "default now"
+    timestamp updated_at "updatedAt"
+  }
+
+  repo_members {
+    uuid id PK "default uuid"
+    uuid repository_id "logical repositories.id, unique(repository_id,user_id)"
+    varchar user_id "logical users.id, varchar(64), unique(repository_id,user_id)"
+    RepoRole role
+    timestamp created_at "default now"
+  }
+
+  recording_sessions {
+    uuid id PK "default uuid"
+    uuid repository_id "logical repositories.id"
+    varchar owner_id "logical users.id, varchar(64)"
+    varchar user_id "logical users.id, varchar(64)"
+    varchar device_type "varchar(100), nullable"
+    varchar stream_path "varchar(255)"
+    RecordingSessionStatus status
+    RecordingSessionEndReason end_reason "nullable"
+    varchar target_directory "varchar(1024)"
+    timestamp ready_at "nullable"
+    timestamp closed_at "nullable"
+    timestamp created_at "default now"
+    timestamp updated_at "updatedAt"
+  }
+
+  recording_segments {
+    uuid id PK "default uuid"
+    uuid recording_session_id FK "recording_sessions.id, unique"
+    varchar raw_path "varchar(1024)"
+    RecordingSegmentStatus status
+    timestamp created_at "default now"
+    timestamp completed_at "nullable"
+  }
+
+  videos {
+    uuid id PK "default uuid"
+    uuid repository_id "logical repositories.id"
+    uuid recording_session_id FK "recording_sessions.id, nullable, unique"
+    varchar raw_recording_path "varchar(1024)"
+    varchar stream_path "varchar(255), nullable"
+    varchar device_type "varchar(100), nullable"
+    float duration_sec "nullable"
+    int resolution_width "nullable"
+    int resolution_height "nullable"
+    float fps "nullable"
+    varchar codec "varchar(50), nullable"
+    timestamp recorded_at "nullable"
+    varchar vlm_video_path "varchar(1024), nullable"
+    varchar dashboard_video_path "varchar(1024), nullable"
+    varchar thumbnail_path "varchar(1024), nullable"
+    bigint size_bytes "nullable"
+    varchar vlm_sha256 "varchar(64), nullable"
+    varchar recorder "varchar(64), nullable, logical users.id"
+    VideoStatus status
+    text error_message "nullable"
+    timestamp processing_started_at "nullable"
+    timestamp processing_completed_at "nullable"
+    timestamp created_at "default now"
+    timestamp updated_at "updatedAt"
+  }
+
+  video_semantic_metadata {
+    uuid video_id PK "FK videos.id, cascade delete"
+    VideoSemanticMetadataStatus status "default PENDING"
+    json clip_segments "nullable"
+    json action_labels "nullable"
+    json video_text_alignment "nullable"
+    text scene_summary "nullable"
+    text error_message "nullable"
+    timestamp processing_started_at "nullable"
+    timestamp processing_completed_at "nullable"
+    timestamp created_at "default now"
+    timestamp updated_at "updatedAt"
+  }
+
+  %% Enums:
+  %% UserRole: admin, user
+  %% RepoVisibility: public, private
+  %% RepoRole: read, maintain, admin
+  %% VideoStatus: COMPLETED, FAILED
+  %% VideoSemanticMetadataStatus: PENDING, PROCESSING, COMPLETED, FAILED
+  %% RecordingSessionStatus: PENDING, STREAMING, CLOSED
+  %% RecordingSessionEndReason:
+  %%   NORMAL_DISCONNECT, UNEXPECTED_DISCONNECT, ACCESS_FORBIDDEN,
+  %%   REPOSITORY_DELETED, INTERNAL_ERROR
+  %% RecordingSegmentStatus: WRITING, WRITE_DONE, PROCESSING, COMPLETED, FAILED
+
+  %% Unique constraints:
+  %% api_tokens.user_id
+  %% api_tokens.token_hash
+  %% repositories(owner_id, name)
+  %% repo_members(repository_id, user_id)
+  %% recording_segments.recording_session_id
+  %% videos.recording_session_id
+
+  %% Indexes:
+  %% repositories.owner_id -> idx_repos_owner_id
+  %% repositories.visibility -> idx_repos_visibility
+  %% repo_members.repository_id -> idx_repo_members_repo_id
+  %% repo_members.user_id -> idx_repo_members_user_id
+  %% recording_sessions(repository_id, status) -> idx_recording_sessions_repo_status
+  %% recording_sessions(user_id, created_at) -> idx_recording_sessions_user_created_at
+  %% recording_segments.status -> idx_recording_segments_status
+  %% videos.status
+  %% videos.repository_id -> idx_videos_repository_id
+  %% videos.recorded_at -> idx_videos_recorded_at
+  %% videos.recorder -> idx_videos_recorder
+  %% videos.recording_session_id -> idx_videos_recording_session_id
+  %% video_semantic_metadata.status -> idx_video_semantic_metadata_status
