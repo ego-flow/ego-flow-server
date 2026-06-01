@@ -5,6 +5,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_BASE_FILE="$ROOT_DIR/compose.yml"
 COMPOSE_REGISTRY_FILE="$ROOT_DIR/compose.registry.yml"
 COMPOSE_SERVICES=(postgres redis backend worker dashboard proxy mediamtx)
+RUN_STATE_DIR="$ROOT_DIR/.run"
+TRACKED_BIND_MOUNT_CONFIGS=(
+  "proxy:Caddyfile"
+  "mediamtx:mediamtx.yml mediamtx-hooks certs"
+)
 REGISTRY="${REGISTRY:-ghcr.io}"
 REGISTRY_OWNER="${REGISTRY_OWNER:-dennis0405}"
 IMAGE_PREFIX="${IMAGE_PREFIX:-ego-flow-server}"
@@ -219,6 +224,66 @@ prepare_target_directory() {
   mkdir -p "$TARGET_DIRECTORY/datasets"
 }
 
+config_hash_state_file() {
+  echo "$RUN_STATE_DIR/config-hash-$1"
+}
+
+tracked_config_hash() {
+  local relative_path absolute_path child relative_child
+
+  for relative_path in "$@"; do
+    absolute_path="$ROOT_DIR/$relative_path"
+
+    if [[ -f "$absolute_path" ]]; then
+      printf 'file %s ' "$relative_path"
+      sha256sum "$absolute_path" | awk '{print $1}'
+      continue
+    fi
+
+    if [[ -d "$absolute_path" ]]; then
+      printf 'dir %s\n' "$relative_path"
+      while IFS= read -r -d '' child; do
+        relative_child="${child#$ROOT_DIR/}"
+        printf 'file %s ' "$relative_child"
+        sha256sum "$child" | awk '{print $1}'
+      done < <(find "$absolute_path" -type f -print0 | sort -z)
+      continue
+    fi
+
+    printf 'missing %s\n' "$relative_path"
+  done | sha256sum | awk '{print $1}'
+}
+
+restart_services_with_changed_configs() {
+  mkdir -p "$RUN_STATE_DIR"
+
+  local entry service paths hash_file current_hash previous_hash
+  for entry in "${TRACKED_BIND_MOUNT_CONFIGS[@]}"; do
+    service="${entry%%:*}"
+    paths="${entry#*:}"
+    hash_file="$(config_hash_state_file "$service")"
+
+    # shellcheck disable=SC2086
+    current_hash="$(tracked_config_hash $paths)"
+    previous_hash=""
+    if [[ -f "$hash_file" ]]; then
+      previous_hash="$(tr -d '\r\n' < "$hash_file")"
+    fi
+
+    if container_running "$service"; then
+      if [[ -z "$previous_hash" ]]; then
+        echo "[config] ${paths} hash state missing — restarting ${service}"
+        compose_cmd restart "$service"
+      elif [[ "$previous_hash" != "$current_hash" ]]; then
+        echo "[config] ${paths} changed since last up — restarting ${service}"
+        compose_cmd restart "$service"
+      fi
+    fi
+
+    printf '%s\n' "$current_hash" > "$hash_file"
+  done
+}
+
 up_stack() {
   check_prereqs
   local http_base
@@ -235,6 +300,8 @@ up_stack() {
 
   echo "[compose] Starting stack without server-side builds"
   compose_cmd up -d --no-build --remove-orphans "${COMPOSE_SERVICES[@]}"
+
+  restart_services_with_changed_configs
 
   wait_for_healthy postgres
   wait_for_healthy redis

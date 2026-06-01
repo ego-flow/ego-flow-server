@@ -72,7 +72,7 @@ ssh -i ~/.ssh/egoflow-server.pem -o StrictHostKeyChecking=accept-new ubuntu@13.2
 
 - `--no-pull`이 주어졌으면 `git pull --ff-only && ` 부분을 빼고 보낸다.
 - `<TAG>`는 Step 1과 동일해야 한다.
-- `run-registry.sh up`은 자체적으로 `docker pull` → compose up → healthy 대기를 수행한다. 출력은 그대로 사용자에게 노출 (서비스별 healthy/running 로그가 핵심 시그널).
+- `run-registry.sh up`은 자체적으로 `docker pull` → compose up → bind-mount config 변경 서비스 restart → healthy 대기를 수행한다. 출력은 그대로 사용자에게 노출 (서비스별 healthy/running 로그가 핵심 시그널).
 - 이 SSH 호출도 timeout 600000으로 설정.
 
 ### Step 2 실패 처리
