@@ -54,7 +54,9 @@ export class StreamService {
           input.repositoryId,
           userId,
           input.deviceType ?? null,
-          this.isNotFoundError(error) ? "REPOSITORY_NOT_FOUND" : RecordingSessionEndReason.ACCESS_FORBIDDEN,
+          this.isNotFoundError(error)
+            ? RecordingSessionEndReason.REPOSITORY_DELETED
+            : RecordingSessionEndReason.ACCESS_FORBIDDEN,
         );
       }
       throw error;
@@ -127,7 +129,7 @@ export class StreamService {
     repositoryId: string,
     userId: string,
     deviceType: string | null,
-    cleanupReason: string,
+    endReason: RecordingSessionEndReason,
   ) {
     const pendingSessions = await prisma.recordingSession.findMany({
       where: {
@@ -153,7 +155,7 @@ export class StreamService {
         },
         data: {
           status: RecordingSessionStatus.CLOSED,
-          endReason: RecordingSessionEndReason.ACCESS_FORBIDDEN,
+          endReason,
           closedAt,
         },
       });
@@ -174,8 +176,7 @@ export class StreamService {
       userId,
       deviceType,
       recordingSessionIds: closedSessionIds,
-      cleanupReason,
-      endReason: RecordingSessionEndReason.ACCESS_FORBIDDEN,
+      endReason,
     });
   }
 

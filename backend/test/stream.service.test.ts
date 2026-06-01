@@ -332,7 +332,7 @@ test("registerSession completes pending sessions when repository is missing", as
   });
   assert.equal(updateManyCalls.length, 1);
   assert.equal((updateManyCalls[0] as any).data.status, RecordingSessionStatus.CLOSED);
-  assert.equal((updateManyCalls[0] as any).data.endReason, RecordingSessionEndReason.ACCESS_FORBIDDEN);
+  assert.equal((updateManyCalls[0] as any).data.endReason, RecordingSessionEndReason.REPOSITORY_DELETED);
   assert.equal(await fakeRedis.get(`stream:recording:${existingSession.id}`), null);
 });
 

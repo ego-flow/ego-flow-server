@@ -27,7 +27,7 @@ sequenceDiagram
   alt repository 없음
     Backend->>DB: 기존 PENDING session 정리
     Note over Backend,DB: recording_sessions에서<br/>동일 repository/user/deviceType의 PENDING 세션을<br/>repository missing cleanup으로 CLOSED 처리
-    Note over Backend,DB: status = CLOSED<br/>end_reason = ACCESS_FORBIDDEN<br/>closed_at = now
+    Note over Backend,DB: status = CLOSED<br/>end_reason = REPOSITORY_DELETED<br/>closed_at = now
     DB-->>Backend: closed recordingSessionIds
     Backend->>Redis: closed PENDING cache 삭제
     Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>action: delete for each closed recordingSessionId
@@ -77,5 +77,6 @@ sequenceDiagram
 %% Redis cache가 만료된 old PENDING DB row는 다음 register에서 재사용되면 cache가 다시 갱신된다.
 %% Access failure cleanup은 repository가 삭제되어 NOT_FOUND가 발생했거나,
 %% repository는 존재하지만 현재 사용자가 maintain 권한을 잃어 FORBIDDEN이 발생한 경우에 수행된다.
+%% NOT_FOUND cleanup은 end_reason=REPOSITORY_DELETED, FORBIDDEN cleanup은 end_reason=ACCESS_FORBIDDEN으로 기록한다.
 %% repository missing cleanup은 이미 삭제된 repository를 가리키는 PENDING session이 DB에 영구히 남지 않도록 정리한다.
 %% 다음 단계는 App이 반환받은 recordingSessionId로 POST /api/v1/streams/{recordingSessionId}/publish-ticket을 호출하는 흐름이다.

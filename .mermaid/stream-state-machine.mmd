@@ -38,7 +38,9 @@ stateDiagram-v2
       If close-intent was recorded, endReason=NORMAL_DISCONNECT is preserved.
       If close-intent was not recorded, endReason=UNEXPECTED_DISCONNECT is recorded.
       reconcile fallback records closedAt and endReason=UNEXPECTED_DISCONNECT.
-      PENDING access-failure cleanup records closedAt and endReason=ACCESS_FORBIDDEN.
+      PENDING access-failure cleanup records closedAt.
+      Permission failure records endReason=ACCESS_FORBIDDEN.
+      Missing repository records endReason=REPOSITORY_DELETED.
       Redis stream:recording:{recordingSessionId} and stream:active:sessions membership are removed.
       Session status no longer represents processing progress.
     end note
