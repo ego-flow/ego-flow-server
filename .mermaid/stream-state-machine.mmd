@@ -67,7 +67,7 @@ stateDiagram-v2
     SEG_WRITING --> SEG_FAILED: reconcile cleanup<br/>CLOSED session + stale empty/missing raw file
     [*] --> SEG_WRITE_DONE: segment-complete recovery<br/>create hook missing<br/>single segment row created directly
     SEG_WRITE_DONE --> SEG_PROCESSING: finalize worker claim<br/>atomic WRITE_DONE -> PROCESSING
-    SEG_WRITE_DONE --> SEG_FAILED: finalize job failed before claim<br/>final worker failure handler
+    SEG_PROCESSING --> SEG_WRITE_DONE: retryable processing failure<br/>reset before BullMQ retry
     SEG_PROCESSING --> SEG_COMPLETED: encoding success<br/>Video row created
     SEG_PROCESSING --> SEG_FAILED: encoding failure after retries<br/>Video FAILED row created
 
@@ -90,7 +90,7 @@ stateDiagram-v2
 
   state "Video" as Video {
     [*] --> VIDEO_COMPLETED: finalize success<br/>create videos row
-    [*] --> VIDEO_FAILED: finalize failure<br/>create failed videos row
+    [*] --> VIDEO_FAILED: finalize final failure<br/>or stale empty segment cleanup<br/>create failed videos row
 
     state "COMPLETED" as VIDEO_COMPLETED
     state "FAILED" as VIDEO_FAILED

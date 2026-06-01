@@ -3,7 +3,9 @@ sequenceDiagram
   participant App as [App]
   participant Server as [Backend API]
   participant MTX as [MediaMTX]
+  participant Queue as [Finalize Queue]
   participant Worker as [Finalize Worker]
+  participant DB as [DB]
 
   App->>Server: POST /api/v1/streams/register
   Note over App,Server: Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>repositoryId: {repository_uuid}<br/>deviceType: {optional_device_type}
@@ -13,7 +15,7 @@ sequenceDiagram
     Note over App,Server: Response<br/>recordingSessionId: {recordingSessionId}
   else register error
     Server-->>App: error
-    Note over App,Server: Possible errors<br/>400 VALIDATION_ERROR: repositoryId/deviceType validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: repository maintain 권한 없음<br/>404 NOT_FOUND: repository 없음<br/>409 CONFLICT: register 처리 중 충돌 상태
+    Note over App,Server: Possible errors<br/>400 VALIDATION_ERROR: repositoryId/deviceType validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: repository maintain 권한 없음<br/>404 NOT_FOUND: repository 없음
   end
 
   App->>Server: POST /api/v1/streams/{recordingSessionId}/publish-ticket
@@ -87,10 +89,11 @@ sequenceDiagram
     Note over Server: hook 순서는 보장되지 않는다.<br/>session=CLOSED + segment=WRITE_DONE 조건이 맞을 때 finalize enqueue
   end
 
-  Server->>Worker: recording-finalize job
+  Server->>Queue: recording-finalize job enqueue
+  Queue->>Worker: recording-finalize job
   Worker->>Worker: raw file 안정화 + metadata 추출 + encoding
-  Worker->>Server: Video row 생성
-  Note over Worker,Server: success<br/>Video.status=COMPLETED<br/>RecordingSegment.status=COMPLETED<br/><br/>failure after retries<br/>Video.status=FAILED<br/>RecordingSegment.status=FAILED
+  Worker->>DB: Video/RecordingSegment 결과 저장
+  Note over Worker,DB: success<br/>Video.status=COMPLETED<br/>RecordingSegment.status=COMPLETED<br/><br/>failure after retries<br/>Video.status=FAILED<br/>RecordingSegment.status=FAILED
 
 %% 참고:
 %% 이 문서는 App과 server-side streaming system 사이의 계약을 한 장으로 요약한다.

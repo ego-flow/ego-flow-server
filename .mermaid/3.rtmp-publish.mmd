@@ -53,14 +53,25 @@ sequenceDiagram
   MTX->>Backend: stream-ready hook
   Note over MTX,Backend: API<br/>POST /api/v1/hooks/stream-ready<br/><br/>Payload 핵심 값<br/>path=live/{repositoryName}/{recordingSessionId}<br/>ticket=t_{uuid}
 
-  Backend->>Redis: ticket 재검증 및 consume
-  Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>value.status = consumed<br/>TTL refresh 없음<br/>기존 Redis TTL을 유지
+  Backend->>Redis: ticket 재검증
+  Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>checks: exists, status=active, streamPath == path<br/>TTL refresh 없음
 
-  Backend->>DB: RecordingSession STREAMING 전환
-  Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>updated fields: status=STREAMING, ready_at
+  Backend->>DB: RecordingSession 조회 및 session/ticket 검증
+  Note over Backend,DB: table: recording_sessions<br/>target row: id = ticket.recordingSessionId<br/>required status: PENDING<br/>session repositoryId/userId/streamPath == ticket repositoryId/userId/streamPath
 
-  Backend->>Redis: live cache 및 active set 갱신
-  Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: {repositoryId}<br/>repositoryName: {repositoryName}<br/>userId: {userId}<br/>deviceType: {optional_device_type}<br/>status: STREAMING<br/>TTL: 7200 seconds<br/><br/>set: stream:active:sessions<br/>member: recordingSessionId
+  alt session invalid or metadata mismatch
+    Backend->>Backend: no-op
+    Note over Backend: hook은 200 OK로 끝나지만<br/>ticket consume, DB update, live cache update는 하지 않는다.
+  else valid PENDING session
+    Backend->>Redis: ticket consume
+    Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>value.status = consumed<br/>TTL refresh 없음<br/>기존 Redis TTL을 유지
+
+    Backend->>DB: RecordingSession STREAMING 전환
+    Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>updated fields: status=STREAMING, ready_at
+
+    Backend->>Redis: live cache 및 active set 갱신
+    Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: {repositoryId}<br/>repositoryName: {repositoryName}<br/>userId: {userId}<br/>deviceType: {optional_device_type}<br/>status: STREAMING<br/>TTL: 7200 seconds<br/><br/>set: stream:active:sessions<br/>member: recordingSessionId
+  end
 
   Note over App,Backend: 이 시점 이후 video/audio payload는 backend를 지나가지 않는다.<br/>App은 이미 열린 RTMP TCP socket으로 MediaMTX에 encoded media를 보내고,<br/>Backend는 MediaMTX hook 이벤트만 받는다.
 
