@@ -137,12 +137,11 @@ router.delete(
 );
 
 /**
- * [RTMP 인증 엔드포인트]
- * MediaMTX의 authHTTPAddress로 설정되어 있어, publish/read 시도 시 MediaMTX가 자동 호출한다.
- * - publish: RTMP URL의 query에 포함된 JWT와 user 정보로 인증하고, 세션 소유자 일치 여부 확인
- * - read/playback: JWT 인증 후 repository read 권한 확인
- * MediaMTX는 단순 status code(200/401)만 본다. 의도적으로 errorMiddleware를 거치지 않고
- * 빈 응답을 돌려준다.
+ * [MediaMTX publish 인증 엔드포인트]
+ * MediaMTX authHTTPAddress로 설정되어 있어 RTMP publish와 WHIP publish에서 공통 호출된다.
+ * - publish: query.ticket 기반 short-lived publish ticket만 허용한다.
+ * - read/playback: mediamtx.yml authHTTPExclude로 우회되며, playback 권한은 Caddy forward_auth가 담당한다.
+ * MediaMTX는 단순 status code(200/401)만 보므로 의도적으로 빈 응답을 돌려준다.
  */
 // POST /api/v1/auth/rtmp
 router.post(

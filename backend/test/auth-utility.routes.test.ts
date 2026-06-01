@@ -72,6 +72,7 @@ const startServer = async () => {
 };
 
 beforeEach(() => {
+  fakeRedisModule.redis.clear();
   apiTokenService.verifyPythonToken = originalVerifyPythonToken;
   adminService.getAuthenticatedUser = originalGetAuthenticatedUser;
   (jwtLib as any).verifyAccessToken = originalVerifyAccessToken;
@@ -160,4 +161,71 @@ test("GET /auth/validate returns 401 for an invalid token", async () => {
   assert.equal(response.status, 401);
   const body = await response.json();
   assert.equal(body.error.code, "UNAUTHORIZED");
+});
+
+test("POST /auth/rtmp accepts WebRTC publish when ticket matches stream path", async () => {
+  const baseUrl = await startServer();
+  await fakeRedisModule.redis.set(
+    "stream:ticket:t_webrtc",
+    JSON.stringify({
+      recordingSessionId: "11111111-1111-4111-8111-111111111111",
+      repositoryId: "566fdab1-771a-42f9-a4eb-2f1c04859874",
+      userId: "maintainer-1",
+      streamPath: "live/test2/11111111-1111-4111-8111-111111111111",
+      status: "active",
+    }),
+    "EX",
+    60,
+  );
+
+  const response = await fetch(`${baseUrl}/api/v1/auth/rtmp`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      action: "publish",
+      path: "live/test2/11111111-1111-4111-8111-111111111111",
+      protocol: "webrtc",
+      query: "ticket=t_webrtc",
+      id: "whip-source-1",
+      ip: "203.0.113.10",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(fakeRedisModule.redis.getTtlSeconds("stream:ticket:t_webrtc"), 60);
+});
+
+test("POST /auth/rtmp rejects WebRTC publish legacy credentials", async () => {
+  const baseUrl = await startServer();
+  await fakeRedisModule.redis.set(
+    "stream:ticket:t_webrtc",
+    JSON.stringify({
+      recordingSessionId: "11111111-1111-4111-8111-111111111111",
+      repositoryId: "566fdab1-771a-42f9-a4eb-2f1c04859874",
+      userId: "maintainer-1",
+      streamPath: "live/test2/11111111-1111-4111-8111-111111111111",
+      status: "active",
+    }),
+    "EX",
+    60,
+  );
+
+  const response = await fetch(`${baseUrl}/api/v1/auth/rtmp`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      action: "publish",
+      path: "live/test2/11111111-1111-4111-8111-111111111111",
+      protocol: "webrtc",
+      query: "ticket=t_webrtc&token=legacy-token",
+      id: "whip-source-1",
+      ip: "203.0.113.10",
+    }),
+  });
+
+  assert.equal(response.status, 401);
 });

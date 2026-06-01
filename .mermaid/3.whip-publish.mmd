@@ -1,0 +1,134 @@
+sequenceDiagram
+  autonumber
+  participant App as [Android App]
+  participant Caddy as [Caddy]
+  participant MTX as [MediaMTX]
+  participant Backend as [Backend]
+  participant Redis as [Redis]
+  participant DB as [DB]
+  participant Storage as [Raw Storage]
+
+  Note over App,Backend: 이전 단계<br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket 성공<br/><br/>App이 받은 핵심 값<br/>stream_path = live/{repositoryName}/{recordingSessionId}<br/>publish_ticket = t_{uuid}<br/><br/>App이 이미 알고 있는 값<br/>backendOrigin = http(s)://{host}
+
+  App->>App: WHIP publish URL 조립
+  Note over App: URL construction rule<br/>{backendOrigin}/{stream_path}/whip?ticket={publish_ticket}<br/><br/>결과<br/>http(s)://{host}/live/{repositoryName}/{recordingSessionId}/whip?ticket=t_{uuid}
+
+  App->>Caddy: WHIP POST SDP offer
+  Note over App,Caddy: POST /live/{repositoryName}/{recordingSessionId}/whip?ticket=t_{uuid}<br/>Content-Type: application/sdp<br/>Body: local SDP offer
+
+  Caddy->>MTX: reverse proxy WHIP request
+  Note over Caddy,MTX: Caddy는 /live/.../whip path를<br/>MediaMTX webrtcAddress(:8889)로 proxy한다.<br/>forward_auth는 쓰지 않는다.<br/>publish auth는 MediaMTX authHTTPAddress가 담당한다.
+
+  MTX->>Backend: publish auth callback
+  Note over MTX,Backend: API<br/>POST /api/v1/auth/rtmp<br/><br/>Payload 핵심 값<br/>action=publish<br/>path=live/{repositoryName}/{recordingSessionId}<br/>query=ticket=t_{uuid}<br/>protocol=webrtc
+
+  alt auth payload invalid
+    Backend-->>MTX: 401 Unauthorized
+    Note over Backend,MTX: rtmpAuthSchema parse 실패<br/>MediaMTX에는 빈 401 응답만 반환
+    MTX-->>Caddy: WHIP publish rejected
+    Caddy-->>App: WHIP publish rejected
+  else action is not publish
+    Backend-->>MTX: 401 Unauthorized
+    Note over Backend,MTX: non-publish action은 이 endpoint에서 처리하지 않는다.
+    MTX-->>Caddy: WHIP publish rejected
+    Caddy-->>App: WHIP publish rejected
+  else legacy credential present
+    Backend-->>MTX: 401 Unauthorized
+    Note over Backend,MTX: password/token/query.pass/query.token 기반 publish credential은 허용하지 않는다.
+    MTX-->>Caddy: WHIP publish rejected
+    Caddy-->>App: WHIP publish rejected
+  else ticket credential only
+    Backend->>Redis: publish ticket 조회 및 검증
+    Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>checks: exists, status=active, streamPath == path<br/>검증 성공 시 TTL을 60 seconds로 갱신
+
+    alt ticket invalid
+      Backend-->>MTX: 401 Unauthorized
+      MTX-->>Caddy: WHIP publish rejected
+      Caddy-->>App: WHIP publish rejected
+      Note over App,Caddy: App은 WHIP POST 실패를 publish start failure로 처리하고<br/>register부터 새 session을 시작한다.
+    else ticket valid
+      Note over Backend,Redis: auth 단계에서는 ticket consume, DB update, active set update를 하지 않는다.
+      Backend-->>MTX: 200 OK
+    end
+  end
+
+  MTX-->>Caddy: 201 Created SDP answer
+  Caddy-->>App: 201 Created SDP answer
+  Note over MTX,App: Response 핵심<br/>Content-Type: application/sdp<br/>Location: /live/{repositoryName}/{recordingSessionId}/whip/{whipSessionId}<br/><br/>App은 Location을 저장해 이후 PATCH/DELETE에 사용한다.
+
+  App->>MTX: ICE connectivity + WebRTC media session
+  Note over App,MTX: signaling path는 Caddy HTTP route를 사용하고,<br/>media는 ICE candidate에 따라 MediaMTX UDP 8189로 흐른다.<br/>필요 시 STUN/TURN 정책은 운영 설정에서 다룬다.
+
+  Note over MTX,Backend: MediaMTX hook ordering<br/>stream-ready hook과 recording-segment-create hook의 호출 순서는 보장되지 않는다.<br/>Backend는 segment-create에서 session 존재 여부만 확인하고<br/>session status에는 의존하지 않는다.
+
+  par stream-ready hook
+    MTX->>Backend: stream-ready hook
+    Note over MTX,Backend: API<br/>POST /api/v1/hooks/stream-ready<br/><br/>Payload 핵심 값<br/>path=live/{repositoryName}/{recordingSessionId}<br/>ticket=t_{uuid}
+
+    Backend->>Redis: ticket 재검증
+    Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>checks: exists, status=active, streamPath == path<br/>TTL refresh 없음
+
+    alt ticket 재검증 실패
+      Backend->>Backend: no-op
+      Note over Backend: hook은 200 OK로 끝나지만<br/>DB 조회, ticket consume, live cache update는 하지 않는다.
+    else ticket valid
+      Backend->>DB: RecordingSession 조회 및 session/ticket 검증
+      Note over Backend,DB: table: recording_sessions<br/>target row: id = ticket.recordingSessionId<br/>required status: PENDING<br/>session repositoryId/userId/streamPath == ticket repositoryId/userId/streamPath
+
+      alt session 없음 or PENDING 아님 or metadata mismatch
+        Backend->>Backend: no-op
+        Note over Backend: hook은 200 OK로 끝나지만<br/>ticket consume, DB update, live cache update는 하지 않는다.
+      else valid PENDING session
+        Backend->>Redis: ticket consume
+        Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>value.status = consumed<br/>TTL refresh 없음<br/>기존 Redis TTL을 유지
+
+        alt ticket consume 실패
+          Backend->>Backend: no-op
+          Note over Backend: ticket이 이미 consumed/expired 되었거나<br/>Redis SET KEEPTTL XX가 실패하면 상태를 변경하지 않는다.
+        else ticket consumed
+          Backend->>DB: RecordingSession STREAMING 전환
+          Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>updated fields: status=STREAMING, ready_at if empty
+
+          Backend->>Redis: live cache 및 active set 갱신
+          Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: {repositoryId}<br/>repositoryName: {repositoryName}<br/>userId: {userId}<br/>deviceType: {optional_device_type}<br/>status: STREAMING<br/>TTL: 7200 seconds<br/><br/>set: stream:active:sessions<br/>member: recordingSessionId
+        end
+      end
+    end
+  and recording segment open hook
+    MTX->>Storage: fMP4 recording segment open
+    Note over MTX,Storage: recordPath=/data/raw/live/{repositoryName}/{recordingSessionId}/{timestamp}<br/>recordFormat=fmp4<br/>recordPartDuration=1s<br/>recordSegmentDuration=2h
+
+    MTX->>Backend: recording-segment-create hook
+    Note over MTX,Backend: API<br/>POST /api/v1/hooks/recording-segment-create<br/><br/>Payload 핵심 값<br/>path=live/{repositoryName}/{recordingSessionId}<br/>segment_path=/data/raw/live/{repositoryName}/{recordingSessionId}/{timestamp}
+
+    Backend->>DB: RecordingSession 조회
+    Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId from stream path<br/>status check 없음
+
+    alt session 없음
+      Backend->>Backend: no-op
+      Note over Backend: segment-create hook은 200 OK로 끝나지만<br/>RecordingSegment를 만들지 않는다.
+    else session 있음
+      Backend->>DB: RecordingSegment 조회 or WRITING 생성
+      Note over Backend,DB: table: recording_segments<br/>unique key: recording_session_id<br/>policy: one segment per recording session
+
+      alt 기존 segment 없음
+        Backend->>DB: RecordingSegment 생성
+        Note over Backend,DB: recording_session_id = recordingSessionId<br/>raw_path = segment_path<br/>status = WRITING
+      else 기존 segment rawPath == segment_path
+        Backend->>Backend: duplicate create hook no-op
+        Note over Backend,DB: update 없음<br/>status도 변경하지 않는다.
+      else 기존 segment rawPath와 segment_path가 다름
+        Backend->>Backend: additional segment ignored
+        Note over Backend: 이미 session에 연결된 segment가 있으면<br/>새 segment_path는 저장하지 않는다.
+      end
+    end
+  end
+
+  Note over App,Backend: 이 시점 이후 video/audio payload는 backend를 지나가지 않는다.<br/>App은 WebRTC media를 MediaMTX에 보내고,<br/>Backend는 MediaMTX hook 이벤트만 받는다.
+
+%% 참고:
+%% 이 문서는 publish-ticket 발급 이후 WHIP publish 인증, SDP offer/answer,
+%% stream-ready, live cache 등록, 첫 recording segment 생성까지만 다룬다.
+%% 실제 WebRTC media 전송부터 stream 종료, hook 처리, finalize enqueue까지는
+%% .mermaid/4.whip-stream.mmd에서 다룬다.
+%% RTMP publish 흐름은 .mermaid/3.rtmp-publish.mmd에서 따로 다룬다.

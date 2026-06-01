@@ -1,0 +1,166 @@
+sequenceDiagram
+  autonumber
+  participant App as [Android App]
+  participant Caddy as [Caddy]
+  participant MTX as [MediaMTX]
+  participant Storage as [Raw Storage]
+  participant Backend as [Backend]
+  participant Redis as [Redis]
+  participant DB as [DB]
+  participant Queue as [Finalize Queue]
+  participant Worker as [Finalize Worker]
+
+  Note over App,MTX: App은 이미 WHIP POST를 완료했고<br/>WebRTC PeerConnection과 WHIP session Location을 가진 상태다.
+  Note over MTX,Backend: 전제<br/>.mermaid/3.whip-publish.mmd 단계에서 stream-ready hook이 처리되어<br/>live cache와 active set이 등록된 상태다.<br/><br/>recording-segment-create hook도 이미 처리되어<br/>recording_segments row가 WRITING 상태로 생성되어 있고<br/>raw_path는 MediaMTX가 열어 둔 segment_path와 같다.
+
+  loop while WebRTC peer connection is open
+    App->>MTX: WebRTC media packets
+    Note over App,MTX: media transport<br/>ICE-selected candidate pair<br/>SRTP/RTCP over UDP 8189 or selected network path<br/><br/>media payload<br/>encoded video/audio frames<br/>codec capability는 App/WebRTC stack과 MediaMTX negotiation이 결정
+
+    MTX-->>App: WebRTC transport feedback
+    Note over MTX,App: RTCP feedback<br/>NACK/PLI/FIR/receiver reports 등<br/>WebRTC congestion/control messages
+
+    MTX->>Storage: fMP4 part append/write
+    Note over MTX,Storage: recordPath<br/>/data/raw/live/{repositoryName}/{recordingSessionId}/{timestamp}<br/><br/>recordFormat<br/>fmp4<br/><br/>recordPartDuration<br/>1s<br/><br/>recordSegmentDuration<br/>2h
+
+    Note over MTX,Backend: 이 구간에서는 backend per-frame 호출이 없다.<br/>ticket 재검증도 수행하지 않는다.
+  end
+
+  alt normal stop
+    App->>Backend: POST /api/v1/recordings/{recordingSessionId}/close-intent
+    Note over App,Backend: body.reason=NORMAL_DISCONNECT<br/>App JWT 필요<br/>session owner + STREAMING 상태만 허용
+    Note over App,Backend: error cases<br/>401 invalid App JWT<br/>400 invalid params/body<br/>404 session missing<br/>403 non-owner<br/>409 session not STREAMING
+    Backend->>DB: close intent record
+    Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>updated fields: end_reason=NORMAL_DISCONNECT<br/>status/closed_at/Redis는 변경하지 않는다.
+    Backend-->>App: 200 OK
+
+    App->>Caddy: WHIP DELETE or PeerConnection close
+    Note over App,Caddy: 권장 정상 종료<br/>DELETE {Location from WHIP 201}<br/><br/>대체 종료<br/>PeerConnection close로 publisher 연결 종료 유도
+    Caddy->>MTX: proxy WHIP DELETE
+    Note over App,MTX: 사용자가 종료 버튼을 누르면 App은 close-intent 기록 후<br/>WHIP session을 종료한다.<br/>MediaMTX는 publisher 연결 종료를 감지한다.
+  else app crash or network failure
+    Note over App,MTX: App crash, process kill, radio/network loss, ICE failure 등으로<br/>close-intent 없이 MediaMTX가 publisher 연결 종료를 감지한다.
+  end
+
+  Note over MTX,Backend: MediaMTX flush timing에 따라 stream-not-ready와 segment-complete의 도착 순서는 보장하지 않는다.<br/>stream-not-ready는 RecordingSession만 닫고,<br/>segment-complete는 RecordingSegment만 WRITE_DONE으로 전환한 뒤 finalize enqueue를 시도한다.
+
+  alt stream-not-ready hook first
+    MTX->>Backend: stream-not-ready hook
+    Note over MTX,Backend: publisher connection 종료 event<br/>path=live/{repositoryName}/{recordingSessionId}
+
+    Backend->>DB: RecordingSession CLOSED update
+    Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>required status: STREAMING<br/>updated fields: status=CLOSED, closed_at, end_reason<br/>close-intent가 있으면 NORMAL_DISCONNECT 보존<br/>없으면 UNEXPECTED_DISCONNECT 기록<br/><br/>no-op cases<br/>recordingSessionId 추출 실패<br/>session row 없음<br/>status가 STREAMING이 아님
+
+    Backend->>Redis: live pointer cleanup
+    Note over Backend,Redis: delete key: stream:recording:{recordingSessionId}<br/>remove member from set: stream:active:sessions
+
+    Backend->>Backend: tryEnqueueFinalize(recordingSessionId)
+    Backend->>DB: finalize readiness check
+    Note over Backend,DB: required state<br/>RecordingSession.status = CLOSED<br/>RecordingSegment.status = WRITE_DONE
+
+    Backend->>Backend: no-op
+    Note over Backend: segment-complete가 아직 오지 않았으므로 enqueue하지 않는다.
+
+    MTX->>Storage: last fMP4 segment close and flush
+    MTX->>Backend: recording-segment-complete hook
+    Note over MTX,Backend: raw segment file write 완료 event<br/>path=live/{repositoryName}/{recordingSessionId}<br/>segment_path={completed_segment_path}
+
+    Backend->>DB: RecordingSegment WRITE_DONE update
+    Note over Backend,DB: table: recording_segments<br/>target row: recording_session_id = recordingSessionId<br/>required status: WRITING<br/>required raw_path: completed_segment_path<br/>updated fields: status=WRITE_DONE, completed_at<br/>RecordingSession은 변경하지 않는다.<br/><br/>no-op cases<br/>recordingSessionId 추출 실패<br/>segment row 없음<br/>raw_path mismatch<br/>status가 WRITING이 아님
+
+    Backend->>Backend: tryEnqueueFinalize(recordingSessionId)
+    Backend->>DB: finalize readiness check
+    Backend->>Queue: recording-finalize enqueue
+    Note over Backend,Queue: 조건 충족 시 enqueue<br/>session is CLOSED + single segment is WRITE_DONE<br/>jobId = finalize-{recordingSessionId}<br/>payload includes videoId=randomUUID
+
+  else recording-segment-complete hook first
+    MTX->>Storage: last fMP4 segment close and flush
+    MTX->>Backend: recording-segment-complete hook
+    Backend->>DB: RecordingSegment WRITE_DONE update
+    Backend->>Backend: tryEnqueueFinalize(recordingSessionId)
+    Backend->>DB: RecordingSession 상태 조회<br/>아직 CLOSED가 아님
+    Backend->>Backend: no-op
+
+    MTX->>Backend: stream-not-ready hook
+    Note over MTX,Backend: path=live/{repositoryName}/{recordingSessionId}
+    Backend->>DB: RecordingSession CLOSED update
+    Backend->>Redis: live pointer cleanup
+    Backend->>Backend: tryEnqueueFinalize(recordingSessionId)
+    Backend->>DB: finalize readiness check
+    Backend->>Queue: recording-finalize enqueue
+    Note over Backend,Queue: jobId = finalize-{recordingSessionId}<br/>중복 enqueue는 BullMQ jobId로 dedupe
+  end
+
+  Queue->>Worker: finalize job
+  Worker->>DB: RecordingSession metadata 조회
+  Note over Worker,DB: target row: id = recordingSessionId<br/>status 재검증은 하지 않는다.<br/>finalize enqueue가 이미 CLOSED + WRITE_DONE readiness를 보장한다.
+
+  Worker->>DB: RecordingSegment 조회
+  Note over Worker,DB: target row<br/>recording_session_id = recordingSessionId<br/>segment status는 별도 분기 검증하지 않고 atomic claim 조건으로 판단한다.
+
+  alt segment missing
+    Worker->>Worker: no-op
+    Note over Worker: 대상 segment가 없으면<br/>현재 job은 종료한다.
+  else segment found
+    Worker->>DB: RecordingSegment atomic claim
+    Note over Worker,DB: updateMany where id = segment.id and status = WRITE_DONE
+
+    alt atomic claim missed
+      Worker->>Worker: no-op
+      Note over Worker: segment가 WRITE_DONE이 아니거나<br/>다른 worker가 먼저 claim한 것으로 보고<br/>현재 job attempt는 종료한다.
+    else atomic claim success
+      Worker->>DB: WRITE_DONE -> PROCESSING
+      Note over Worker,DB: claim count = 1인 worker만 processing 진행
+
+      Worker->>Worker: process recording finalize
+      Note over Worker: progress 5<br/>raw segment file 안정화 대기<br/><br/>progress 15<br/>ffprobe technical metadata 추출<br/>durationSec, resolutionWidth, resolutionHeight, fps, codec, recordedAt<br/><br/>progress 35<br/>출력 경로 생성 및 directory 생성<br/><br/>parallel encoding<br/>VLM dataset mp4<br/>dashboard mp4<br/>thumbnail jpg<br/><br/>progress 90<br/>VLM mp4 size, sha256 계산<br/><br/>상세 processing 상태는 .mermaid/5.video-processing.mmd 참고
+
+      alt processing success
+        Worker->>DB: finalize transaction
+        Note over Worker,DB: videos row upsert<br/>status = COMPLETED<br/>recording_session_id unique<br/>technical metadata, output paths, size, sha256 저장<br/><br/>video_semantic_metadata row upsert<br/>status = PENDING<br/>semantic metadata 값은 아직 생성하지 않음<br/><br/>recording_segments row 갱신<br/>status = COMPLETED<br/><br/>repository row lock 후 contributors refresh
+        Worker->>Storage: optional raw cleanup
+        Note over Worker,Storage: DELETE_RAW_AFTER_PROCESSING=true이면<br/>raw segment file 삭제
+        Worker->>Worker: progress 100
+      else processing failure and attempts remain
+        Worker->>DB: PROCESSING -> WRITE_DONE
+        Note over Worker,DB: retry 전에 segment 상태를 되돌린다.<br/>다음 attempt도 WRITE_DONE -> PROCESSING atomic claim부터 다시 시작한다.
+        Worker->>Queue: retry scheduled
+        Note over Worker,Queue: attempts = 3<br/>backoff = exponential<br/>initial delay = 5000ms
+      else final processing failure
+        Worker->>Worker: failed event
+        Note over Worker: attemptsMade >= attempts 일 때만<br/>실패 상태를 DB에 기록한다.
+        Worker->>DB: mark finalize failed transaction
+        Note over Worker,DB: recording_segments row 갱신<br/>status = FAILED<br/><br/>videos row upsert<br/>status = FAILED<br/>error_message = worker error
+      end
+    end
+  end
+
+%% 참고:
+%% 이 문서는 live cache 저장 이후 실제 WebRTC media 전송,
+%% publisher session 종료, stream-not-ready/segment-complete hook, finalize enqueue까지 다룬다.
+%% App 변경 필요:
+%% App의 stop 버튼은 legacy Stop API를 호출하지 않는다.
+%% App의 stop 버튼은 WHIP session을 종료하기 전에
+%% POST /api/v1/recordings/{recordingSessionId}/close-intent 를 호출해야 한다.
+%% close-intent body는 { "reason": "NORMAL_DISCONNECT" } 만 보낸다.
+%% close-intent 200 OK 이후 WHIP Location에 DELETE를 보내거나 PeerConnection을 정상 close한다.
+%% close-intent 호출 실패 또는 app crash/network failure/ICE failure로 close-intent가 누락되면
+%% backend는 stream-not-ready/reconcile 시 UNEXPECTED_DISCONNECT로 기록한다.
+%% stream-not-ready hook payload만으로 정상 close와 crash/network failure/ICE timeout을 정확히 구분하지 않는다.
+%% close-intent가 먼저 도착한 경우 stream-not-ready는 NORMAL_DISCONNECT를 보존한다.
+%% close-intent 없이 stream-not-ready가 도착하거나 MediaMTX active path missing을 reconcile이 감지하면 UNEXPECTED_DISCONNECT로 기록한다.
+%% 현재 구조에서는 App이 단일 recording session을 짧게 유지하는 전제이므로
+%% 정상 흐름의 segment rollover는 별도로 다루지 않는다.
+%% finalize job 중복 enqueue는 jobId=finalize-{recordingSessionId}로 dedupe된다.
+%% worker는 session status와 existing Video를 사전 재검증하지 않는다.
+%% 처리 권한은 RecordingSegment WRITE_DONE -> PROCESSING atomic claim으로 보장한다.
+%% 성공 시 videos row는 recording_session_id unique key 기준 upsert한다. 이는 현재 코드 기준 의도된 동작이다.
+%% semantic metadata는 video_semantic_metadata 별도 table에서 status/data를 관리한다.
+%% WRITE_DONE segment를 reconcile에서 다시 찾아 enqueue하는 보정 loop는 두지 않는다.
+%% retry 가능한 worker 실패에서는 PROCESSING을 WRITE_DONE으로 되돌린 뒤 BullMQ retry에 맡긴다.
+%% recording-finalize queue option: attempts=3, exponential backoff delay=5000ms, removeOnComplete=1000, removeOnFail=2000.
+%% segment-complete hook 누락 복구는 현재 하지 않는다. segment-complete가 오지 않으면 WRITING segment는 finalize 대상이 아니다.
+%% pain point: worker process crash, OOM, host kill처럼 catch/failed handler가 실행되지 않는 장애에서는 PROCESSING -> WRITE_DONE reset이 누락될 수 있다.
+%% 현재 단계에서는 stale PROCESSING 복구를 구현하지 않는다. 필요해지면 reconcile 또는 processing lease 기반 복구를 추가해야 한다.
+%% worker processing의 상세 구현 상태와 VLM semantic metadata 확장 지점은 .mermaid/5.video-processing.mmd에서 다룬다.
+%% RTMP media 전송 흐름은 .mermaid/4.rtmp-stream.mmd에서 따로 다룬다.
