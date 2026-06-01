@@ -19,7 +19,7 @@ sequenceDiagram
     Note over Backend,App: App JWT가 없거나 유효하지 않으면 401<br/>repositoryId UUID 또는 deviceType max length 검증 실패 시 400
   else auth and validation passed
   Backend->>DB: repository 접근 정보 조회
-  Note over Backend,DB: repositories: id = repositoryId row<br/>일반 user는 repo_members: repositoryId + userId row 조회<br/>system admin은 repo_members 없이 admin role로 통과
+  Note over Backend,DB: repositories: id = repositoryId row<br/>일반 user는 repo_members: repositoryId + userId row 조회<br/>membership이 없고 public repository면 read 권한으로 조회<br/>system admin은 repo_members 없이 admin role로 통과
   DB-->>Backend: repository 기본 정보 + 사용자의 effective repository role
   Backend->>Backend: repository maintain 권한 검증
   Note over Backend: assertRepositoryAccess<br/>required role: maintain<br/>system admin, repository admin, maintain만 통과<br/>public read 권한만으로는 실패
@@ -58,9 +58,9 @@ sequenceDiagram
       Note over App,Backend: Response Body<br/>recordingSessionId: existing_recording_session_id
     else PENDING 세션 없음
       Backend->>Backend: 신규 session metadata 생성
-      Note over Backend: recordingSessionId = randomUUID()<br/>streamPath = live/repositoryName/recordingSessionId<br/>targetDirectory = getTargetDirectory()
+      Note over Backend: recordingSessionId = randomUUID()<br/>streamPath = live/{repositoryName}/{recordingSessionId}<br/>targetDirectory = getTargetDirectory()
       Backend->>DB: 신규 RecordingSession row 생성
-      Note over Backend,DB: recording_sessions 저장 값<br/>id = recordingSessionId<br/>repository_id = repositoryId<br/>owner_id = repository.ownerId<br/>user_id = userId<br/>device_type = optional deviceType<br/>stream_path = live/repositoryName/recordingSessionId<br/>status = PENDING<br/>target_directory = getTargetDirectory()
+      Note over Backend,DB: recording_sessions 저장 값<br/>id = recordingSessionId<br/>repository_id = repositoryId<br/>owner_id = repository.ownerId<br/>user_id = userId<br/>device_type = optional deviceType<br/>stream_path = live/{repositoryName}/{recordingSessionId}<br/>status = PENDING<br/>target_directory = getTargetDirectory()
       Note over DB: recording_sessions 신규 row<br/>end_reason = null<br/>ready_at = null<br/>closed_at = null<br/>created_at/updated_at = DB/Prisma 자동 기록
       DB-->>Backend: session
       Backend->>Redis: PENDING session cache 저장
@@ -72,6 +72,8 @@ sequenceDiagram
   end
 
 %% 참고:
+%% register response는 recordingSessionId만 반환한다.
+%% register는 publish ticket, RTMP URL, stream_path, stream:active:sessions active set을 만들지 않는다.
 %% PENDING session을 별도로 CLOSED 정리하는 background reconcile loop는 없다.
 %% PENDING Redis cache TTL은 300초이며, publish-ticket은 이 cache가 남아 있는 PENDING session만 허용한다.
 %% Redis cache가 만료된 old PENDING DB row는 다음 register에서 재사용되면 cache가 다시 갱신된다.

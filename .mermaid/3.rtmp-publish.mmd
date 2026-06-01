@@ -29,7 +29,11 @@ sequenceDiagram
   MTX->>Backend: publish auth callback
   Note over MTX,Backend: API<br/>POST /api/v1/auth/rtmp<br/><br/>Payload 핵심 값<br/>action=publish<br/>path=live/{repositoryName}/{recordingSessionId}<br/>query=ticket=t_{uuid}<br/>protocol=rtmp
 
-  alt action is not publish
+  alt auth payload invalid
+    Backend-->>MTX: 401 Unauthorized
+    Note over Backend,MTX: rtmpAuthSchema parse 실패<br/>MediaMTX에는 빈 401 응답만 반환
+    MTX-->>App: RTMP publish rejected
+  else action is not publish
     Backend-->>MTX: 401 Unauthorized
     Note over Backend,MTX: non-publish action은 이 endpoint에서 처리하지 않는다.
     MTX-->>App: RTMP publish rejected

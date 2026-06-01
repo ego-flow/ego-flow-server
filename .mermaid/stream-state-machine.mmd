@@ -59,17 +59,20 @@ stateDiagram-v2
 
     note right of SEG_WRITING
       Initial entry action:
+      recording-segment-create only verifies that RecordingSession exists.
+      RecordingSession.status is not checked here because stream-ready ordering is not guaranteed.
       recording_segments row is upserted by recordingSessionId.
       rawPath and createdAt are recorded.
       complete hook lookup uses recordingSessionId from stream path.
     end note
 
     SEG_WRITING --> SEG_WRITING: duplicate segment-create<br/>same recordingSessionId/rawPath<br/>upsert no-op update
+    SEG_WRITING --> SEG_WRITING: additional segment-create<br/>same recordingSessionId/different rawPath<br/>ignored
     SEG_WRITING --> SEG_WRITE_DONE: recording-segment-complete hook<br/>raw file write finished
     SEG_WRITE_DONE --> SEG_PROCESSING: finalize worker claim<br/>atomic WRITE_DONE -> PROCESSING
     SEG_PROCESSING --> SEG_WRITE_DONE: retryable processing failure<br/>reset before BullMQ retry
-    SEG_PROCESSING --> SEG_COMPLETED: encoding success<br/>Video row created
-    SEG_PROCESSING --> SEG_FAILED: encoding failure after retries<br/>Video FAILED row created
+    SEG_PROCESSING --> SEG_COMPLETED: encoding success<br/>Video row upserted
+    SEG_PROCESSING --> SEG_FAILED: encoding failure after retries<br/>Video FAILED row upserted
 
     note right of SEG_WRITE_DONE
       Entry action:
@@ -125,6 +128,7 @@ stateDiagram-v2
 %% MediaMTX stream-not-ready hook payload만으로 정상 close와 crash/reset을 완벽히 구분할 수는 없다.
 %% recording session 하나는 RecordingSegment 하나만 가진다.
 %% 최초 segment 진입은 segment-create hook의 WRITING row 생성이다.
+%% segment-create는 RecordingSession 존재만 확인하고, session status는 검증하지 않는다.
 %% segment-complete는 누락된 segment를 복구 생성하지 않고, 기존 단일 RecordingSegment만 WRITE_DONE으로 확정한 뒤 enqueue를 시도한다.
 %% segment-complete hook이 누락되면 WRITING segment는 자동으로 WRITE_DONE/FAILED로 보정하지 않는다.
 %% RecordingSegment.status가 raw segment write와 후처리 상태를 표현한다.

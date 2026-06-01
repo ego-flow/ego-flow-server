@@ -28,6 +28,7 @@ sequenceDiagram
   alt normal stop
     App->>Backend: POST /api/v1/recordings/{recordingSessionId}/close-intent
     Note over App,Backend: body.reason=NORMAL_DISCONNECT<br/>App JWT 필요<br/>session owner + STREAMING 상태만 허용
+    Note over App,Backend: error cases<br/>401 invalid App JWT<br/>400 invalid params/body<br/>404 session missing<br/>403 non-owner<br/>409 session not STREAMING
     Backend->>DB: close intent record
     Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>updated fields: end_reason=NORMAL_DISCONNECT<br/>status/closed_at/Redis는 변경하지 않는다.
     Backend-->>App: 200 OK
@@ -45,7 +46,7 @@ sequenceDiagram
     Note over MTX,Backend: publisher connection 종료 event<br/>path=live/{repositoryName}/{recordingSessionId}
 
     Backend->>DB: RecordingSession CLOSED update
-    Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>updated fields: status=CLOSED, closed_at, end_reason<br/>close-intent가 있으면 NORMAL_DISCONNECT 보존<br/>없으면 UNEXPECTED_DISCONNECT 기록
+    Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>required status: STREAMING<br/>updated fields: status=CLOSED, closed_at, end_reason<br/>close-intent가 있으면 NORMAL_DISCONNECT 보존<br/>없으면 UNEXPECTED_DISCONNECT 기록<br/><br/>no-op cases<br/>recordingSessionId 추출 실패<br/>session row 없음<br/>status가 STREAMING이 아님
 
     Backend->>Redis: live pointer cleanup
     Note over Backend,Redis: delete key: stream:recording:{recordingSessionId}<br/>remove member from set: stream:active:sessions
@@ -67,7 +68,7 @@ sequenceDiagram
     Backend->>Backend: tryEnqueueFinalize(recordingSessionId)
     Backend->>DB: finalize readiness check
     Backend->>Queue: recording-finalize enqueue
-    Note over Backend,Queue: 조건 충족 시 enqueue<br/>session is CLOSED + single segment is WRITE_DONE
+    Note over Backend,Queue: 조건 충족 시 enqueue<br/>session is CLOSED + single segment is WRITE_DONE<br/>jobId = finalize-{recordingSessionId}<br/>payload includes videoId=randomUUID
 
   else recording-segment-complete hook first
     MTX->>Storage: last fMP4 segment close and flush
@@ -84,6 +85,7 @@ sequenceDiagram
     Backend->>Backend: tryEnqueueFinalize(recordingSessionId)
     Backend->>DB: finalize readiness check
     Backend->>Queue: recording-finalize enqueue
+    Note over Backend,Queue: jobId = finalize-{recordingSessionId}<br/>중복 enqueue는 BullMQ jobId로 dedupe
   end
 
   Queue->>Worker: finalize job
@@ -108,7 +110,7 @@ sequenceDiagram
       Note over Worker,DB: claim count = 1인 worker만 processing 진행
 
       Worker->>Worker: process recording finalize
-      Note over Worker: progress 5<br/>raw segment file 안정화 대기<br/><br/>progress 15<br/>ffprobe technical metadata 추출<br/><br/>progress 35<br/>출력 경로 생성 및 directory 생성<br/><br/>parallel encoding<br/>VLM dataset mp4<br/>dashboard mp4<br/>thumbnail jpg<br/><br/>progress 90<br/>VLM mp4 size, sha256 계산<br/><br/>상세 processing 상태는 .mermaid/5.video-processing.mmd 참고
+      Note over Worker: progress 5<br/>raw segment file 안정화 대기<br/><br/>progress 15<br/>ffprobe technical metadata 추출<br/>durationSec, resolutionWidth, resolutionHeight, fps, codec, recordedAt<br/><br/>progress 35<br/>출력 경로 생성 및 directory 생성<br/><br/>parallel encoding<br/>VLM dataset mp4<br/>dashboard mp4<br/>thumbnail jpg<br/><br/>progress 90<br/>VLM mp4 size, sha256 계산<br/><br/>상세 processing 상태는 .mermaid/5.video-processing.mmd 참고
 
       alt processing success
         Worker->>DB: finalize transaction

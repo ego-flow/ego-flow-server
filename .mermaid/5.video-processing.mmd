@@ -11,9 +11,9 @@ flowchart TD
 
   Claim --> ClaimOk{"claim count == 1?"}
   ClaimOk -- "no" --> NoopClaim["no-op<br/>not WRITE_DONE or 다른 worker가 처리 중"]
-  ClaimOk -- "yes" --> RawStable["raw segment file 안정화 대기"]
+  ClaimOk -- "yes" --> RawStable["raw segment file 안정화 대기<br/>size > 0 and unchanged twice"]
 
-  RawStable --> TechnicalProbe["ffprobe technical metadata 추출<br/>recordedAt fallback: readyAt -> createdAt"]
+  RawStable --> TechnicalProbe["ffprobe technical metadata 추출<br/>durationSec, resolutionWidth, resolutionHeight, fps, codec, recordedAt<br/>recordedAt fallback: readyAt -> createdAt"]
   TechnicalProbe --> OutputPaths["output path 계산 및 directory 생성"]
   OutputPaths --> ParallelEncode["병렬 인코딩"]
 
@@ -21,9 +21,10 @@ flowchart TD
   ParallelEncode --> DashboardMp4["Dashboard mp4 생성<br/>main H.264 + AAC"]
   ParallelEncode --> Thumbnail["Thumbnail jpg 생성"]
 
-  VlmMp4 --> Digest["VLM mp4 sizeBytes + sha256 계산"]
-  DashboardMp4 --> Persist
-  Thumbnail --> Persist
+  VlmMp4 --> EncodingDone["all encoding completed"]
+  DashboardMp4 --> EncodingDone
+  Thumbnail --> EncodingDone
+  EncodingDone --> Digest["VLM mp4 sizeBytes + sha256 계산"]
   Digest --> Persist["DB transaction"]
 
   Persist --> VideoCreate["Video row upsert<br/>status = COMPLETED"]

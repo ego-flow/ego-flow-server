@@ -9,47 +9,57 @@ sequenceDiagram
   Note over App,Backend: API<br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/><br/>Body<br/>none
 
   Backend->>Backend: requireAppJwt
-  Note over Backend: Bearer token 검증<br/>사용자 존재 확인<br/>필요 시 X-Refreshed-Token 응답 헤더 설정
-  Backend->>Backend: validate(publishTicketParamsSchema)
-  Note over Backend: recordingSessionId: uuid
+  Note over Backend: App JWT Bearer token만 허용<br/>Python token은 App JWT로 취급하지 않음<br/>사용자 존재 확인<br/>필요 시 X-Refreshed-Token 응답 헤더 설정
 
-  Backend->>DB: RecordingSession 조회
-  Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId
-  DB-->>Backend: session
+  alt App JWT 없음 or invalid
+    Backend-->>App: 401 Unauthorized
+  else App JWT valid
+    Backend->>Backend: validate(publishTicketParamsSchema, params)
+    Note over Backend: recordingSessionId: uuid
 
-  alt session 없음
-    Backend-->>App: 404 Not Found
-    Note over App,Backend: Error<br/>Recording session not found.
-  else session 있음
-    Backend->>Backend: session owner 검증
-    Note over Backend: session.userId == requestUserId 확인<br/>세션 생성자만 ticket 발급 가능
-    alt 세션 생성자가 아님
-      Backend-->>App: 403 Forbidden
-      Note over App,Backend: Error<br/>Only the session owner can request a publish ticket.
-    else 세션 생성자 맞음
-      Backend->>Backend: session status 검증
-      Note over Backend: PENDING 상태에서만 ticket 발급 허용
-      alt PENDING 아님
-        Backend-->>App: 409 Conflict
-        Note over App,Backend: Error<br/>Recording session is already in {status} state.
-      else PENDING session
-        Backend->>Redis: PENDING session cache 존재 확인
-        Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>required<br/>Redis value exists
-        Redis-->>Backend: cache lookup result
+    alt params invalid
+      Backend-->>App: 400 Bad Request
+      Note over App,Backend: Error<br/>VALIDATION_ERROR
+    else params valid
+      Backend->>DB: RecordingSession 조회
+      Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId
+      DB-->>Backend: session
 
-        alt cache 없음
-          Backend-->>App: 412 Precondition Failed
-          Note over App,Backend: Error<br/>Recording session registration has expired. Please register again.
-        else ticket 발급 가능
-          Backend->>Backend: ticket metadata 생성
-          Note over Backend: ticketId = t_{uuid}<br/>streamPath = session.streamPath
+      alt session 없음
+        Backend-->>App: 404 Not Found
+        Note over App,Backend: Error<br/>Recording session not found.
+      else session 있음
+        Backend->>Backend: session owner 검증
+        Note over Backend: session.userId == requestUserId 확인<br/>세션 생성자만 ticket 발급 가능
+        alt 세션 생성자가 아님
+          Backend-->>App: 403 Forbidden
+          Note over App,Backend: Error<br/>Only the session owner can request a publish ticket.
+        else 세션 생성자 맞음
+          Backend->>Backend: session status 검증
+          Note over Backend: PENDING 상태에서만 ticket 발급 허용
+          alt PENDING 아님
+            Backend-->>App: 409 Conflict
+            Note over App,Backend: Error<br/>Recording session is already in {status} state.
+          else PENDING session
+            Backend->>Redis: PENDING session cache 존재 확인
+            Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>required<br/>raw Redis value exists<br/>value JSON은 parse하지 않는다.
+            Redis-->>Backend: cache lookup result
 
-          Backend->>Redis: publish ticket 저장
-          Note over Backend,Redis: key: stream:ticket:{ticketId}<br/><br/>value fields<br/>recordingSessionId: {recordingSessionId}<br/>repositoryId: {repositoryId}<br/>userId: {userId}<br/>streamPath: live/{repositoryName}/{recordingSessionId}<br/>status: active<br/>TTL: 60 seconds
-          Redis-->>Backend: ticket 저장 완료
+            alt cache 없음
+              Backend-->>App: 412 Precondition Failed
+              Note over App,Backend: Error<br/>Recording session registration has expired. Please register again.
+            else ticket 발급 가능
+              Backend->>Backend: ticket metadata 생성
+              Note over Backend: ticketId = t_{uuid}<br/>streamPath = session.streamPath
 
-          Backend-->>App: 200 OK
-          Note over App,Backend: Response Body<br/>stream_path: live/{repositoryName}/{recordingSessionId}<br/>publish_ticket: t_{uuid}
+              Backend->>Redis: publish ticket 저장
+              Note over Backend,Redis: key: stream:ticket:{ticketId}<br/><br/>value fields<br/>recordingSessionId: {recordingSessionId}<br/>repositoryId: {repositoryId}<br/>userId: {userId}<br/>streamPath: live/{repositoryName}/{recordingSessionId}<br/>status: active<br/><br/>TTL: 60 seconds
+              Redis-->>Backend: ticket 저장 완료
+
+              Backend-->>App: 200 OK
+              Note over App,Backend: Response Body<br/>stream_path: live/{repositoryName}/{recordingSessionId}<br/>publish_ticket: t_{uuid}
+            end
+          end
         end
       end
     end

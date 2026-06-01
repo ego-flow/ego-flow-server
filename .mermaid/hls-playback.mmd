@@ -52,9 +52,17 @@ sequenceDiagram
     Note over Caddy,Backend: API<br/>GET /api/v1/hls-auth?path=/hls/live/{repositoryName}/{recordingSessionId}/index.m3u8<br/><br/>copy_headers<br/>Cookie, Authorization
 
     Backend->>Backend: requireDashboardOrAppOrPython
+    alt credential 없음 or invalid
+      Backend-->>Caddy: 401 Unauthorized
+      Caddy-->>Dashboard: HLS request rejected
+    else credential valid
     Backend->>Backend: HLS target path 추출
     Note over Backend: accepted path shape<br/>/hls/live/{repositoryName}/{recordingSessionId}/...<br/>또는 /live/{repositoryName}/{recordingSessionId}/...<br/><br/>streamPath<br/>live/{repositoryName}/{recordingSessionId}<br/><br/>invalid or missing path는 404로 거절
 
+    alt invalid or missing path
+      Backend-->>Caddy: 404 Not Found
+      Caddy-->>Dashboard: HLS request rejected
+    else valid playback path
     Backend->>Redis: playback auth cache 조회
     Note over Backend,Redis: key<br/>hlsauth:{sha256(rawCredential)}:{streamPath}<br/><br/>example<br/>hlsauth:{credentialHash}:live/{repositoryName}/{recordingSessionId}<br/><br/>allow value<br/>1<br/><br/>TTL<br/>30 seconds
 
@@ -83,6 +91,8 @@ sequenceDiagram
           Backend-->>Caddy: 200 OK
         end
       end
+    end
+    end
     end
 
     Caddy->>MTX: HLS request proxy
