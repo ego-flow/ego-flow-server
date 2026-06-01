@@ -4,7 +4,7 @@ services:
     pull_policy: always
 
   worker:
-    image: ${WORKER_IMAGE:-ghcr.io/dennis0405/ego-flow-server-worker:${IMAGE_TAG:-latest}}
+    image: ${BACKEND_IMAGE:-ghcr.io/dennis0405/ego-flow-server-backend:${IMAGE_TAG:-latest}}
     pull_policy: always
 
   dashboard:

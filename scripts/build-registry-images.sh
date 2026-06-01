@@ -249,11 +249,9 @@ if [[ -z "$VITE_API_BASE_URL" ]]; then
 fi
 
 BACKEND_IMAGE="${REGISTRY}/${REGISTRY_OWNER}/${IMAGE_PREFIX}-backend:${IMAGE_TAG}"
-WORKER_IMAGE="${REGISTRY}/${REGISTRY_OWNER}/${IMAGE_PREFIX}-worker:${IMAGE_TAG}"
 DASHBOARD_IMAGE="${REGISTRY}/${REGISTRY_OWNER}/${IMAGE_PREFIX}-dashboard:${IMAGE_TAG}"
 
 BACKEND_LATEST="${REGISTRY}/${REGISTRY_OWNER}/${IMAGE_PREFIX}-backend:latest"
-WORKER_LATEST="${REGISTRY}/${REGISTRY_OWNER}/${IMAGE_PREFIX}-worker:latest"
 DASHBOARD_LATEST="${REGISTRY}/${REGISTRY_OWNER}/${IMAGE_PREFIX}-dashboard:latest"
 
 echo "[build] Registry: ${REGISTRY}/${REGISTRY_OWNER}"
@@ -270,11 +268,9 @@ fi
 
 echo "[build] Building backend image"
 docker_build -f "$ROOT_DIR/backend/Dockerfile" -t "$BACKEND_IMAGE" "$ROOT_DIR/backend"
-docker tag "$BACKEND_IMAGE" "$WORKER_IMAGE"
 
 if [[ "$PUSH_LATEST" == "1" ]]; then
   docker tag "$BACKEND_IMAGE" "$BACKEND_LATEST"
-  docker tag "$BACKEND_IMAGE" "$WORKER_LATEST"
 fi
 
 echo "[build] Building dashboard image"
@@ -290,12 +286,10 @@ if [[ "$PUSH_LATEST" == "1" ]]; then
 fi
 
 docker_push_tag "$BACKEND_IMAGE"
-docker_push_tag "$WORKER_IMAGE"
 docker_push_tag "$DASHBOARD_IMAGE"
 
 if [[ "$PUSH_LATEST" == "1" ]]; then
   docker_push_tag "$BACKEND_LATEST"
-  docker_push_tag "$WORKER_LATEST"
   docker_push_tag "$DASHBOARD_LATEST"
 fi
 
@@ -303,7 +297,6 @@ cat <<EOF
 
 [done] Images are ready:
   BACKEND_IMAGE=${BACKEND_IMAGE}
-  WORKER_IMAGE=${WORKER_IMAGE}
   DASHBOARD_IMAGE=${DASHBOARD_IMAGE}
 
 Remote server can run:

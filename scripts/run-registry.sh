@@ -10,11 +10,9 @@ REGISTRY_OWNER="${REGISTRY_OWNER:-dennis0405}"
 IMAGE_PREFIX="${IMAGE_PREFIX:-ego-flow-server}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 BACKEND_IMAGE="${BACKEND_IMAGE:-${REGISTRY}/${REGISTRY_OWNER}/${IMAGE_PREFIX}-backend:${IMAGE_TAG}}"
-WORKER_IMAGE="${WORKER_IMAGE:-${REGISTRY}/${REGISTRY_OWNER}/${IMAGE_PREFIX}-worker:${IMAGE_TAG}}"
 DASHBOARD_IMAGE="${DASHBOARD_IMAGE:-${REGISTRY}/${REGISTRY_OWNER}/${IMAGE_PREFIX}-dashboard:${IMAGE_TAG}}"
 
 export BACKEND_IMAGE
-export WORKER_IMAGE
 export DASHBOARD_IMAGE
 export IMAGE_TAG
 
@@ -157,7 +155,7 @@ check_prereqs() {
   echo "Compose OK: $(docker compose version --short)"
   echo "Image tag: ${IMAGE_TAG}"
   echo "Backend image: ${BACKEND_IMAGE}"
-  echo "Worker image: ${WORKER_IMAGE}"
+  echo "Worker image: ${BACKEND_IMAGE} (shared backend image)"
   echo "Dashboard image: ${DASHBOARD_IMAGE}"
   echo "Data root: ${TARGET_DIRECTORY}"
 }
@@ -230,7 +228,6 @@ up_stack() {
 
   echo "[docker] Pulling registry images"
   docker pull "$BACKEND_IMAGE"
-  docker pull "$WORKER_IMAGE"
   docker pull "$DASHBOARD_IMAGE"
 
   echo "[compose] Pulling base images"
