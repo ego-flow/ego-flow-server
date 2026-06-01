@@ -1,7 +1,7 @@
 rtmp: yes
 rtmpAddress: :1935
-readTimeout: 10s
-writeTimeout: 10s
+readTimeout: 5s
+writeTimeout: 5s
 
 hls: yes
 hlsAddress: :8888

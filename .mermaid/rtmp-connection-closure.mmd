@@ -32,7 +32,7 @@ sequenceDiagram
     Note over App,MTX: App crash, process kill, TCP reset, radio/network loss, half-open timeout 등
 
     MTX->>MTX: publisher connection 상태 감지
-    Note over MTX: TCP close/reset은 빠르게 not-ready로 이어진다.<br/>half-open/stalled 연결은 MediaMTX readTimeout/writeTimeout에 의존한다.<br/>현재 mediamtx.yml<br/>readTimeout: 10s<br/>writeTimeout: 10s
+    Note over MTX: TCP close/reset은 빠르게 not-ready로 이어진다.<br/>half-open/stalled 연결은 MediaMTX readTimeout/writeTimeout에 의존한다.<br/>현재 mediamtx.yml<br/>readTimeout: 5s<br/>writeTimeout: 5s
 
     alt stream-not-ready hook delivered
       MTX->>Backend: stream-not-ready hook
