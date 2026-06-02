@@ -1,0 +1,74 @@
+sequenceDiagram
+  autonumber
+  participant App as [App]
+  participant Backend as [Backend]
+  participant Redis as [Redis]
+  participant DB as [DB]
+  participant Storage as [Raw Storage]
+
+  Note over App,Backend: 이전 단계<br/>POST /api/v1/streams/register 성공<br/>register body ingestType = HTTP<br/><br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket 성공<br/>publish_ticket = t_{uuid}<br/>stream_path = live/{repositoryName}/{recordingSessionId}
+
+  App->>Backend: HTTP stream start 요청
+  Note over App,Backend: API<br/>POST /api/v1/http-streams/{recordingSessionId}/start<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>publish_ticket: t_{uuid}
+
+  Backend->>Backend: requireAppJwt + validate
+  Note over Backend: params.recordingSessionId: uuid<br/>body.publish_ticket: non-empty string
+
+  alt auth or validation failed
+    Backend-->>App: 401 Unauthorized or 400 Validation Error
+  else auth and validation passed
+    Backend->>DB: RecordingSession 조회
+    Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId
+
+    alt session 없음
+      Backend-->>App: 404 Not Found
+      Note over App,Backend: Error<br/>Recording session not found.
+    else session 있음
+      Backend->>Backend: owner / ingestType / status 검증
+      Note over Backend: session.userId == requestUserId<br/>session.ingestType == HTTP<br/>session.status == PENDING
+
+      alt owner mismatch
+        Backend-->>App: 403 Forbidden
+      else ingestType is not HTTP or status is not PENDING
+        Backend-->>App: 409 Conflict
+      else start 가능
+        Backend->>Redis: publish ticket consume
+        Note over Backend,Redis: key: stream:ticket:{ticketId}<br/><br/>checks<br/>exists<br/>status = active<br/>streamPath == session.streamPath<br/>ingestType = HTTP<br/><br/>update<br/>status = consumed<br/>TTL refresh 없음<br/>기존 Redis TTL 유지
+
+        alt ticket rejected
+          Backend-->>App: 412 Precondition Failed
+          Note over App,Backend: Error<br/>Publish ticket rejected: {reason}.
+        else ticket consumed
+          Backend->>Backend: ticket/session metadata 검증
+          Note over Backend: ticket.recordingSessionId == session.id<br/>ticket.repositoryId == session.repositoryId<br/>ticket.userId == session.userId<br/>ticket.streamPath == session.streamPath
+
+          alt metadata mismatch
+            Backend-->>App: 412 Precondition Failed
+            Note over App,Backend: Error<br/>Publish ticket does not match this recording session.
+          else metadata valid
+            Backend->>Storage: raw directory 준비
+            Note over Backend,Storage: rawPath<br/>{DATA_ROOT}/raw/http/{repositoryName}/{recordingSessionId}/recording.mp4<br/><br/>action<br/>mkdir parent directory recursively
+
+            Backend->>DB: start transaction
+            Note over Backend,DB: recording_sessions guarded update<br/>where id = recordingSessionId<br/>status = PENDING<br/>ingest_type = HTTP<br/><br/>update<br/>status = STREAMING<br/>ready_at = existing ready_at or now
+
+            Backend->>DB: RecordingSegment 생성
+            Note over Backend,DB: table: recording_segments<br/>recording_session_id = recordingSessionId<br/>raw_path = rawPath<br/>status = WRITING
+
+            Backend->>Redis: HTTP upload cache 저장 및 active set 추가
+            Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: {repositoryId}<br/>repositoryName: {repositoryName}<br/>userId: {userId}<br/>ingestType: HTTP<br/>deviceType: {optional_device_type}<br/>status: STREAMING<br/>rawPath: {rawPath}<br/>bytesReceived: 0<br/>lastSequence: null<br/>lastChunkAt: epoch_ms<br/><br/>TTL: 7200 seconds<br/><br/>set: stream:active:sessions<br/>member: recordingSessionId
+
+            Backend-->>App: 200 OK
+            Note over App,Backend: Response Body<br/>recording_session_id: {recordingSessionId}<br/>status: STREAMING<br/>bytes_received: 0<br/>last_sequence: null
+          end
+        end
+      end
+    end
+  end
+
+%% 참고:
+%% HTTP start는 MediaMTX를 거치지 않는다.
+%% publish-ticket까지는 MEDIAMTX ingest와 같은 공통 인증 흐름을 사용한다.
+%% HTTP start는 ingestType=HTTP ticket만 consume한다.
+%% 현재 코드 기준 ticket consume은 DB transaction보다 먼저 수행된다.
+%% HTTP start 성공 후 chunk upload hot path는 DB 조회 없이 Redis upload cache와 file append를 사용한다.

@@ -39,7 +39,7 @@ sequenceDiagram
     Caddy-->>App: WHIP publish rejected
   else ticket credential only
     Backend->>Redis: publish ticket 조회 및 검증
-    Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>checks: exists, status=active, streamPath == path<br/>검증 성공 시 TTL을 60 seconds로 갱신
+    Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>checks: exists, status=active, ingestType=MEDIAMTX, streamPath == path<br/>검증 성공 시 TTL을 60 seconds로 갱신
 
     alt ticket invalid
       Backend-->>MTX: 401 Unauthorized
@@ -66,14 +66,14 @@ sequenceDiagram
     Note over MTX,Backend: API<br/>POST /api/v1/hooks/stream-ready<br/><br/>Payload 핵심 값<br/>path=live/{repositoryName}/{recordingSessionId}<br/>ticket=t_{uuid}
 
     Backend->>Redis: ticket 재검증
-    Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>checks: exists, status=active, streamPath == path<br/>TTL refresh 없음
+    Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>checks: exists, status=active, ingestType=MEDIAMTX, streamPath == path<br/>TTL refresh 없음
 
     alt ticket 재검증 실패
       Backend->>Backend: no-op
       Note over Backend: hook은 200 OK로 끝나지만<br/>DB 조회, ticket consume, live cache update는 하지 않는다.
     else ticket valid
       Backend->>DB: RecordingSession 조회 및 session/ticket 검증
-      Note over Backend,DB: table: recording_sessions<br/>target row: id = ticket.recordingSessionId<br/>required status: PENDING<br/>session repositoryId/userId/streamPath == ticket repositoryId/userId/streamPath
+      Note over Backend,DB: table: recording_sessions<br/>target row: id = ticket.recordingSessionId<br/>required status: PENDING<br/>session repositoryId/userId/ingestType/streamPath == ticket repositoryId/userId/ingestType/streamPath
 
       alt session 없음 or PENDING 아님 or metadata mismatch
         Backend->>Backend: no-op
@@ -90,7 +90,7 @@ sequenceDiagram
           Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>updated fields: status=STREAMING, ready_at if empty
 
           Backend->>Redis: live cache 및 active set 갱신
-          Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: {repositoryId}<br/>repositoryName: {repositoryName}<br/>userId: {userId}<br/>deviceType: {optional_device_type}<br/>status: STREAMING<br/>TTL: 7200 seconds<br/><br/>set: stream:active:sessions<br/>member: recordingSessionId
+          Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: {repositoryId}<br/>repositoryName: {repositoryName}<br/>userId: {userId}<br/>ingestType: MEDIAMTX<br/>deviceType: {optional_device_type}<br/>status: STREAMING<br/>TTL: 7200 seconds<br/><br/>set: stream:active:sessions<br/>member: recordingSessionId
         end
       end
     end

@@ -67,7 +67,8 @@ erDiagram
     varchar owner_id "logical users.id, varchar(64)"
     varchar user_id "logical users.id, varchar(64)"
     varchar device_type "varchar(100), nullable"
-    varchar stream_path "varchar(255)"
+    RecordingSessionIngestType ingest_type "MEDIAMTX or HTTP"
+    varchar stream_path "varchar(255), live/{repo}/{session}"
     RecordingSessionStatus status
     RecordingSessionEndReason end_reason "nullable"
     varchar target_directory "varchar(1024)"
@@ -134,6 +135,7 @@ erDiagram
   %% VideoStatus: COMPLETED, FAILED
   %% VideoSemanticMetadataStatus: PENDING, PROCESSING, COMPLETED, FAILED
   %% RecordingSessionStatus: PENDING, STREAMING, CLOSED
+  %% RecordingSessionIngestType: MEDIAMTX, HTTP
   %% RecordingSessionEndReason:
   %%   NORMAL_DISCONNECT, UNEXPECTED_DISCONNECT, ACCESS_FORBIDDEN,
   %%   REPOSITORY_DELETED, INTERNAL_ERROR

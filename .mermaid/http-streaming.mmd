@@ -1,0 +1,86 @@
+sequenceDiagram
+  autonumber
+  participant App as [App]
+  participant Backend as [Backend API]
+  participant Redis as [Redis]
+  participant DB as [DB]
+  participant Queue as [Finalize Queue]
+  participant Worker as [Finalize Worker]
+
+  App->>Backend: POST /api/v1/streams/register
+  Note over App,Backend: Body<br/>repositoryId: {repository_uuid}<br/>deviceType: {optional_device_type}<br/>ingestType: HTTP
+  Backend->>DB: RecordingSession(PENDING, ingestType=HTTP) 생성 또는 재사용
+  Backend->>Redis: PENDING cache 저장
+  Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: repositoryId, repositoryName, userId, ingestType=HTTP, deviceType, status=PENDING<br/>TTL: 300s
+  Backend-->>App: recordingSessionId
+
+  App->>Backend: POST /api/v1/streams/{recordingSessionId}/publish-ticket
+  Backend->>Redis: ticket 저장
+  Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>value: recordingSessionId, repositoryId, userId, ingestType=HTTP, streamPath, status=active<br/>TTL: 60s
+  Backend-->>App: stream_path, publish_ticket
+
+  App->>Backend: POST /api/v1/http-streams/{recordingSessionId}/start
+  Note over App,Backend: Body<br/>publish_ticket: t_{uuid}
+  Backend->>Redis: ticket consume
+  Note over Backend,Redis: required<br/>ticket.status=active<br/>ticket.ingestType=HTTP<br/>ticket.recordingSessionId={recordingSessionId}<br/>ticket.userId=request user
+  Backend->>DB: RecordingSession PENDING -> STREAMING
+  Backend->>DB: RecordingSegment(WRITING) 생성
+  Backend->>Redis: active upload cache 저장
+  Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: repositoryId, repositoryName, userId, ingestType=HTTP, deviceType, status=STREAMING, rawPath, bytesReceived=0, lastSequence=null, lastChunkAt=now<br/>TTL: 7200s<br/><br/>set: stream:active:sessions<br/>member: recordingSessionId
+  Backend-->>App: status=STREAMING, bytes_received=0, last_sequence=null
+
+  loop chunk upload
+    App->>Backend: POST /api/v1/http-streams/{recordingSessionId}/chunks
+    Note over App,Backend: Headers<br/>Content-Type: application/octet-stream<br/>X-Chunk-Sequence: next_sequence<br/>X-Chunk-Offset: bytes_received_so_far<br/><br/>Body<br/>binary muxed media bytes
+    Backend->>Redis: append lock 획득
+    Note over Backend,Redis: key: stream:http-upload-lock:{recordingSessionId}<br/>TTL: 10s
+    Backend->>Redis: upload cache 조회
+    Note over Backend,Redis: hot path DB 조회 없음<br/>required<br/>ingestType=HTTP<br/>status=STREAMING<br/>userId=request user<br/>bytesReceived == X-Chunk-Offset<br/>lastSequence + 1 == X-Chunk-Sequence
+    Backend->>Backend: raw file open -> append -> close
+    Backend->>Redis: bytesReceived, lastSequence, lastChunkAt 갱신
+    Backend-->>App: bytes_received, last_sequence
+  end
+
+  alt normal finish
+    App->>Backend: POST /api/v1/http-streams/{recordingSessionId}/finish
+    Note over App,Backend: Body<br/>total_bytes: final bytes
+    Backend->>Redis: upload cache 조회
+    Backend->>Backend: Redis bytesReceived == total_bytes<br/>raw file stat.size == total_bytes
+    Backend->>DB: RecordingSession STREAMING -> CLOSED
+    Backend->>DB: RecordingSegment WRITING -> WRITE_DONE
+    Backend->>Redis: stream:recording, upload lock, active set 정리
+    Backend->>Queue: finalize enqueue
+  else timeout or unexpected interruption
+    App--xBackend: chunk upload stops
+    Backend->>Backend: reconcile after 10s idle
+    alt raw file exists and size == bytesReceived
+      Backend->>DB: RecordingSession CLOSED + UNEXPECTED_DISCONNECT
+      Backend->>DB: RecordingSegment WRITE_DONE
+      Note over Backend,DB: atomic claim success only
+      Backend->>Redis: stream:recording, upload lock, active set 정리
+      Backend->>Queue: finalize enqueue
+    else file missing, 0 byte, or size mismatch
+      Backend->>DB: RecordingSession CLOSED + UNEXPECTED_DISCONNECT
+      Backend->>DB: RecordingSegment FAILED
+      Backend->>DB: Video FAILED upsert
+      Note over Backend,DB: atomic claim success only
+      Backend->>Redis: stream:recording, upload lock, active set 정리
+    end
+  end
+
+  opt finalize job
+    Queue->>Worker: recording-finalize
+    Worker->>DB: RecordingSegment WRITE_DONE -> PROCESSING atomic claim
+    Worker->>Worker: ffprobe + encoding + thumbnail
+    Worker->>DB: Video COMPLETED upsert + RecordingSegment COMPLETED
+  end
+
+%% 참고:
+%% HTTP ingest는 live playback을 제공하지 않는다.
+%% dashboard Live tab에는 active upload 목록으로 표시되며 playback_available=false, hls_path=null이다.
+%% App은 upload 중 reconnect를 지원하지 않는다. 중단 후 재시도는 register부터 새 session으로 시작한다.
+%% chunk body는 append 가능한 muxed media byte stream이어야 한다. backend는 chunk를 재인코딩하거나 muxing하지 않고 raw file에 append만 한다.
+%% chunk hot path는 JWT signature/expiry, Redis, filesystem만 사용한다. DB에는 chunkAt, bytesReceived, lastSequence 같은 진행률 필드를 저장하지 않는다.
+%% finish는 total_bytes와 Redis bytesReceived 및 실제 raw file size가 모두 일치해야 한다.
+%% HTTP_STREAM_TIMEOUT은 10초다.
+%% timeout reconcile은 DB transaction에서 RecordingSession=STREAMING 및 RecordingSegment=WRITING 상태를 claim한 경우에만 후속 처리를 진행한다.

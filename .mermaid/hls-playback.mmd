@@ -26,14 +26,14 @@ sequenceDiagram
   else active session 후보 있음
     Redis-->>Backend: recordingSessionIds[]
     Backend->>Redis: live cache batch 조회
-    Note over Backend,Redis: keys<br/>stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: {repositoryId}<br/>repositoryName: {repositoryName}<br/>userId: {userId}<br/>deviceType: {optional_device_type}<br/>status: STREAMING<br/><br/>live cache TTL<br/>7200 seconds
+    Note over Backend,Redis: keys<br/>stream:recording:{recordingSessionId}<br/><br/>common value fields<br/>repositoryId: {repositoryId}<br/>repositoryName: {repositoryName}<br/>userId: {userId}<br/>ingestType: MEDIAMTX 또는 HTTP<br/>deviceType: {optional_device_type}<br/>status: STREAMING<br/><br/>HTTP-only fields<br/>rawPath<br/>bytesReceived<br/>lastSequence<br/>lastChunkAt<br/><br/>live cache TTL<br/>7200 seconds
 
     Redis-->>Backend: live cache records
     Backend->>Backend: STREAMING cache + repository access 필터링
-    Note over Backend: cache.status == STREAMING만 live로 취급<br/>요청자가 read 가능한 repositoryId만 응답에 포함<br/>MediaMTX active path는 list 단계에서 직접 조회하지 않는다.
+    Note over Backend: cache.status == STREAMING만 live로 취급<br/>요청자가 read 가능한 repositoryId만 응답에 포함<br/>MediaMTX active path는 list 단계에서 직접 조회하지 않는다.<br/>playback_available은 ingestType == MEDIAMTX일 때만 true
 
     Backend-->>Dashboard: 200 OK
-    Note over Backend,Dashboard: Headers<br/>Cache-Control: no-store<br/><br/>Response Body<br/>streams[] item<br/>stream_id: {recordingSessionId}<br/>repository_id: {repositoryId}<br/>repository_name: {repositoryName}<br/>user_id: {publisherUserId}<br/>device_type: {optional_device_type_or_null}<br/>status: live<br/>hls_path: /hls/live/{repositoryName}/{recordingSessionId}/index.m3u8
+    Note over Backend,Dashboard: Headers<br/>Cache-Control: no-store<br/><br/>Response Body<br/>streams[] item<br/>stream_id: {recordingSessionId}<br/>repository_id: {repositoryId}<br/>repository_name: {repositoryName}<br/>user_id: {publisherUserId}<br/>device_type: {optional_device_type_or_null}<br/>ingest_type: MEDIAMTX 또는 HTTP<br/>status: live<br/>playback_available: true for MEDIAMTX, false for HTTP<br/>hls_path: /hls/... 또는 null<br/>bytes_received: number 또는 null<br/>last_sequence: number 또는 null<br/>last_chunk_at: ISO string 또는 null
   end
 
   Dashboard->>Dashboard: live 목록 표시 및 선택 상태 갱신
@@ -41,7 +41,10 @@ sequenceDiagram
 
   alt selected stream 없음
     Dashboard->>Dashboard: playback placeholder 표시
-  else selected stream 있음
+  else selected stream is HTTP
+    Dashboard->>Dashboard: HTTP upload status 표시
+    Note over Dashboard: playback_available=false<br/>HlsPlayer를 mount하지 않는다.<br/>bytes_received, last_sequence, last_chunk_at를 표시한다.
+  else selected stream is MEDIAMTX
     Dashboard->>Dashboard: HlsPlayer mount
     Note over Dashboard: src = selectedStream.hlsPath<br/>native HLS 지원 브라우저는 video.src에 직접 설정<br/>그 외 브라우저는 hls.js/light 사용<br/>xhr.withCredentials = true
 
@@ -72,7 +75,7 @@ sequenceDiagram
     else playback auth cache miss
       Redis-->>Backend: null
       Backend->>Redis: live cache 조회
-      Note over Backend,Redis: key<br/>stream:recording:{recordingSessionId}<br/><br/>required<br/>status = STREAMING
+      Note over Backend,Redis: key<br/>stream:recording:{recordingSessionId}<br/><br/>required<br/>status = STREAMING<br/><br/>code note<br/>HLS auth service는 ingestType을 직접 검증하지 않는다.<br/>Dashboard list는 MEDIAMTX stream에만 hls_path를 제공한다.
 
       alt live cache 없음 또는 STREAMING 아님
         Backend-->>Caddy: 404 Not Found
@@ -116,9 +119,13 @@ sequenceDiagram
 
 %% 참고:
 %% Dashboard live tab은 별도 playback token을 발급받지 않는다.
-%% Backend가 반환한 origin-relative hls_path를 그대로 HlsPlayer에 넘기고,
+%% MEDIAMTX stream은 Backend가 반환한 origin-relative hls_path를 그대로 HlsPlayer에 넘기고,
 %% browser는 현재 dashboard origin 기준으로 /hls/... 요청을 보낸다.
+%% HTTP stream은 live list에는 표시되지만 playback_available=false이고 hls_path=null이다.
+%% Dashboard는 HTTP stream에 대해 HlsPlayer를 mount하지 않고 upload 진행 상태만 표시한다.
 %% HLS playback 권한 검증은 /api/v1/auth/publish가 아니라 Caddy forward_auth -> /api/v1/hls-auth가 담당한다.
 %% MediaMTX read/playback authHTTP callback은 mediamtx.yml authHTTPExclude로 제외되어 있다.
 %% stream-not-ready 또는 reconcile로 live pointer가 제거되면 stream:active:sessions와 stream:recording:{recordingSessionId}가 정리되고,
 %% 다음 live list에서는 해당 stream이 사라진다. 이후 HLS auth도 stream-not-found로 거절될 수 있다.
+%% HTTP ingest는 stream:active:sessions에 등록되지만 dashboard 응답에서는 playback_available=false, hls_path=null이다.
+%% HLS auth service는 ingestType을 직접 검증하지 않으므로 dashboard가 제공한 hls_path만 playback 대상으로 사용한다.

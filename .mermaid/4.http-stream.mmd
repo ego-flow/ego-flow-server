@@ -1,0 +1,87 @@
+sequenceDiagram
+  autonumber
+  participant App as [App]
+  participant Backend as [Backend]
+  participant Redis as [Redis]
+  participant Storage as [Raw Storage]
+  participant DB as [DB]
+  participant Queue as [Finalize Queue]
+
+  Note over App,Backend: 전제<br/>.mermaid/3.http-start.mmd 단계가 성공했다.<br/>RecordingSession.status = STREAMING<br/>RecordingSegment.status = WRITING<br/>Redis stream:recording:{recordingSessionId}에 HTTP upload cache가 있다.
+
+  loop chunk upload
+    App->>Backend: HTTP chunk upload 요청
+    Note over App,Backend: API<br/>POST /api/v1/http-streams/{recordingSessionId}/chunks<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/octet-stream<br/>X-Chunk-Sequence: {sequence}<br/>X-Chunk-Offset: {bytesReceived}<br/><br/>Body<br/>binary media chunk
+
+    Backend->>Backend: JWT payload 검증 및 request validation
+    Backend->>Redis: upload lock 획득
+    Note over Backend,Redis: key: stream:http-upload-lock:{recordingSessionId}<br/>TTL: 10 seconds
+
+    Backend->>Redis: HTTP upload cache 조회
+    Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>required value fields<br/>ingestType: HTTP<br/>status: STREAMING<br/>userId: request user<br/>rawPath<br/>bytesReceived<br/>lastSequence<br/>lastChunkAt
+
+    alt upload 불가
+      Backend-->>App: 401/403/404/409/412 error
+      Note over App,Backend: invalid JWT, owner mismatch,<br/>missing cache, sequence mismatch,<br/>or offset mismatch
+    else upload 가능
+      Backend->>Storage: raw file append
+      Note over Backend,Storage: rawPath에 chunk를 append하고 file을 close한다.
+
+      Backend->>Redis: HTTP upload cache 갱신
+      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>updated fields<br/>bytesReceived += chunk.length<br/>lastSequence = sequence<br/>lastChunkAt = now<br/>TTL: 7200 seconds
+
+      Backend-->>App: 200 OK
+      Note over App,Backend: Response Body<br/>recording_session_id: {recordingSessionId}<br/>bytes_received: {nextBytesReceived}<br/>last_sequence: {sequence}
+    end
+  end
+
+  alt normal finish
+    App->>Backend: HTTP finish 요청
+    Note over App,Backend: API<br/>POST /api/v1/http-streams/{recordingSessionId}/finish<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>total_bytes: {finalBytesReceived}
+
+    Backend->>Redis: upload lock 획득 및 cache 검증
+    Backend->>Storage: raw file size 검증
+
+    alt total bytes or file size mismatch
+      Backend-->>App: 412 Precondition Failed
+    else finish 가능
+      Backend->>DB: HTTP upload 정상 종료 기록
+      Note over Backend,DB: recording_sessions<br/>STREAMING -> CLOSED<br/>end_reason = NORMAL_DISCONNECT<br/><br/>recording_segments<br/>WRITING -> WRITE_DONE
+
+      Backend->>Redis: HTTP upload pointer 정리
+      Note over Backend,Redis: delete key: stream:recording:{recordingSessionId}<br/>delete key: stream:http-upload-lock:{recordingSessionId}<br/>remove from set: stream:active:sessions
+
+      Backend->>Queue: recording-finalize enqueue
+      Backend-->>App: 200 OK
+      Note over App,Backend: Response Body<br/>recording_session_id: {recordingSessionId}<br/>status: CLOSED<br/>segment_status: WRITE_DONE<br/>bytes_received: {bytesReceived}
+    end
+  else app stops sending chunks
+    Note over App,Backend: App crash, network loss, process kill 등으로<br/>finish 없이 chunk upload가 멈춘다.
+  end
+
+  opt HTTP timeout reconcile loop
+    Backend->>DB: STREAMING HTTP session 조회
+    Backend->>Redis: upload cache 확인
+    Note over Backend,Redis: timeout condition<br/>now - lastChunkAt > 10 seconds
+
+    alt not timed out
+      Backend->>Backend: no-op
+    else raw file recoverable
+      Backend->>DB: timeout recover 기록
+      Note over Backend,DB: atomic claim<br/>RecordingSession STREAMING -> CLOSED<br/>RecordingSegment WRITING -> WRITE_DONE<br/>end_reason = UNEXPECTED_DISCONNECT
+      Backend->>Redis: HTTP upload pointer 정리
+      Backend->>Queue: recording-finalize enqueue
+    else raw file missing or invalid
+      Backend->>DB: timeout failure 기록
+      Note over Backend,DB: atomic claim<br/>RecordingSession STREAMING -> CLOSED<br/>RecordingSegment WRITING -> FAILED<br/>Video.status = FAILED
+      Backend->>Redis: HTTP upload pointer 정리
+    end
+  end
+
+%% 참고:
+%% HTTP chunk hot path는 DB session 조회 없이 JWT payload, Redis upload cache, raw file append를 사용한다.
+%% timeout reconcile은 DB transaction에서 RecordingSession=STREAMING 및 RecordingSegment=WRITING 상태를 claim한 경우에만 후속 처리를 진행한다.
+%% claim 실패는 finish 또는 다른 reconcile이 먼저 처리한 race로 보고 no-op 처리한다.
+%% HTTP upload cache TTL은 7200초이며 chunk upload 때마다 refresh된다.
+%% HTTP timeout 기준은 lastChunkAt 기준 10초다.
+%% 정상 finish 또는 recover가 WRITE_DONE을 만들면 기존 finalize worker 경로를 사용한다.

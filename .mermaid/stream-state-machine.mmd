@@ -15,8 +15,9 @@ stateDiagram-v2
       publish-ticket rejects PENDING rows whose Redis cache expired.
     end note
 
-    RS_PENDING --> RS_PENDING: register reuse<br/>same user/repository/deviceType<br/>updatedAt + Redis TTL refresh
-    RS_PENDING --> RS_STREAMING: stream-ready hook<br/>ticket validated and consumed
+    RS_PENDING --> RS_PENDING: register reuse<br/>same user/repository/deviceType/ingestType<br/>updatedAt + Redis TTL refresh
+    RS_PENDING --> RS_STREAMING: MEDIAMTX stream-ready hook<br/>ticket validated and consumed
+    RS_PENDING --> RS_STREAMING: HTTP start API<br/>ticket consumed and upload cache created
     RS_PENDING --> RS_CLOSED: access failure cleanup<br/>register permission check failed or repository missing
 
     note right of RS_STREAMING
@@ -25,19 +26,25 @@ stateDiagram-v2
       readyAt is recorded.
       Redis stream:recording:{recordingSessionId} becomes live cache with 7200s TTL.
       stream:active:sessions adds recordingSessionId.
+      HTTP live cache also stores rawPath, bytesReceived,
+      lastSequence, and lastChunkAt for chunk upload validation.
     end note
 
     RS_STREAMING --> RS_STREAMING: close-intent API<br/>record NORMAL_DISCONNECT intent only
-    RS_STREAMING --> RS_CLOSED: stream-not-ready hook<br/>publisher connection closed
-    RS_STREAMING --> RS_CLOSED: reconcile<br/>MediaMTX active path missing
+    RS_STREAMING --> RS_CLOSED: MEDIAMTX stream-not-ready hook<br/>publisher connection closed
+    RS_STREAMING --> RS_CLOSED: MEDIAMTX reconcile<br/>active path missing
+    RS_STREAMING --> RS_CLOSED: HTTP finish API<br/>NORMAL_DISCONNECT
+    RS_STREAMING --> RS_CLOSED: HTTP timeout reconcile<br/>UNEXPECTED_DISCONNECT
     RS_STREAMING --> RS_CLOSED: reconcile<br/>closedAt already recorded
 
     note right of RS_CLOSED
       Entry action:
-      stream-not-ready records closedAt.
+      stream-not-ready or HTTP finish/timeout records closedAt.
       If close-intent was recorded, endReason=NORMAL_DISCONNECT is preserved.
       If close-intent was not recorded, endReason=UNEXPECTED_DISCONNECT is recorded.
-      reconcile fallback records closedAt and endReason=UNEXPECTED_DISCONNECT.
+      MediaMTX reconcile fallback records closedAt and endReason=UNEXPECTED_DISCONNECT.
+      HTTP finish records endReason=NORMAL_DISCONNECT.
+      HTTP timeout reconcile records endReason=UNEXPECTED_DISCONNECT.
       PENDING access-failure cleanup records closedAt.
       Permission failure records endReason=ACCESS_FORBIDDEN.
       Missing repository records endReason=REPOSITORY_DELETED.
@@ -49,7 +56,8 @@ stateDiagram-v2
   }
 
   state "RecordingSegment" as RecordingSegment {
-    [*] --> SEG_WRITING: recording-segment-create hook<br/>MediaMTX opens raw segment file
+    [*] --> SEG_WRITING: MEDIAMTX segment-create hook<br/>MediaMTX opens raw segment file
+    [*] --> SEG_WRITING: HTTP start API<br/>raw upload file is prepared
 
     state "WRITING" as SEG_WRITING
     state "WRITE_DONE" as SEG_WRITE_DONE
@@ -59,16 +67,21 @@ stateDiagram-v2
 
     note right of SEG_WRITING
       Initial entry action:
-      recording-segment-create only verifies that RecordingSession exists.
-      RecordingSession.status is not checked here because stream-ready ordering is not guaranteed.
-      recording_segments row is upserted by recordingSessionId.
+      MEDIAMTX recording-segment-create only verifies that RecordingSession exists.
+      RecordingSession.status is not checked there because stream-ready ordering is not guaranteed.
+      HTTP start creates the WRITING segment inside the start transaction.
+      MEDIAMTX segment-create upserts by recordingSessionId.
+      HTTP start creates a new row for the recordingSessionId.
       rawPath and createdAt are recorded.
       complete hook lookup uses recordingSessionId from stream path.
     end note
 
     SEG_WRITING --> SEG_WRITING: duplicate segment-create<br/>same recordingSessionId/rawPath<br/>upsert no-op update
     SEG_WRITING --> SEG_WRITING: additional segment-create<br/>same recordingSessionId/different rawPath<br/>ignored
-    SEG_WRITING --> SEG_WRITE_DONE: recording-segment-complete hook<br/>raw file write finished
+    SEG_WRITING --> SEG_WRITE_DONE: MEDIAMTX segment-complete hook<br/>raw file write finished
+    SEG_WRITING --> SEG_WRITE_DONE: HTTP finish API<br/>total bytes and file size verified
+    SEG_WRITING --> SEG_WRITE_DONE: HTTP timeout recover<br/>atomic claim + file size matches bytesReceived
+    SEG_WRITING --> SEG_FAILED: HTTP timeout failure<br/>atomic claim + file missing/empty/size mismatch
     SEG_WRITE_DONE --> SEG_PROCESSING: finalize worker claim<br/>atomic WRITE_DONE -> PROCESSING
     SEG_PROCESSING --> SEG_WRITE_DONE: retryable processing failure<br/>reset before BullMQ retry
     SEG_PROCESSING --> SEG_COMPLETED: encoding success<br/>Video row upserted
@@ -94,6 +107,7 @@ stateDiagram-v2
   state "Video" as Video {
     [*] --> VIDEO_COMPLETED: finalize success<br/>create videos row
     [*] --> VIDEO_FAILED: finalize final failure<br/>create failed videos row
+    [*] --> VIDEO_FAILED: HTTP timeout failure<br/>create failed videos row without finalize
 
     state "COMPLETED" as VIDEO_COMPLETED
     state "FAILED" as VIDEO_FAILED
@@ -118,7 +132,8 @@ stateDiagram-v2
 
 %% 참고:
 %% RecordingSession.status는 streaming session 자체의 lifecycle만 표현한다.
-%% 최초 PENDING 진입은 register API가 담당하고, STREAMING 진입은 stream-ready hook이 담당한다.
+%% 최초 PENDING 진입은 register API가 담당한다.
+%% MEDIAMTX STREAMING 진입은 stream-ready hook이 담당하고, HTTP STREAMING 진입은 HTTP start API가 담당한다.
 %% App 변경 필요:
 %% App 종료 버튼은 legacy Stop API를 호출하지 않고
 %% POST /api/v1/recordings/{recordingSessionId}/close-intent 를 먼저 호출한다.
@@ -126,8 +141,15 @@ stateDiagram-v2
 %% close-intent는 RecordingSession.status를 바꾸지 않는 STREAMING self-loop이다.
 %% publisher connection 종료는 stream-not-ready hook 또는 reconcile이 CLOSED로 반영한다.
 %% MediaMTX stream-not-ready hook payload만으로 정상 close와 crash/reset을 완벽히 구분할 수는 없다.
+%% HTTP ingest는 close-intent를 사용하지 않고 finish API 또는 timeout reconcile로 CLOSED 전환한다.
+%% HTTP timeout reconcile은 RecordingSession=STREAMING 및 RecordingSegment=WRITING 상태를
+%% DB transaction에서 claim한 경우에만 WRITE_DONE/FAILED 전환과 후속 cleanup을 수행한다.
+%% finish 또는 다른 reconcile이 먼저 상태를 가져가 claim에 실패하면 no-op 처리한다.
+%% HTTP timeout에서 raw file이 정상 복구 가능하면 WRITE_DONE으로 finalize를 시도하고,
+%% file missing/empty/size mismatch이면 RecordingSegment=FAILED 및 Video=FAILED를 직접 기록한다.
 %% recording session 하나는 RecordingSegment 하나만 가진다.
-%% 최초 segment 진입은 segment-create hook의 WRITING row 생성이다.
+%% MEDIAMTX 최초 segment 진입은 segment-create hook의 WRITING row 생성이고,
+%% HTTP 최초 segment 진입은 HTTP start API의 WRITING row 생성이다.
 %% segment-create는 RecordingSession 존재만 확인하고, session status는 검증하지 않는다.
 %% segment-complete는 누락된 segment를 복구 생성하지 않고, 기존 단일 RecordingSegment만 WRITE_DONE으로 확정한 뒤 enqueue를 시도한다.
 %% segment-complete hook이 누락되면 WRITING segment는 자동으로 WRITE_DONE/FAILED로 보정하지 않는다.

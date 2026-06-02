@@ -1,172 +1,117 @@
 sequenceDiagram
   autonumber
   participant App as [App]
-  participant Server as [Backend API]
-  participant Caddy as [Caddy]
+  participant Backend as [Backend API]
   participant MTX as [MediaMTX]
+  participant Caddy as [Caddy]
   participant Queue as [Finalize Queue]
   participant Worker as [Finalize Worker]
   participant DB as [DB]
 
-  App->>Server: POST /api/v1/streams/register
-  Note over App,Server: Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>repositoryId: {repository_uuid}<br/>deviceType: {optional_device_type}
+  App->>Backend: register 요청
+  Note over App,Backend: API<br/>POST /api/v1/streams/register<br/><br/>Body<br/>repositoryId: {repository_uuid}<br/>deviceType: {optional_device_type}<br/>ingestType: MEDIAMTX 또는 HTTP
 
   alt register success
-    Server-->>App: 200 OK
-    Note over App,Server: Response<br/>recordingSessionId: {recordingSessionId}
-    Note over App,Server: 같은 user/repository/deviceType의 PENDING session이 있으면<br/>새 row를 만들지 않고 기존 recordingSessionId를 반환한다.
+    Backend-->>App: recordingSessionId
   else register error
-    Server-->>App: error
-    Note over App,Server: Possible errors<br/>400 VALIDATION_ERROR: repositoryId/deviceType validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: repository maintain 권한 없음<br/>404 NOT_FOUND: repository 없음
+    Backend-->>App: 400/401/403/404 error
   end
 
-  App->>Server: POST /api/v1/streams/{recordingSessionId}/publish-ticket
-  Note over App,Server: Headers<br/>Authorization: Bearer {appAccessToken}<br/><br/>Body<br/>none
+  App->>Backend: publish-ticket 요청
+  Note over App,Backend: API<br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket<br/><br/>Response<br/>stream_path: live/{repositoryName}/{recordingSessionId}<br/>publish_ticket: t_{uuid}
 
   alt publish-ticket success
-    Server-->>App: 200 OK
-    Note over App,Server: Response<br/>stream_path: live/{repositoryName}/{recordingSessionId}<br/>publish_ticket: t_{uuid}
-    Note over App,Server: ticket TTL은 60초다.<br/>App은 이 두 값만 사용해서<br/>RTMP 또는 WHIP publish URL을 만든다.
+    Backend-->>App: stream_path + publish_ticket
   else publish-ticket error
-    Server-->>App: error
-    Note over App,Server: Possible errors<br/>400 VALIDATION_ERROR: recordingSessionId path validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: 요청 user가 recording session 생성자가 아님<br/>404 NOT_FOUND: recording session 없음<br/>409 CONFLICT: recording session이 PENDING 상태가 아님<br/>412 PRECONDITION_FAILED: Redis PENDING cache가 만료되어 register부터 다시 시작 필요
+    Backend-->>App: 400/401/403/404/409/412 error
   end
 
-  App->>App: publish URL 구성
-  Note over App: URL rule<br/>RTMP: rtmp://{host}:1935/{stream_path}?ticket={publish_ticket}<br/>WHIP: {backendOrigin}/{stream_path}/whip?ticket={publish_ticket}
-  Note over App: publish 시작 전에 ticket이 만료되거나<br/>RTMP/WHIP start가 실패하면 기존 ticket/session을 재사용하지 않고 register부터 다시 시작한다.
+  alt ingestType = HTTP
+    App->>Backend: HTTP start 요청
+    Note over App,Backend: API<br/>POST /api/v1/http-streams/{recordingSessionId}/start<br/><br/>Body<br/>publish_ticket: t_{uuid}
+    Backend-->>App: status=STREAMING, bytes_received=0, last_sequence=null
 
-  alt RTMP publish
-    App->>MTX: RTMP connect + publish
-    Note over App,MTX: App sends encoded media to MediaMTX over RTMP TCP.
-  else WHIP publish
-    App->>Caddy: WHIP POST SDP offer
-    Note over App,Caddy: POST /live/{repositoryName}/{recordingSessionId}/whip?ticket={publish_ticket}
-    Caddy->>MTX: reverse proxy to MediaMTX WebRTC signaling
-    Note over Caddy,MTX: MediaMTX는 공통 publish auth callback이 성공한 뒤<br/>WHIP 201 Created SDP answer를 반환한다.
-  end
-
-  MTX->>Server: POST /api/v1/auth/publish
-  Note over MTX,Server: Internal publish auth callback<br/>action=publish<br/>path={stream_path}<br/>query=ticket={publish_ticket}
-  Note over MTX,Server: protocol=rtmp 또는 protocol=webrtc<br/>인증 경로와 ticket 검증 방식은 동일하다.
-  Note over MTX,Server: Server는 stream:ticket:{ticketId}를 조회해<br/>status=active, streamPath 일치를 검증하고<br/>성공 시 ticket TTL을 다시 60초로 연장한다.<br/>이 단계에서는 ticket consume이나 DB 상태 변경을 하지 않는다.
-
-  alt publish auth accepted
-    Server-->>MTX: 200 OK
-    MTX-->>App: publish accepted
-    Note over MTX,App: RTMP: publish accepted<br/>WHIP: 201 Created SDP answer + Location이 Caddy를 통해 반환
-  else publish auth rejected
-    Server-->>MTX: 401 Unauthorized
-    MTX-->>App: publish rejected
-    Note over App,Server: Possible errors observed by App<br/>publish AUTH/NETWORK 계열 start failure<br/>App은 register부터 새 session을 시작해야 함
-  end
-
-  par MediaMTX publish start hooks
-    MTX->>Server: POST /api/v1/hooks/stream-ready
-    Note over MTX,Server: Internal hook<br/>path={stream_path}<br/>ticket={publish_ticket}
-    Note over MTX,Server: ticket 재검증은 TTL refresh 없이 수행한다.<br/>valid PENDING session이면 ticket을 consumed로 바꾸고 기존 TTL을 유지한다.
-    Server->>Server: RecordingSession PENDING -> STREAMING
-    Note over Server: live cache 생성<br/>stream:recording:{recordingSessionId}<br/>status=STREAMING<br/>TTL=7200s
-  and raw segment open hook
-    MTX->>Server: POST /api/v1/hooks/recording-segment-create
-    Note over MTX,Server: Internal hook<br/>path={stream_path}<br/>segment_path={raw_segment_path}
-    Server->>Server: RecordingSegment WRITING 생성
-    Note over Server: hook 순서는 보장되지 않는다.<br/>segment-create는 session 존재 여부만 확인하고 STREAMING 상태에는 의존하지 않는다.<br/>현재 정책은 recording session 하나당 segment 하나다.<br/>이미 segment가 있으면 추가 segment_path는 저장하지 않는다.
-  end
-
-  loop while publisher connection is open
-    App->>MTX: media payload
-    MTX->>MTX: fMP4 raw segment write
-    Note over App,MTX: RTMP: RTMP media chunks over TCP<br/>WHIP: WebRTC media packets over ICE/SRTP<br/><br/>Backend는 media payload를 직접 받지 않는다.<br/>MediaMTX가 열린 raw fMP4 segment 파일에 기록한다.
-  end
-
-  alt user normal stop
-    App->>Server: POST /api/v1/recordings/{recordingSessionId}/close-intent
-    Note over App,Server: Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>reason: NORMAL_DISCONNECT
-
-    alt close-intent success
-      Server-->>App: 200 OK
-      Note over App,Server: Response<br/>ok: true
-      Note over App,Server: close-intent는 endReason=NORMAL_DISCONNECT intent만 기록한다.<br/>RecordingSession CLOSED 전이는 stream-not-ready가 담당한다.
-      App->>MTX: publisher connection close
-      Note over App,MTX: RTMP: socket close<br/>WHIP: Location DELETE 또는 PeerConnection close
-    else close-intent error
-      Server-->>App: error
-      Note over App,Server: Possible errors<br/>400 VALIDATION_ERROR: body.reason/path validation 실패<br/>401 UNAUTHORIZED 또는 INVALID_CREDENTIALS: appAccessToken 누락/만료/검증 실패<br/>403 FORBIDDEN: 요청 user가 recording session 생성자가 아님<br/>404 NOT_FOUND: recording session 없음<br/>409 CONFLICT: recording session이 STREAMING 상태가 아님
-      App->>MTX: publisher connection close or session restart
+    loop upload chunks
+      App->>Backend: HTTP chunk upload
+      Note over App,Backend: API<br/>POST /api/v1/http-streams/{recordingSessionId}/chunks<br/><br/>Headers<br/>X-Chunk-Sequence<br/>X-Chunk-Offset<br/><br/>Body<br/>binary media chunk
+      Backend-->>App: bytes_received, last_sequence
     end
-  else app crash or network failure
-    App--xMTX: publisher connection lost
-    Note over App,MTX: close-intent가 도착하지 않으면 server는 종료 사유를 UNEXPECTED_DISCONNECT로 기록한다.<br/>RTMP half-open/stalled connection은 MediaMTX read/write timeout 5s에 의존한다.<br/>WHIP/WebRTC 연결 소실은 MediaMTX WebRTC session 종료 감지에 의존한다.
+
+    alt normal finish
+      App->>Backend: HTTP finish 요청
+      Note over App,Backend: API<br/>POST /api/v1/http-streams/{recordingSessionId}/finish<br/><br/>Body<br/>total_bytes: {finalBytesReceived}
+      Backend->>Queue: recording-finalize enqueue
+      Backend-->>App: status=CLOSED, segment_status=WRITE_DONE
+    else unexpected interruption
+      Backend->>Backend: HTTP timeout reconcile
+      Note over Backend: 10초 이상 chunk가 없으면<br/>raw file 상태에 따라 WRITE_DONE 또는 FAILED로 정리한다.
+      opt recoverable raw file
+        Backend->>Queue: recording-finalize enqueue
+      end
+    end
+  else ingestType = MEDIAMTX
+    App->>App: publish URL 구성
+    Note over App: RTMP<br/>rtmp://{host}:1935/{stream_path}?ticket={publish_ticket}<br/><br/>WHIP<br/>{backendOrigin}/{stream_path}/whip?ticket={publish_ticket}
+
+    alt RTMP publish
+      App->>MTX: RTMP connect + publish
+    else WHIP publish
+      App->>Caddy: WHIP POST SDP offer
+      Caddy->>MTX: proxy to MediaMTX
+    end
+
+    MTX->>Backend: publish auth callback
+    Note over MTX,Backend: API<br/>POST /api/v1/auth/publish<br/><br/>ticket 검증 성공 시 publish 허용
+
+    par publish start hooks
+      MTX->>Backend: stream-ready hook
+      Backend->>Backend: RecordingSession PENDING -> STREAMING
+    and segment create hook
+      MTX->>Backend: recording-segment-create hook
+      Backend->>Backend: RecordingSegment WRITING 생성
+    end
+
+    loop publisher connection open
+      App->>MTX: encoded media
+      MTX->>MTX: raw fMP4 segment write
+    end
+
+    alt normal stop
+      App->>Backend: close-intent 요청
+      Note over App,Backend: API<br/>POST /api/v1/recordings/{recordingSessionId}/close-intent<br/><br/>Body<br/>reason: NORMAL_DISCONNECT
+      App->>MTX: publisher connection close
+    else app crash or network failure
+      App--xMTX: publisher connection lost
+    end
+
+    par close hooks
+      MTX->>Backend: stream-not-ready hook
+      Backend->>Backend: RecordingSession STREAMING -> CLOSED
+    and segment complete hook
+      MTX->>Backend: recording-segment-complete hook
+      Backend->>Backend: RecordingSegment WRITING -> WRITE_DONE
+    end
+
+    Backend->>Queue: recording-finalize enqueue when ready
   end
 
-  par MediaMTX close hooks
-    MTX->>Server: POST /api/v1/hooks/stream-not-ready
-    Server->>Server: RecordingSession STREAMING -> CLOSED
-    Note over Server: close-intent가 있으면 NORMAL_DISCONNECT 보존<br/>없으면 UNEXPECTED_DISCONNECT 기록<br/>live cache와 active set 정리<br/>hook이 누락되면 STREAMING reconcile이 fallback으로 CLOSED 처리할 수 있다.
-  and raw segment complete hook
-    MTX->>Server: POST /api/v1/hooks/recording-segment-complete
-    Server->>Server: RecordingSegment WRITING -> WRITE_DONE
-    Note over Server: hook 순서는 보장되지 않는다.<br/>RecordingSession은 변경하지 않는다.<br/>기존 segment가 없거나 raw_path/status가 맞지 않으면 no-op이다.<br/>session=CLOSED + segment=WRITE_DONE 조건이 맞을 때 finalize enqueue
-  end
-
-  opt RecordingSession CLOSED and RecordingSegment WRITE_DONE
-    Server->>Queue: recording-finalize job enqueue
+  opt finalize job
     Queue->>Worker: recording-finalize job
-    Worker->>DB: RecordingSegment WRITE_DONE -> PROCESSING atomic claim
-    Worker->>Worker: raw file 안정화 + technical metadata 추출 + encoding
-    Worker->>DB: Video/RecordingSegment/SemanticMetadata 결과 저장
-    Note over Worker,DB: success<br/>Video.status=COMPLETED<br/>RecordingSegment.status=COMPLETED<br/>VideoSemanticMetadata.status=PENDING<br/><br/>failure after retries<br/>Video.status=FAILED<br/>RecordingSegment.status=FAILED
-    Note over Worker,DB: failure path에서는 VideoSemanticMetadata를 생성/수정하지 않는다.<br/>semantic metadata 생성은 별도 worker 확장 지점이다.
+    Worker->>Worker: raw 안정화, ffprobe, encoding
+    Worker->>DB: processing result 저장
+    Note over Worker,DB: success: Video COMPLETED<br/>final failure: Video FAILED
   end
 
 %% 참고:
-%% 이 문서는 App과 server-side streaming system 사이의 계약을 한 장으로 요약한다.
-%% MediaMTX와 Finalize Worker는 server-side component이며, App이 직접 호출하는 HTTP API는 아니다.
-%% 공통 error body shape:
-%% { "error": { "code": "{ERROR_CODE}", "message": "{human_readable_message}", "details": {optional_details} } }
-%% HTTP status code는 AppError.statusCode 또는 validation/auth middleware에서 결정된다.
-%% App 계약:
-%% App이 직접 호출하는 streaming HTTP API는 register, publish-ticket, close-intent다.
-%% MediaMTX auth callback, MediaMTX hooks, finalize worker는 server-side 내부 흐름이며 App이 직접 호출하지 않는다.
-%% App은 publish-ticket 응답의 stream_path와 publish_ticket만 사용해 RTMP 또는 WHIP publish URL을 만든다.
-%% publish_ticket TTL은 60초이며, publish auth 성공 시 TTL이 60초로 refresh된다.
-%% stream-ready hook은 ticket을 consumed로 바꾸지만 TTL은 연장하지 않는다.
-%% RTMP URL은 backendBaseUrl hostname, port 1935, returned stream_path, returned publish_ticket으로 구성한다.
-%% WHIP URL은 backend origin, returned stream_path, /whip suffix, returned publish_ticket으로 구성한다.
-%% RTMP/WHIP auth/start 실패 또는 publish_ticket 만료가 의심되면 App은 기존 값들을 버리고 register부터 다시 시작한다.
-%% App은 열린 RTMP publisher socket 또는 WebRTC peer connection으로 encoded video/audio payload를 MediaMTX에 전송한다.
-%% Backend는 per-frame video/audio data를 받지 않고 MediaMTX hook 이벤트와 worker job만 처리한다.
-%% stream-ready hook과 recording-segment-create hook의 호출 순서는 보장되지 않는다.
-%% App은 legacy POST /api/v1/recordings/{recordingSessionId}/stop API를 호출하지 않는다.
-%% App의 stop 버튼은 publisher connection을 바로 닫기 전에
-%% POST /api/v1/recordings/{recordingSessionId}/close-intent 를 호출해야 한다.
-%% close-intent body는 { "reason": "NORMAL_DISCONNECT" } 만 보낸다.
-%% close-intent 200 OK 이후 RTMP publisher connection 또는 WHIP session을 정상 close한다.
-%% close-intent는 RecordingSession.status를 바꾸지 않는 STREAMING self-loop이다.
-%% close-intent가 실패했는데 App이 socket을 닫으면 해당 종료는 UNEXPECTED_DISCONNECT로 기록될 수 있다.
-%% close-intent가 먼저 도착한 경우 stream-not-ready는 NORMAL_DISCONNECT를 보존한다.
-%% close-intent 호출 실패 또는 app crash/network failure로 close-intent가 누락되면
-%% Backend는 stream-not-ready/reconcile 시 UNEXPECTED_DISCONNECT로 기록한다.
-%% half-open/stalled RTMP connection은 MediaMTX readTimeout/writeTimeout 5s 이후 종료로 감지될 수 있다.
-%% WHIP/WebRTC connection loss는 MediaMTX WebRTC session 종료 감지와 ICE/network 상태에 의존한다.
-%% MediaMTX stream-not-ready hook payload만으로 정상 close와 crash/reset/timeout을 정확히 구분하지 않는다.
+%% App이 직접 호출하는 streaming API는 MEDIAMTX ingest의 경우 register, publish-ticket, close-intent다.
+%% HTTP ingest의 경우 register, publish-ticket, http-streams/start, http-streams/chunks, http-streams/finish다.
+%% RTMP/WHIP publish auth, MediaMTX hooks, finalize worker는 server-side 내부 흐름이다.
 %% App은 streaming 재시작 시 기존 recordingSessionId나 publish_ticket을 직접 재사용하지 않고 register부터 다시 호출한다.
-%% register 이후 publish 전에 이탈했다면 같은 PENDING session이 재사용될 수 있다.
-%% PENDING session이 재사용되더라도 이전 publish_ticket은 버리고 새 publish-ticket을 발급받아 사용한다.
-%% publish 이후 STREAMING이 된 session은 재사용하지 않으며, 새 register는 새 PENDING session을 만든다.
-%% App은 단일 streaming session의 최장 길이를 30분으로 제한한다. 이 제한은 backend가 강제하지 않는 app contract다.
-%% 현재 구조에서는 App이 단일 recording session을 짧게 유지하는 전제이므로 정상 흐름의 segment rollover는 App 계약에서 다루지 않는다.
-%% Backend도 recording session 하나당 RecordingSegment 하나만 저장한다.
-%% finalize enqueue는 RecordingSession.status=CLOSED이고 RecordingSegment.status=WRITE_DONE일 때만 발생한다.
-%% Video.status=COMPLETED는 playable artifact 생성 완료를 의미한다.
-%% semantic metadata는 별도 video_semantic_metadata row에서 PENDING으로 시작하며 App streaming flow의 완료 조건이 아니다.
+%% HTTP ingest는 live playback을 제공하지 않지만 dashboard Live tab 목록에는 표시된다.
 %% 상세 register 흐름은 .mermaid/1.register.mmd를 참고한다.
 %% 상세 publish-ticket 흐름은 .mermaid/2.publish-ticket.mmd를 참고한다.
-%% 상세 RTMP publish 인증 및 stream-ready 흐름은 .mermaid/3.rtmp-publish.mmd를 참고한다.
-%% 상세 RTMP media 전송, hook race, finalize retry 흐름은 .mermaid/4.rtmp-stream.mmd를 참고한다.
-%% 상세 WHIP publish 인증 및 stream-ready 흐름은 .mermaid/3.whip-publish.mmd를 참고한다.
-%% 상세 WHIP media 전송, hook race, finalize retry 흐름은 .mermaid/4.whip-stream.mmd를 참고한다.
+%% 상세 HTTP start 흐름은 .mermaid/3.http-start.mmd를 참고한다.
+%% 상세 HTTP chunk/finish/timeout 흐름은 .mermaid/4.http-stream.mmd를 참고한다.
+%% 상세 RTMP 흐름은 .mermaid/3.rtmp-publish.mmd와 .mermaid/4.rtmp-stream.mmd를 참고한다.
+%% 상세 WHIP 흐름은 .mermaid/3.whip-publish.mmd와 .mermaid/4.whip-stream.mmd를 참고한다.
 %% 상세 HLS playback 흐름은 .mermaid/hls-playback.mmd를 참고한다.
-%% 상세 video processing 및 semantic metadata 확장 지점은 .mermaid/5.video-processing.mmd를 참고한다.
-%% RTMP connection closure 정책은 .mermaid/rtmp-connection-closure.mmd를 참고한다.
