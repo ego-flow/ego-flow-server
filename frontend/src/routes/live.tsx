@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
-import { Activity, RadioTower, RefreshCcw } from "lucide-react";
+import { Activity, RadioTower, RefreshCcw, UploadCloud } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 
 import { getApiErrorMessage } from "#/api/client";
@@ -14,6 +14,17 @@ const HlsPlayer = lazy(() => import("#/components/HlsPlayer"));
 export const Route = createFileRoute("/live")({
 	component: LivePage,
 });
+
+const formatBytes = (value: number | null) => {
+	if (value === null) {
+		return "Unknown";
+	}
+
+	return new Intl.NumberFormat(undefined, {
+		notation: value >= 1_000_000_000 ? "compact" : "standard",
+		maximumFractionDigits: 1,
+	}).format(value);
+};
 
 function LivePage() {
 	const { isReady, isAuthenticated, session } = useAuth();
@@ -128,7 +139,7 @@ function LivePage() {
 											{stream.repositoryName}
 										</h3>
 										<span className="rounded-full bg-emerald-500/12 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-											LIVE
+											{stream.ingestType === "HTTP" ? "HTTP" : "LIVE"}
 										</span>
 									</div>
 									<dl className="mt-3 grid gap-2 text-sm text-[var(--sea-ink-soft)]">
@@ -146,6 +157,16 @@ function LivePage() {
 												<dd>{stream.deviceType || "Unknown"}</dd>
 											</div>
 										) : null}
+										<div>
+											<dt className="font-semibold text-[var(--sea-ink)]">
+												Ingest
+											</dt>
+											<dd>
+												{stream.ingestType === "HTTP"
+													? `HTTP upload · ${formatBytes(stream.bytesReceived)} bytes`
+													: "MediaMTX"}
+											</dd>
+										</div>
 										<div>
 											<dt className="font-semibold text-[var(--sea-ink)]">
 												Session
@@ -193,25 +214,70 @@ function LivePage() {
 					</div>
 
 					{selectedStream ? (
-						<>
-							<Suspense
-								fallback={
-									<div className="grid aspect-video place-items-center rounded-2xl border border-[var(--line)] bg-black text-sm text-white/70">
-										Loading live player...
+						selectedStream.playbackAvailable && selectedStream.hlsPath ? (
+							<>
+								<Suspense
+									fallback={
+										<div className="grid aspect-video place-items-center rounded-2xl border border-[var(--line)] bg-black text-sm text-white/70">
+											Loading live player...
+										</div>
+									}
+								>
+									<HlsPlayer src={selectedStream.hlsPath} />
+								</Suspense>
+								<dl className="mt-5 grid gap-3 text-sm text-[var(--sea-ink-soft)]">
+									<div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
+										<dt className="font-semibold text-[var(--sea-ink)]">
+											HLS path
+										</dt>
+										<dd className="mt-1 break-all">{selectedStream.hlsPath}</dd>
 									</div>
-								}
-							>
-								<HlsPlayer src={selectedStream.hlsPath} />
-							</Suspense>
-							<dl className="mt-5 grid gap-3 text-sm text-[var(--sea-ink-soft)]">
-								<div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
-									<dt className="font-semibold text-[var(--sea-ink)]">
-										HLS path
-									</dt>
-									<dd className="mt-1 break-all">{selectedStream.hlsPath}</dd>
+								</dl>
+							</>
+						) : (
+							<div className="grid min-h-80 place-items-center rounded-2xl border border-dashed border-[var(--line)] px-6 text-center">
+								<div>
+									<UploadCloud
+										size={28}
+										aria-hidden="true"
+										className="mx-auto text-[var(--lagoon-deep)]"
+									/>
+									<h3 className="mt-3 text-base font-semibold text-[var(--sea-ink)]">
+										HTTP upload in progress
+									</h3>
+									<dl className="mt-4 grid gap-2 text-sm text-[var(--sea-ink-soft)]">
+										<div>
+											<dt className="font-semibold text-[var(--sea-ink)]">
+												Received
+											</dt>
+											<dd>{formatBytes(selectedStream.bytesReceived)} bytes</dd>
+										</div>
+										<div>
+											<dt className="font-semibold text-[var(--sea-ink)]">
+												Last sequence
+											</dt>
+											<dd>
+												{selectedStream.lastSequence === null
+													? "None"
+													: selectedStream.lastSequence}
+											</dd>
+										</div>
+										<div>
+											<dt className="font-semibold text-[var(--sea-ink)]">
+												Last chunk
+											</dt>
+											<dd>
+												{selectedStream.lastChunkAt
+													? new Date(
+															selectedStream.lastChunkAt,
+														).toLocaleTimeString()
+													: "None"}
+											</dd>
+										</div>
+									</dl>
 								</div>
-							</dl>
-						</>
+							</div>
+						)
 					) : (
 						<div className="grid min-h-80 place-items-center rounded-2xl border border-dashed border-[var(--line)] px-6 text-center">
 							<div>

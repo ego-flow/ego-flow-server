@@ -7,8 +7,13 @@ export interface LiveStreamSummary {
 	repositoryName: string;
 	userId: string;
 	deviceType: string | null;
+	ingestType: "MEDIAMTX" | "HTTP";
 	status: "live";
-	hlsPath: string;
+	playbackAvailable: boolean;
+	hlsPath: string | null;
+	bytesReceived: number | null;
+	lastSequence: number | null;
+	lastChunkAt: string | null;
 }
 
 export async function requestLiveStreams() {
@@ -19,8 +24,13 @@ export async function requestLiveStreams() {
 			repository_name: string;
 			user_id: string;
 			device_type: string | null;
+			ingest_type: "MEDIAMTX" | "HTTP";
 			status: "live";
-			hls_path: string;
+			playback_available: boolean;
+			hls_path: string | null;
+			bytes_received: number | null;
+			last_sequence: number | null;
+			last_chunk_at: string | null;
 		}>;
 	}>(ApiEndpoint.LiveStreams);
 
@@ -31,8 +41,13 @@ export async function requestLiveStreams() {
 			repositoryName: stream.repository_name,
 			userId: stream.user_id,
 			deviceType: stream.device_type,
+			ingestType: stream.ingest_type,
 			status: stream.status,
+			playbackAvailable: stream.playback_available,
 			hlsPath: stream.hls_path,
+			bytesReceived: stream.bytes_received,
+			lastSequence: stream.last_sequence,
+			lastChunkAt: stream.last_chunk_at,
 		};
 	}) satisfies LiveStreamSummary[];
 }
