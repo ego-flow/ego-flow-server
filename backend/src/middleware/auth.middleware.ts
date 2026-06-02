@@ -129,6 +129,29 @@ export const requireCredential =
 
 export const requireDashboardSession = requireCredential(AuthCredentialKind.Dashboard);
 export const requireAppJwt = requireCredential(AuthCredentialKind.App);
+export const requireAppJwtPayloadOnly = async (req: Request, _res: Response, next: NextFunction) => {
+  const token = extractBearerToken(req.headers.authorization);
+  if (!token || token.startsWith(PYTHON_TOKEN_PREFIX)) {
+    return next(Unauthorized());
+  }
+
+  try {
+    const payload = verifyAccessToken(token);
+    setAuthContext(req, {
+      kind: AuthCredentialKind.App,
+      rawCredential: token,
+      userId: payload.userId,
+      role: payload.role,
+      displayName: payload.userId,
+    });
+    return next();
+  } catch (error) {
+    if (error instanceof jwt.JsonWebTokenError) {
+      return next(Unauthorized("App access token is invalid or expired."));
+    }
+    return next(error);
+  }
+};
 export const requirePythonToken = requireCredential(AuthCredentialKind.Python);
 export const requireDashboardOrApp = requireCredential(AuthCredentialKind.Dashboard, AuthCredentialKind.App);
 export const requireDashboardOrPython = requireCredential(AuthCredentialKind.Dashboard, AuthCredentialKind.Python);

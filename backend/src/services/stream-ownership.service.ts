@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 
 import { PUBLISH_TICKET_TTL_SECONDS } from "../constants/stream/stream-ownership-constants";
 import { redis } from "../lib/redis";
-import type { PublishTicketRecord } from "../types/stream";
+import type { PublishTicketRecord, RecordingSessionIngestTypeValue } from "../types/stream";
 import { streamTicketKey } from "../utils/stream-keys";
 
 type PublishTicketValidationResult =
@@ -31,6 +31,7 @@ type PublishTicketConsumeResult =
 
 type PublishTicketValidationOptions = {
   refreshTtl?: boolean;
+  expectedIngestType?: RecordingSessionIngestTypeValue;
 };
 
 export class StreamOwnershipService {
@@ -42,6 +43,7 @@ export class StreamOwnershipService {
     recordingSessionId: string;
     repositoryId: string;
     userId: string;
+    ingestType: RecordingSessionIngestTypeValue;
     streamPath: string;
   }): Promise<{ ticket: PublishTicketRecord; ticketId: string }> {
     const ticketId = `t_${uuidv4()}`;
@@ -49,6 +51,7 @@ export class StreamOwnershipService {
       recordingSessionId: params.recordingSessionId,
       repositoryId: params.repositoryId,
       userId: params.userId,
+      ingestType: params.ingestType,
       streamPath: params.streamPath,
       status: "active",
     };
@@ -109,6 +112,14 @@ export class StreamOwnershipService {
       };
     }
 
+    if (options.expectedIngestType && ticket.ingestType !== options.expectedIngestType) {
+      return {
+        ok: false,
+        reason: "ticket-ingest-type-mismatch",
+        ticketId: normalizedTicketId,
+      };
+    }
+
     if (options.refreshTtl ?? true) {
       const refreshed = await redis.expire(ticketKey, PUBLISH_TICKET_TTL_SECONDS);
       if (!refreshed) {
@@ -127,8 +138,19 @@ export class StreamOwnershipService {
     };
   }
 
-  async consumePublishTicket(streamPath: string, ticketId?: string | null): Promise<PublishTicketConsumeResult> {
-    const validation = await this.validatePublishTicket(streamPath, ticketId, { refreshTtl: false });
+  async consumePublishTicket(
+    streamPath: string,
+    ticketId?: string | null,
+    options: Pick<PublishTicketValidationOptions, "expectedIngestType"> = {},
+  ): Promise<PublishTicketConsumeResult> {
+    const validationOptions: PublishTicketValidationOptions = {
+      refreshTtl: false,
+    };
+    if (options.expectedIngestType) {
+      validationOptions.expectedIngestType = options.expectedIngestType;
+    }
+
+    const validation = await this.validatePublishTicket(streamPath, ticketId, validationOptions);
     if (!validation.ok) {
       return validation;
     }

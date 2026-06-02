@@ -21,6 +21,7 @@ const publishParams = {
   recordingSessionId: "session-1",
   repositoryId: "repo-1",
   userId: "user-1",
+  ingestType: "MEDIAMTX" as const,
   streamPath: "live/repo-name/session-1",
 };
 
@@ -37,6 +38,7 @@ test("issuePublishTicket stores only short-lived ticket metadata", async () => {
   assert.equal(stored?.recordingSessionId, publishParams.recordingSessionId);
   assert.equal(stored?.repositoryId, publishParams.repositoryId);
   assert.equal(stored?.userId, publishParams.userId);
+  assert.equal(stored?.ingestType, publishParams.ingestType);
   assert.equal(stored?.streamPath, publishParams.streamPath);
   assert.equal(stored?.status, "active");
   assert.equal(Object.hasOwn(stored ?? {}, "ticketId"), false);
@@ -59,6 +61,15 @@ test("validate and consume publish ticket only depend on ticket state and stream
   assert.deepEqual(pathMismatch, {
     ok: false,
     reason: "ticket-stream-path-mismatch",
+    ticketId: grant.ticketId,
+  });
+
+  const ingestTypeMismatch = await service.validatePublishTicket(publishParams.streamPath, grant.ticketId, {
+    expectedIngestType: "HTTP",
+  });
+  assert.deepEqual(ingestTypeMismatch, {
+    ok: false,
+    reason: "ticket-ingest-type-mismatch",
     ticketId: grant.ticketId,
   });
 

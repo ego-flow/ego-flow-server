@@ -1,9 +1,16 @@
+export type RecordingSessionIngestTypeValue = "MEDIAMTX" | "HTTP";
+
 export interface RecordingSessionLiveCache {
   repositoryId: string;
   repositoryName: string;
   userId: string;
+  ingestType: RecordingSessionIngestTypeValue;
   deviceType?: string;
   status: "PENDING" | "STREAMING";
+  rawPath?: string;
+  bytesReceived?: number;
+  lastSequence?: number | null;
+  lastChunkAt?: number;
 }
 
 export interface RecordingFinalizeJobData {
@@ -19,6 +26,7 @@ export interface PublishTicketRecord {
   recordingSessionId: string;
   repositoryId: string;
   userId: string;
+  ingestType: RecordingSessionIngestTypeValue;
   streamPath: string;
   status: "active" | "consumed";
 }

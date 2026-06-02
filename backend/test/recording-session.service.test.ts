@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
-import { RecordingSessionEndReason, RecordingSegmentStatus, RecordingSessionStatus } from "@prisma/client";
+import {
+  RecordingSessionEndReason,
+  RecordingSessionIngestType,
+  RecordingSegmentStatus,
+  RecordingSessionStatus,
+} from "@prisma/client";
 import { beforeEach, test } from "node:test";
 
 import type { PublishTicketRecord, RecordingSessionLiveCache } from "../src/types/stream";
@@ -85,6 +90,7 @@ const ticket: PublishTicketRecord = {
   recordingSessionId: "session-1",
   repositoryId: "repo-1",
   userId: "user-1",
+  ingestType: "MEDIAMTX",
   streamPath: "live/repo-name/session-1",
   status: "active",
 };
@@ -124,6 +130,7 @@ test("handleStreamReady ignores STREAMING sessions instead of reconnecting them"
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.STREAMING,
     targetDirectory: "/data/raw",
@@ -173,6 +180,7 @@ test("handleStreamReady leaves DB and Redis untouched when ticket consume is rej
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data/raw",
@@ -215,6 +223,7 @@ test("handleStreamReady accepts an explicit ticket field when hook query is empt
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data/raw",
@@ -265,6 +274,7 @@ test("handleStreamReady accepts an explicit ticket field when hook query is empt
     repositoryId: "repo-1",
     repositoryName: "repo-name",
     userId: "user-1",
+    ingestType: "MEDIAMTX",
     status: "STREAMING",
   });
   assert.equal(fakeRedis.getTtlSeconds("stream:recording:session-1"), 2 * 60 * 60);
@@ -277,6 +287,7 @@ test("handleStreamNotReady closes the streaming session and attempts finalize en
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.STREAMING,
     targetDirectory: "/data/raw",
@@ -306,6 +317,7 @@ test("handleStreamNotReady closes the streaming session and attempts finalize en
     repositoryId: "repo-1",
     repositoryName: "repo-name",
     userId: "user-1",
+    ingestType: "MEDIAMTX",
     status: "STREAMING",
   } satisfies RecordingSessionLiveCache);
 
@@ -329,6 +341,7 @@ test("recordCloseIntent stores NORMAL_DISCONNECT and stream-not-ready preserves 
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.STREAMING,
     targetDirectory: "/data/raw",
@@ -378,6 +391,7 @@ test("recordCloseIntent rejects non-owner requests", async () => {
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.STREAMING,
     targetDirectory: "/data/raw",
@@ -626,6 +640,7 @@ test("reconcile closes a broken streaming session when active path is missing", 
     ownerId: "owner-1",
     userId: "user-1",
     deviceType: null,
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.STREAMING,
     targetDirectory: "/data/raw",
@@ -652,6 +667,7 @@ test("reconcile closes a broken streaming session when active path is missing", 
     repositoryId: "repo-1",
     repositoryName: "repo-name",
     userId: "user-1",
+    ingestType: "MEDIAMTX",
     status: "STREAMING",
   } satisfies RecordingSessionLiveCache);
 
@@ -681,6 +697,7 @@ test("reconcile closes a streaming session that already has a closed marker", as
   const session = {
     id: "session-empty",
     repositoryId: "repo-1",
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/repo-name/session-empty",
     status: RecordingSessionStatus.STREAMING,
     endReason: RecordingSessionEndReason.NORMAL_DISCONNECT,

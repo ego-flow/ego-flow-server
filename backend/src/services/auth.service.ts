@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { UserRole } from "@prisma/client";
+import { RecordingSessionIngestType, UserRole } from "@prisma/client";
 
 import { ErrorCode, Unauthorized } from "../lib/errors";
 import { signAccessToken } from "../lib/jwt";
@@ -146,7 +146,9 @@ export class AuthService {
         return false;
       }
 
-      const validation = await streamOwnershipService.validatePublishTicket(input.path, publishTicketId);
+      const validation = await streamOwnershipService.validatePublishTicket(input.path, publishTicketId, {
+        expectedIngestType: RecordingSessionIngestType.MEDIAMTX,
+      });
       if (!validation.ok) {
         this.logPublishAuthDecision("denied", input, {
           reason: validation.reason,

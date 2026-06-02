@@ -75,6 +75,11 @@ enum RecordingSessionStatus {
   CLOSED
 }
 
+enum RecordingSessionIngestType {
+  MEDIAMTX
+  HTTP
+}
+
 enum RecordingSessionEndReason {
   NORMAL_DISCONNECT
   UNEXPECTED_DISCONNECT
@@ -126,6 +131,7 @@ model RecordingSession {
   ownerId         String                    @map("owner_id") @db.VarChar(64)
   userId          String                    @map("user_id") @db.VarChar(64)
   deviceType      String?                   @map("device_type") @db.VarChar(100)
+  ingestType      RecordingSessionIngestType @map("ingest_type")
   streamPath      String                    @map("stream_path") @db.VarChar(255)
   status          RecordingSessionStatus
   endReason       RecordingSessionEndReason? @map("end_reason")

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { RecordingSessionEndReason, RecordingSessionStatus } from "@prisma/client";
+import { RecordingSessionEndReason, RecordingSessionIngestType, RecordingSessionStatus } from "@prisma/client";
 
 import {
   RECORDING_REGISTRATION_TTL_SECONDS,
@@ -19,6 +19,7 @@ import { streamRecordingKey } from "../utils/stream-keys";
 import { repositoryService } from "./repository.service";
 import { recordingSessionService } from "./recording-session.service";
 import { streamOwnershipService } from "./stream-ownership.service";
+import { httpStreamService } from "./http-stream.service";
 
 /**
  * 스트리밍 세션의 등록, 활성 조회, RTMP 인증 보조, reconcile 루프를 관리하는 서비스.
@@ -66,6 +67,7 @@ export class StreamService {
       access.repository.id,
       userId,
       input.deviceType ?? null,
+      input.ingestType,
     );
 
     if (existingSession) {
@@ -76,6 +78,7 @@ export class StreamService {
         ownerId: access.repository.ownerId,
         userId,
         deviceType: existingSession.deviceType,
+        ingestType: existingSession.ingestType,
         streamPath: existingSession.streamPath,
         status: existingSession.status,
       });
@@ -93,6 +96,7 @@ export class StreamService {
       ownerId: access.repository.ownerId,
       userId,
       ...(input.deviceType ? { deviceType: input.deviceType } : {}),
+      ingestType: input.ingestType,
       streamPath,
       targetDirectory: getTargetDirectory(),
     });
@@ -104,6 +108,7 @@ export class StreamService {
       ownerId: access.repository.ownerId,
       userId,
       deviceType: input.deviceType ?? null,
+      ingestType: input.ingestType,
       streamPath,
       status: session.status,
     });
@@ -184,12 +189,14 @@ export class StreamService {
     repositoryId: string,
     userId: string,
     deviceType: string | null,
+    ingestType: RecordingSessionIngestType,
   ) {
     const pendingSessions = await prisma.recordingSession.findMany({
       where: {
         repositoryId,
         userId,
         deviceType,
+        ingestType,
         status: RecordingSessionStatus.PENDING,
       },
       orderBy: { createdAt: "desc" },
@@ -245,6 +252,7 @@ export class StreamService {
       recordingSessionId: session.id,
       repositoryId: session.repositoryId,
       userId: session.userId,
+      ingestType: session.ingestType,
       streamPath: session.streamPath,
     });
 
@@ -306,14 +314,20 @@ export class StreamService {
     );
 
     const streams = visibleCaches.map(({ recordingSessionId, cache }) => {
+      const playbackAvailable = cache.ingestType === RecordingSessionIngestType.MEDIAMTX;
       return {
         stream_id: recordingSessionId,
         repository_id: cache.repositoryId,
         repository_name: cache.repositoryName,
         user_id: cache.userId,
         device_type: cache.deviceType ?? null,
+        ingest_type: cache.ingestType,
         status: "live" as const,
-        hls_path: this.buildHlsPath(cache.repositoryName, recordingSessionId),
+        playback_available: playbackAvailable,
+        hls_path: playbackAvailable ? this.buildHlsPath(cache.repositoryName, recordingSessionId) : null,
+        bytes_received: cache.bytesReceived ?? null,
+        last_sequence: cache.lastSequence ?? null,
+        last_chunk_at: cache.lastChunkAt ? new Date(cache.lastChunkAt).toISOString() : null,
       };
     });
 
@@ -347,8 +361,13 @@ export class StreamService {
     }
 
     const repoName = recordingSessionService.extractRepositoryName(session.streamPath);
-    const activeStreamPaths = await this.getActiveStreamPaths();
-    const playbackReady = activeStreamPaths ? activeStreamPaths.has(this.normalizeStreamPath(session.streamPath)) : true;
+    const playbackAvailable = session.ingestType === RecordingSessionIngestType.MEDIAMTX;
+    const activeStreamPaths = playbackAvailable ? await this.getActiveStreamPaths() : null;
+    const playbackReady = playbackAvailable
+      ? activeStreamPaths
+        ? activeStreamPaths.has(this.normalizeStreamPath(session.streamPath))
+        : true
+      : false;
 
     return {
       stream_id: session.id,
@@ -357,9 +376,12 @@ export class StreamService {
       owner_id: session.ownerId,
       user_id: session.userId,
       device_type: session.deviceType ?? null,
+      ingest_type: session.ingestType,
       stream_path: session.streamPath,
       registered_at: session.createdAt.toISOString(),
       status: "live" as const,
+      playback_available: playbackAvailable,
+      hls_path: playbackAvailable ? this.buildHlsPath(repoName, session.id) : null,
       playback_ready: playbackReady,
     };
   }
@@ -386,8 +408,8 @@ export class StreamService {
   /**
    * [상태 정합성 루프 시작]
    * 서버 기동 시 5초 간격으로 reconcileSessions를 실행하는 타이머를 시작한다.
-   * PENDING 타임아웃, STREAMING인데 MediaMTX에 path가 없는 경우 등
-   * hook 누락이나 비정상 종료로 인한 상태 불일치를 주기적으로 보정한다.
+   * MediaMTX STREAMING path 누락과 HTTP upload timeout 등
+   * hook/API 누락이나 비정상 종료로 인한 상태 불일치를 주기적으로 보정한다.
    */
   startReconcileLoop() {
     if (this.reconcileTimer) {
@@ -398,6 +420,12 @@ export class StreamService {
       void recordingSessionService.reconcileSessions().catch((error) => {
         const message = error instanceof Error ? error.message : "unknown error";
         console.warn("[rtmp-reconcile] loop-failed", {
+          reason: message,
+        });
+      });
+      void httpStreamService.reconcileHttpUploads().catch((error) => {
+        const message = error instanceof Error ? error.message : "unknown error";
+        console.warn("[http-stream] reconcile-loop-failed", {
           reason: message,
         });
       });

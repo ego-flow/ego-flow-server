@@ -259,10 +259,11 @@ export const openApiDocument = {
       },
       StreamRegisterRequest: {
         type: "object",
-        required: ["repositoryId"],
+        required: ["repositoryId", "ingestType"],
         properties: {
           repositoryId: { type: "string", format: "uuid" },
           deviceType: { type: "string", maxLength: 100, example: "meta-rayban" },
+          ingestType: { type: "string", enum: ["MEDIAMTX", "HTTP"], example: "MEDIAMTX" },
         },
       },
       StreamRegisterResponse: {
@@ -281,6 +282,49 @@ export const openApiDocument = {
         properties: {
           stream_path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
           publish_ticket: { type: "string", example: "t_0d87967b-903e-4f69-af58-24fdd6dd2a82" },
+        },
+      },
+      HttpStreamStartRequest: {
+        type: "object",
+        required: ["publish_ticket"],
+        properties: {
+          publish_ticket: { type: "string", example: "t_0d87967b-903e-4f69-af58-24fdd6dd2a82" },
+        },
+      },
+      HttpStreamStartResponse: {
+        type: "object",
+        required: ["recording_session_id", "status", "bytes_received", "last_sequence"],
+        properties: {
+          recording_session_id: { type: "string", format: "uuid" },
+          status: { type: "string", enum: ["STREAMING"] },
+          bytes_received: { type: "integer", minimum: 0 },
+          last_sequence: { type: ["integer", "null"], minimum: 0 },
+        },
+      },
+      HttpStreamChunkResponse: {
+        type: "object",
+        required: ["recording_session_id", "bytes_received", "last_sequence"],
+        properties: {
+          recording_session_id: { type: "string", format: "uuid" },
+          bytes_received: { type: "integer", minimum: 0 },
+          last_sequence: { type: "integer", minimum: 0 },
+        },
+      },
+      HttpStreamFinishRequest: {
+        type: "object",
+        required: ["total_bytes"],
+        properties: {
+          total_bytes: { type: "integer", minimum: 0 },
+        },
+      },
+      HttpStreamFinishResponse: {
+        type: "object",
+        required: ["recording_session_id", "status", "segment_status", "bytes_received"],
+        properties: {
+          recording_session_id: { type: "string", format: "uuid" },
+          status: { type: "string", enum: ["CLOSED"] },
+          segment_status: { type: "string", enum: ["WRITE_DONE"] },
+          bytes_received: { type: "integer", minimum: 0 },
         },
       },
       RecordingCloseIntentRequest: {
@@ -305,8 +349,13 @@ export const openApiDocument = {
           "repository_name",
           "user_id",
           "device_type",
+          "ingest_type",
           "status",
+          "playback_available",
           "hls_path",
+          "bytes_received",
+          "last_sequence",
+          "last_chunk_at",
         ],
         properties: {
           stream_id: { type: "string", format: "uuid" },
@@ -314,8 +363,13 @@ export const openApiDocument = {
           repository_name: { type: "string" },
           user_id: { type: "string" },
           device_type: { type: ["string", "null"] },
+          ingest_type: { type: "string", enum: ["MEDIAMTX", "HTTP"] },
           status: { type: "string", enum: ["live"] },
-          hls_path: { type: "string", example: "/hls/live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620/index.m3u8" },
+          playback_available: { type: "boolean" },
+          hls_path: { type: ["string", "null"], example: "/hls/live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620/index.m3u8" },
+          bytes_received: { type: ["integer", "null"], minimum: 0 },
+          last_sequence: { type: ["integer", "null"], minimum: 0 },
+          last_chunk_at: { type: ["string", "null"], format: "date-time" },
         },
       },
       LiveStreamListResponse: {
@@ -337,9 +391,12 @@ export const openApiDocument = {
           "owner_id",
           "user_id",
           "device_type",
+          "ingest_type",
           "stream_path",
           "registered_at",
           "status",
+          "playback_available",
+          "hls_path",
           "playback_ready",
         ],
         properties: {
@@ -349,9 +406,12 @@ export const openApiDocument = {
           owner_id: { type: "string" },
           user_id: { type: "string" },
           device_type: { type: ["string", "null"] },
+          ingest_type: { type: "string", enum: ["MEDIAMTX", "HTTP"] },
           stream_path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
           registered_at: { type: "string", format: "date-time" },
           status: { type: "string", enum: ["live"] },
+          playback_available: { type: "boolean" },
+          hls_path: { type: ["string", "null"] },
           playback_ready: { type: "boolean" },
         },
       },
@@ -1490,6 +1550,132 @@ export const openApiDocument = {
               },
             },
           },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+          "409": { $ref: "#/components/responses/Conflict" },
+          "412": { $ref: "#/components/responses/PreconditionFailed" },
+        },
+      },
+    },
+    "/http-streams/{recordingSessionId}/start": {
+      post: {
+        tags: ["HTTP Streams"],
+        summary: "Start an HTTP upload ingest session with a publish ticket",
+        parameters: [
+          {
+            name: "recordingSessionId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/HttpStreamStartRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "HTTP stream started",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/HttpStreamStartResponse" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+          "409": { $ref: "#/components/responses/Conflict" },
+          "412": { $ref: "#/components/responses/PreconditionFailed" },
+        },
+      },
+    },
+    "/http-streams/{recordingSessionId}/chunks": {
+      post: {
+        tags: ["HTTP Streams"],
+        summary: "Append one binary HTTP upload chunk",
+        parameters: [
+          {
+            name: "recordingSessionId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+          {
+            name: "X-Chunk-Sequence",
+            in: "header",
+            required: true,
+            schema: { type: "integer", minimum: 0 },
+          },
+          {
+            name: "X-Chunk-Offset",
+            in: "header",
+            required: true,
+            schema: { type: "integer", minimum: 0 },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/octet-stream": {
+              schema: { type: "string", format: "binary" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Chunk appended",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/HttpStreamChunkResponse" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+          "409": { $ref: "#/components/responses/Conflict" },
+          "412": { $ref: "#/components/responses/PreconditionFailed" },
+        },
+      },
+    },
+    "/http-streams/{recordingSessionId}/finish": {
+      post: {
+        tags: ["HTTP Streams"],
+        summary: "Finish an HTTP upload ingest session",
+        parameters: [
+          {
+            name: "recordingSessionId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/HttpStreamFinishRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "HTTP stream finished",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/HttpStreamFinishResponse" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/Forbidden" },
           "404": { $ref: "#/components/responses/NotFound" },

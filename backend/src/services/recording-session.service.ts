@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { RecordingSessionStatus, RecordingSessionEndReason, RecordingSegmentStatus } from "@prisma/client";
+import {
+  RecordingSessionStatus,
+  RecordingSessionEndReason,
+  RecordingSessionIngestType,
+  RecordingSegmentStatus,
+} from "@prisma/client";
 
 import {
   RECORDING_ACTIVE_TTL_SECONDS,
@@ -51,6 +56,7 @@ export class RecordingSessionService {
     ownerId: string;
     userId: string;
     deviceType?: string;
+    ingestType: RecordingSessionIngestType;
     streamPath: string;
     targetDirectory: string;
   }) {
@@ -61,6 +67,7 @@ export class RecordingSessionService {
         ownerId: params.ownerId,
         userId: params.userId,
         deviceType: params.deviceType ?? null,
+        ingestType: params.ingestType,
         streamPath: params.streamPath,
         status: RecordingSessionStatus.PENDING,
         targetDirectory: params.targetDirectory,
@@ -76,6 +83,7 @@ export class RecordingSessionService {
       ownerId: session.ownerId,
       userId: session.userId,
       deviceType: session.deviceType,
+      ingestType: session.ingestType,
       streamPath: session.streamPath,
       registrationTtlSec: RECORDING_REGISTRATION_TTL_SECONDS,
     });
@@ -89,6 +97,7 @@ export class RecordingSessionService {
       repositoryId: string;
       userId: string;
       deviceType: string | null;
+      ingestType: RecordingSessionIngestType;
       streamPath: string;
     },
     ttlSeconds: number,
@@ -97,6 +106,7 @@ export class RecordingSessionService {
       repositoryId: session.repositoryId,
       repositoryName: this.extractRepositoryName(session.streamPath),
       userId: session.userId,
+      ingestType: session.ingestType,
       status: "PENDING",
     };
     if (session.deviceType) {
@@ -131,7 +141,7 @@ export class RecordingSessionService {
     const ticketValidation = await streamOwnershipService.validatePublishTicket(
       input.path,
       input.ticket,
-      { refreshTtl: false },
+      { refreshTtl: false, expectedIngestType: RecordingSessionIngestType.MEDIAMTX },
     );
     if (!ticketValidation.ok) {
       console.warn("[rtmp-ticket] stream-ready-validation-rejected", {
@@ -158,6 +168,7 @@ export class RecordingSessionService {
     if (
       session.repositoryId !== ticketValidation.ticket.repositoryId ||
       session.userId !== ticketValidation.ticket.userId ||
+      session.ingestType !== ticketValidation.ticket.ingestType ||
       session.streamPath !== ticketValidation.ticket.streamPath
     ) {
       console.warn("[rtmp-ticket] stream-ready-session-metadata-mismatch", {
@@ -166,6 +177,8 @@ export class RecordingSessionService {
         ticketRepositoryId: ticketValidation.ticket.repositoryId,
         sessionUserId: session.userId,
         ticketUserId: ticketValidation.ticket.userId,
+        sessionIngestType: session.ingestType,
+        ticketIngestType: ticketValidation.ticket.ingestType,
         sessionStreamPath: session.streamPath,
         ticketStreamPath: ticketValidation.ticket.streamPath,
         ticketId: ticketValidation.ticketId,
@@ -173,7 +186,9 @@ export class RecordingSessionService {
       return;
     }
 
-    const consumedTicket = await streamOwnershipService.consumePublishTicket(input.path, input.ticket);
+    const consumedTicket = await streamOwnershipService.consumePublishTicket(input.path, input.ticket, {
+      expectedIngestType: RecordingSessionIngestType.MEDIAMTX,
+    });
     if (!consumedTicket.ok) {
       console.warn("[rtmp-ticket] consume-rejected", {
         recordingSessionId,
@@ -199,6 +214,7 @@ export class RecordingSessionService {
       repositoryId: session.repositoryId,
       repositoryName: repoName,
       userId: session.userId,
+      ingestType: RecordingSessionIngestType.MEDIAMTX,
       status: "STREAMING",
     };
     if (session.deviceType) {
@@ -534,9 +550,12 @@ export class RecordingSessionService {
       },
     });
 
-    const activeStreamPaths = activeSessions.length > 0 ? await this.getActiveStreamPaths() : null;
+    const mediamtxSessions = activeSessions.filter(
+      (session) => session.ingestType === RecordingSessionIngestType.MEDIAMTX,
+    );
+    const activeStreamPaths = mediamtxSessions.length > 0 ? await this.getActiveStreamPaths() : null;
 
-    for (const session of activeSessions) {
+    for (const session of mediamtxSessions) {
       const repoName = this.extractRepositoryName(session.streamPath);
 
       if (session.closedAt) {

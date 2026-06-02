@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { RecordingSessionEndReason, RecordingSessionStatus } from "@prisma/client";
+import { RecordingSessionEndReason, RecordingSessionIngestType, RecordingSessionStatus } from "@prisma/client";
 import { after, beforeEach, test } from "node:test";
 
 import { FakeRedis } from "./helpers/fake-redis";
@@ -71,6 +71,7 @@ const createSessionFromArgs = (args: { data: Record<string, any> }) => ({
   ownerId: args.data.ownerId,
   userId: args.data.userId,
   deviceType: args.data.deviceType,
+  ingestType: args.data.ingestType,
   streamPath: args.data.streamPath,
   status: args.data.status,
   targetDirectory: args.data.targetDirectory,
@@ -108,6 +109,7 @@ test("registerSession creates a unique MediaMTX path and caches pending metadata
   const response = await streamService.registerSession("maintainer-1", "user", {
     repositoryId: repository.id,
     deviceType: "phone_android",
+    ingestType: "MEDIAMTX",
   });
 
   assert.equal(createCalls.length, 1);
@@ -119,6 +121,7 @@ test("registerSession creates a unique MediaMTX path and caches pending metadata
     repositoryId: repository.id,
     repositoryName: repository.name,
     userId: "maintainer-1",
+    ingestType: "MEDIAMTX",
     deviceType: "phone_android",
     status: "PENDING",
   });
@@ -132,6 +135,7 @@ test("registerSession reuses a non-expired pending session for the same user rep
     ownerId: repository.ownerId,
     userId: "maintainer-1",
     deviceType: "phone_android",
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/test2/11111111-1111-4111-8111-111111111111",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data",
@@ -157,6 +161,7 @@ test("registerSession reuses a non-expired pending session for the same user rep
   const response = await streamService.registerSession("maintainer-1", "user", {
     repositoryId: repository.id,
     deviceType: "phone_android",
+    ingestType: "MEDIAMTX",
   });
 
   assert.equal(createCalled, false);
@@ -169,6 +174,7 @@ test("registerSession reuses a non-expired pending session for the same user rep
     repositoryId: repository.id,
     repositoryName: repository.name,
     userId: "maintainer-1",
+    ingestType: "MEDIAMTX",
     deviceType: "phone_android",
     status: "PENDING",
   });
@@ -182,6 +188,7 @@ test("registerSession reuses pending sessions regardless of age and refreshes Re
     ownerId: repository.ownerId,
     userId: "maintainer-1",
     deviceType: "phone_android",
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/test2/22222222-2222-4222-8222-222222222222",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data",
@@ -207,6 +214,7 @@ test("registerSession reuses pending sessions regardless of age and refreshes Re
   const response = await streamService.registerSession("maintainer-1", "user", {
     repositoryId: repository.id,
     deviceType: "phone_android",
+    ingestType: "MEDIAMTX",
   });
 
   assert.equal(updateCalls.length, 1);
@@ -225,6 +233,7 @@ test("registerSession completes pending sessions when maintain access is forbidd
     ownerId: repository.ownerId,
     userId: "maintainer-1",
     deviceType: "phone_android",
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/test2/33333333-3333-4333-8333-333333333333",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data",
@@ -250,6 +259,7 @@ test("registerSession completes pending sessions when maintain access is forbidd
     repositoryName: repository.name,
     userId: "maintainer-1",
     deviceType: "phone_android",
+    ingestType: "MEDIAMTX",
     status: "PENDING",
   } satisfies RecordingSessionLiveCache);
 
@@ -258,6 +268,7 @@ test("registerSession completes pending sessions when maintain access is forbidd
       streamService.registerSession("maintainer-1", "user", {
         repositoryId: repository.id,
         deviceType: "phone_android",
+        ingestType: "MEDIAMTX",
       }),
     (error: any) => error?.code === "FORBIDDEN",
   );
@@ -286,6 +297,7 @@ test("registerSession completes pending sessions when repository is missing", as
     ownerId: repository.ownerId,
     userId: "maintainer-1",
     deviceType: "phone_android",
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/test2/33333333-3333-4333-8333-333333333333",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data",
@@ -311,6 +323,7 @@ test("registerSession completes pending sessions when repository is missing", as
     repositoryName: repository.name,
     userId: "maintainer-1",
     deviceType: "phone_android",
+    ingestType: "MEDIAMTX",
     status: "PENDING",
   } satisfies RecordingSessionLiveCache);
 
@@ -319,6 +332,7 @@ test("registerSession completes pending sessions when repository is missing", as
       streamService.registerSession("maintainer-1", "user", {
         repositoryId: repository.id,
         deviceType: "phone_android",
+        ingestType: "MEDIAMTX",
       }),
     (error: any) => error?.code === "NOT_FOUND",
   );
@@ -343,6 +357,7 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
     ownerId: repository.ownerId,
     userId: "maintainer-1",
     deviceType: "phone_android",
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/test2/44444444-4444-4444-8444-444444444444",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data",
@@ -363,6 +378,7 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
     repositoryName: repository.name,
     userId: "maintainer-1",
     deviceType: "phone_android",
+    ingestType: "MEDIAMTX",
     status: "PENDING",
   } satisfies RecordingSessionLiveCache);
 
@@ -384,6 +400,7 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
   assert.equal(ticket?.recordingSessionId, pendingSession.id);
   assert.equal(ticket?.repositoryId, repository.id);
   assert.equal(ticket?.userId, "maintainer-1");
+  assert.equal(ticket?.ingestType, "MEDIAMTX");
   assert.equal(ticket?.streamPath, pendingSession.streamPath);
   assert.equal(ticket?.status, "active");
   assert.equal(Object.hasOwn(ticket ?? {}, "repositoryName"), false);
@@ -396,6 +413,7 @@ test("issuePublishTicket rejects a PENDING recording session without Redis regis
     ownerId: repository.ownerId,
     userId: "maintainer-1",
     deviceType: "phone_android",
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/test2/44444444-4444-4444-8444-444444444444",
     status: RecordingSessionStatus.PENDING,
     targetDirectory: "/data",
@@ -426,6 +444,7 @@ test("issuePublishTicket only allows PENDING recording sessions", async () => {
     ownerId: repository.ownerId,
     userId: "maintainer-1",
     deviceType: "phone_android",
+    ingestType: RecordingSessionIngestType.MEDIAMTX,
     streamPath: "live/test2/55555555-5555-4555-8555-555555555555",
     status: RecordingSessionStatus.STREAMING,
     targetDirectory: "/data",
@@ -460,6 +479,7 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
     repositoryName: repository.name,
     userId: "maintainer-1",
     deviceType: "phone_android",
+    ingestType: "MEDIAMTX",
     status: "STREAMING",
   } satisfies RecordingSessionLiveCache);
   fakeRedis.setJson("stream:recording:session-pending", {
@@ -467,12 +487,14 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
     repositoryName: repository.name,
     userId: "maintainer-1",
     deviceType: "phone_android",
+    ingestType: "MEDIAMTX",
     status: "PENDING",
   } satisfies RecordingSessionLiveCache);
   fakeRedis.setJson("stream:recording:session-hidden", {
     repositoryId: "99999999-9999-4999-8999-999999999999",
     repositoryName: "hidden",
     userId: "other-user",
+    ingestType: "MEDIAMTX",
     status: "STREAMING",
   } satisfies RecordingSessionLiveCache);
 
@@ -485,8 +507,13 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
       repository_name: repository.name,
       user_id: "maintainer-1",
       device_type: "phone_android",
+      ingest_type: "MEDIAMTX",
       status: "live",
+      playback_available: true,
       hls_path: "/hls/live/test2/session-1/index.m3u8",
+      bytes_received: null,
+      last_sequence: null,
+      last_chunk_at: null,
     },
   ]);
 });
