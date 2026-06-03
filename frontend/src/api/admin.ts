@@ -23,6 +23,7 @@ export interface AdminSettingEntry {
 	value: AdminSettingValue;
 	sensitive: boolean;
 	sourcePath: string | null;
+	children: AdminSettingEntry[];
 }
 
 export interface AdminSettingSection {
@@ -36,6 +37,14 @@ export interface AdminSettings {
 	configPath: string | null;
 	dotenvPath: string | null;
 	sections: AdminSettingSection[];
+}
+
+interface AdminSettingEntryResponse {
+	key: string;
+	value: AdminSettingValue;
+	sensitive: boolean;
+	source_path: string | null;
+	children: AdminSettingEntryResponse[];
 }
 
 export interface AdminUserDeleteReadiness {
@@ -138,15 +147,20 @@ export async function requestAdminSettings() {
 			sections: Array<{
 				title: string;
 				description: string | null;
-				entries: Array<{
-					key: string;
-					value: AdminSettingValue;
-					sensitive: boolean;
-					source_path: string | null;
-				}>;
+				entries: AdminSettingEntryResponse[];
 			}>;
 		};
 	}>(ApiEndpoint.AdminSettings);
+
+	const toAdminSettingEntry = (
+		entry: AdminSettingEntryResponse,
+	): AdminSettingEntry => ({
+		key: entry.key,
+		value: entry.value,
+		sensitive: entry.sensitive,
+		sourcePath: entry.source_path,
+		children: entry.children.map(toAdminSettingEntry),
+	});
 
 	return {
 		targetDirectory: response.data.settings.target_directory,
@@ -155,12 +169,7 @@ export async function requestAdminSettings() {
 		sections: response.data.settings.sections.map((section) => ({
 			title: section.title,
 			description: section.description,
-			entries: section.entries.map((entry) => ({
-				key: entry.key,
-				value: entry.value,
-				sensitive: entry.sensitive,
-				sourcePath: entry.source_path,
-			})),
+			entries: section.entries.map(toAdminSettingEntry),
 		})),
 	} satisfies AdminSettings;
 }

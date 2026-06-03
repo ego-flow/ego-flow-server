@@ -126,7 +126,7 @@ services:
       dashboard:
         condition: service_healthy
     ports:
-      - "${PUBLIC_HTTP_PORT:-80}:80"
+      - "80:80"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     healthcheck:

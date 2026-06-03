@@ -2,7 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Lock } from "lucide-react";
 
-import { type AdminSettingValue, requestAdminSettings } from "#/api/admin";
+import {
+	type AdminSettingEntry,
+	type AdminSettingValue,
+	requestAdminSettings,
+} from "#/api/admin";
 import { getApiErrorMessage } from "#/api/client";
 
 export const Route = createFileRoute("/admin/settings")({
@@ -17,6 +21,44 @@ function formatValue(value: AdminSettingValue) {
 		return value ? "true" : "false";
 	}
 	return String(value);
+}
+
+function SettingEntryRow({
+	entry,
+	depth = 0,
+}: {
+	entry: AdminSettingEntry;
+	depth?: number;
+}) {
+	return (
+		<>
+			<div
+				className="grid grid-cols-[minmax(0,12rem)_minmax(0,1fr)] gap-4 py-2.5 text-sm"
+				style={{ paddingLeft: depth > 0 ? `${depth * 1.25}rem` : undefined }}
+			>
+				<dt className="flex items-center gap-1.5 font-mono text-xs text-[var(--sea-ink-soft)]">
+					{entry.sensitive ? (
+						<Lock
+							size={12}
+							aria-hidden="true"
+							className="text-amber-700 dark:text-amber-300"
+						/>
+					) : null}
+					{entry.key}
+				</dt>
+				<dd className="break-all font-mono text-xs text-[var(--sea-ink)]">
+					{formatValue(entry.value)}
+				</dd>
+			</div>
+			{entry.children.map((child) => (
+				<SettingEntryRow
+					key={`${entry.key}-${child.key}`}
+					entry={child}
+					depth={depth + 1}
+				/>
+			))}
+		</>
+	);
 }
 
 function AdminSettingsPage() {
@@ -84,24 +126,10 @@ function AdminSettingsPage() {
 								</header>
 								<dl className="divide-y divide-[var(--line)]">
 									{section.entries.map((entry) => (
-										<div
+										<SettingEntryRow
 											key={entry.key}
-											className="grid grid-cols-[minmax(0,12rem)_minmax(0,1fr)] gap-4 py-2.5 text-sm"
-										>
-											<dt className="flex items-center gap-1.5 font-mono text-xs text-[var(--sea-ink-soft)]">
-												{entry.sensitive ? (
-													<Lock
-														size={12}
-														aria-hidden="true"
-														className="text-amber-700 dark:text-amber-300"
-													/>
-												) : null}
-												{entry.key}
-											</dt>
-											<dd className="break-all font-mono text-xs text-[var(--sea-ink)]">
-												{formatValue(entry.value)}
-											</dd>
-										</div>
+											entry={entry}
+										/>
 									))}
 								</dl>
 							</section>
@@ -109,7 +137,8 @@ function AdminSettingsPage() {
 					</div>
 
 					<p className="mt-6 text-xs text-[var(--sea-ink-soft)]">
-						Values marked with the lock icon are masked. Secrets such as
+						Values marked with the lock icon are masked by keeping only the
+						first and last characters. Secrets such as
 						<code className="mx-1 rounded bg-black/5 px-1.5 py-0.5 text-[10px]">
 							JWT_SECRET
 						</code>
@@ -117,7 +146,7 @@ function AdminSettingsPage() {
 						<code className="mx-1 rounded bg-black/5 px-1.5 py-0.5 text-[10px]">
 							HF_TOKEN
 						</code>
-						only report whether they are set.
+						use that same masking format.
 					</p>
 				</>
 			) : null}

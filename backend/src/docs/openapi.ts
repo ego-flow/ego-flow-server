@@ -692,15 +692,15 @@ export const openApiDocument = {
                   type: "object",
                   required: ["title", "description", "entries"],
                   properties: {
-                    title: { type: "string", example: "Runtime" },
-                    description: { type: ["string", "null"], example: "Node process environment loaded from .env." },
+                    title: { type: "string", example: "config.json" },
+                    description: { type: ["string", "null"], example: "Values loaded from config.json." },
                     entries: {
                       type: "array",
                       items: {
                         type: "object",
-                        required: ["key", "value", "sensitive", "source_path"],
+                        required: ["key", "value", "sensitive", "source_path", "children"],
                         properties: {
-                          key: { type: "string", example: "PORT" },
+                          key: { type: "string", example: "JWT_SECRET" },
                           value: {
                             oneOf: [
                               { type: "string" },
@@ -709,8 +709,22 @@ export const openApiDocument = {
                               { type: "null" },
                             ],
                           },
-                          sensitive: { type: "boolean", example: false },
+                          sensitive: { type: "boolean", example: true },
                           source_path: { type: ["string", "null"], example: "/home/egoflow/ego-flow-server/.env" },
+                          children: {
+                            type: "array",
+                            items: {
+                              type: "object",
+                              required: ["key", "value", "sensitive", "source_path", "children"],
+                              properties: {
+                                key: { type: "string", example: "backend:3000/tcp" },
+                                value: { type: ["string", "number", "boolean", "null"] },
+                                sensitive: { type: "boolean", example: false },
+                                source_path: { type: ["string", "null"], example: null },
+                                children: { type: "array", items: {} },
+                              },
+                            },
+                          },
                         },
                       },
                     },

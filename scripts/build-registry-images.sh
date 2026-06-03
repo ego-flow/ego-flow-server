@@ -23,7 +23,7 @@ Usage:
   ./scripts/build-registry-images.sh [options]
 
 Builds registry images for remote servers and pushes them to GHCR by default.
-Local .env and config.json are only read; they are never modified.
+Local .env is only read; it is never modified.
 
 Options:
   --tag TAG                  Image tag. Defaults to current git short SHA.
@@ -31,7 +31,7 @@ Options:
   --registry REGISTRY        Registry host. Defaults to ghcr.io.
   --prefix PREFIX            Image name prefix. Defaults to ego-flow-server.
   --platform PLATFORM        Docker target platform. Defaults to linux/amd64.
-  --config-file PATH         Remote server config.json to read. Defaults to ./config.json.
+  --config-file PATH         Deprecated; accepted for compatibility and ignored.
   --env-file PATH            Remote server .env to read. Defaults to ./.env.
   --public-origin URL        Public origin for the remote server, e.g. http://13.209.88.203.
   --vite-api-base-url URL    Frontend API base URL. Defaults to env file VITE_API_BASE_URL or /api/v1.
@@ -82,37 +82,9 @@ read_env_value() {
   ' "$file" | tail -n 1
 }
 
-read_config_number() {
-  local key="$1"
-  local default_value="$2"
-  local file="$3"
-  local value
-
-  [[ -f "$file" ]] || {
-    echo "$default_value"
-    return
-  }
-
-  value="$(
-    node -e '
-      const fs = require("node:fs");
-      const [file, key] = process.argv.slice(1);
-      const value = JSON.parse(fs.readFileSync(file, "utf8"))[key];
-      if (Number.isFinite(Number(value))) process.stdout.write(String(Number(value)));
-    ' "$file" "$key"
-  )"
-
-  if [[ -n "$value" ]]; then
-    echo "$value"
-  else
-    echo "$default_value"
-  fi
-}
-
 remote_origin_from_files() {
   local env_file="$1"
-  local config_file="$2"
-  local host scheme port port_suffix
+  local host scheme
 
   host="$(read_env_value PUBLIC_HOST "$env_file")"
   if [[ -z "$host" ]]; then
@@ -123,15 +95,7 @@ remote_origin_from_files() {
   scheme="$(read_env_value PUBLIC_SCHEME "$env_file")"
   [[ -n "$scheme" ]] || scheme="http"
 
-  port="$(read_config_number PUBLIC_HTTP_PORT 80 "$config_file")"
-  port_suffix=""
-  if [[ "$scheme" == "http" && "$port" != "80" ]]; then
-    port_suffix=":$port"
-  elif [[ "$scheme" == "https" && "$port" != "443" ]]; then
-    port_suffix=":$port"
-  fi
-
-  echo "${scheme}://${host}${port_suffix}"
+  echo "${scheme}://${host}"
 }
 
 docker_login_with_gh() {

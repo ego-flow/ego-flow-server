@@ -55,23 +55,6 @@ compose_cmd() {
   docker compose -f "$COMPOSE_BASE_FILE" -f "$COMPOSE_REGISTRY_FILE" "$@"
 }
 
-read_config_number() {
-  local key="$1"
-  local default_value="$2"
-  local value
-
-  value="$(
-    tr -d '\n' < "$ROOT_DIR/config.json" |
-      sed -nE "s/.*\"${key}\"[[:space:]]*:[[:space:]]*([0-9]+).*/\\1/p"
-  )"
-
-  if [[ -n "$value" ]]; then
-    echo "$value"
-  else
-    echo "$default_value"
-  fi
-}
-
 read_config_string() {
   local key="$1"
   local value
@@ -115,17 +98,13 @@ load_runtime_overrides() {
   export TARGET_DIRECTORY
   export HOST_HOME
 
-  PUBLIC_HTTP_PORT="$(read_config_number "PUBLIC_HTTP_PORT" "80")"
+  PUBLIC_HTTP_PORT="80"
   TARGET_DIRECTORY="$(normalize_target_directory "$(read_config_string "TARGET_DIRECTORY")")"
   HOST_HOME="${HOME:-}"
 }
 
 public_http_base() {
-  if [[ "$PUBLIC_HTTP_PORT" == "80" ]]; then
-    echo "http://localhost"
-  else
-    echo "http://localhost:${PUBLIC_HTTP_PORT}"
-  fi
+  echo "http://localhost"
 }
 
 check_prereqs() {

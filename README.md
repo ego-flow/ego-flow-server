@@ -35,8 +35,7 @@ The same command is used on both local machines and remote Linux servers. Startu
 
 HTTP access goes through a single public entrypoint:
 
-- `http://localhost` when `PUBLIC_HTTP_PORT` is `80`
-- `http://localhost:{PUBLIC_HTTP_PORT}` when you changed the public HTTP port
+- `http://localhost`
 
 Using that HTTP base URL, the stack exposes:
 
@@ -67,11 +66,12 @@ That helper lives in the parent repository root. It stops the running stack, pul
 
 | Port | Default | Purpose |
 | --- | --- | --- |
-| `PUBLIC_HTTP_PORT` | `80` | Public HTTP entrypoint for dashboard, API, Swagger UI, OpenAPI JSON, and `/files/*` |
-| `1935` | fixed | RTMP ingest |
-| `1936` | fixed | Optional RTMPS ingest |
+| `80/tcp` | fixed | Public HTTP entrypoint for dashboard, API, Swagger UI, OpenAPI JSON, HLS, WHIP, and `/files/*` |
+| `1935` | fixed | RTMP ingest endpoint for publisher connections |
+| `1936` | fixed | Optional RTMPS ingest endpoint for encrypted publisher connections |
+| `8189/udp` | fixed | WHIP/WebRTC ICE media endpoint |
 | `8888` | fixed | Internal MediaMTX HLS playback |
-| `9997` | fixed | Internal MediaMTX control API |
+| `9997` | fixed | Internal MediaMTX control API used by backend |
 
 ## Storage and Target Directory
 
@@ -115,7 +115,6 @@ Only `TARGET_DIRECTORY` is required and does not have a default. Everything else
 ```json
 {
   "TARGET_DIRECTORY": "~/ego-flow-data",
-  "PUBLIC_HTTP_PORT": 80,
   "JWT_EXPIRES_IN": "24h",
   "JWT_REFRESH_THRESHOLD_SECONDS": 21600,
   "CORS_ORIGIN": "*",
@@ -128,7 +127,6 @@ Only `TARGET_DIRECTORY` is required and does not have a default. Everything else
 | Key | Required | Default | Description |
 | --- | --- | --- | --- |
 | `TARGET_DIRECTORY` | Yes | None | Host data root for postgres, redis, raw recordings, and generated datasets. Must be an absolute path or use `~/...` shorthand. |
-| `PUBLIC_HTTP_PORT` | No | `80` | Public HTTP port exposed to users. |
 | `JWT_EXPIRES_IN` | No | `24h` | Access-token lifetime. |
 | `JWT_REFRESH_THRESHOLD_SECONDS` | No | `21600` | Remaining-token threshold for issuing a refreshed token in responses. |
 | `SIGNED_FILE_URL_EXPIRES_IN` | No | `6h` | Lifetime for signed `/files/*` playback URLs. |
@@ -136,7 +134,7 @@ Only `TARGET_DIRECTORY` is required and does not have a default. Everything else
 | `WORKER_CONCURRENCY` | No | `2` | Number of recording finalize jobs the worker can process in parallel. |
 | `DELETE_RAW_AFTER_PROCESSING` | No | `true` | Whether raw recorded segments are deleted after successful post-processing. |
 
-The reverse proxy listens on `PUBLIC_HTTP_PORT` and forwards `/api*`, `/api-docs*`, and `/files*` to the backend, `/hls*` to MediaMTX, while sending all remaining web routes to the dashboard. backend `3000`, dashboard `8088`, and MediaMTX HLS `8888` stay internal to the Docker network unless explicitly exposed.
+The reverse proxy listens on fixed host port `80` and forwards `/api*`, `/api-docs*`, and `/files*` to the backend, `/hls*` to MediaMTX, `/live/*/whip` to MediaMTX WHIP, while sending all remaining web routes to the dashboard. backend `3000`, dashboard `8088`, MediaMTX HLS `8888`, and MediaMTX WHIP `8889` stay internal to the Docker network behind Caddy.
 
 ### .env
 
@@ -191,7 +189,7 @@ Command summary:
 
 - `up`: Checks prerequisites, builds images, starts the full stack, and waits until the main services are ready.
 - `down`: Stops and removes the Compose stack.
-- `doctor`: Checks Docker, Docker Compose, `config.json`, `.env`, the configured public ports, and prints the previous/current target directory state from `.run/target-directory`.
+- `doctor`: Checks Docker, Docker Compose, `config.json`, `.env`, fixed public ports, and prints the previous/current target directory state from `.run/target-directory`.
 - `ps`: Shows the current status of Compose services.
 - `logs [service]`: Follows logs for the full stack or for a specific service.
 - `reset`: Removes containers, volumes, all data under `TARGET_DIRECTORY`, and the persisted `.run/target-directory` state. This is destructive and intended only for disposable development/test environments. If host deletion hits Docker-owned files, the script falls back to Docker-assisted cleanup.

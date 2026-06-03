@@ -16,7 +16,6 @@ const configFileSchema = z.object({
       return z.NEVER;
     }
   }),
-  PUBLIC_HTTP_PORT: z.coerce.number().int().positive().default(80),
   CORS_ORIGIN: z.string().default("*"),
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
   DELETE_RAW_AFTER_PROCESSING: z.boolean().default(true),

@@ -1,10 +1,19 @@
 import bcrypt from "bcryptjs";
 import { UserRole } from "@prisma/client";
 
-import { getConfigFilePath } from "../config/config.file";
-import { getDotenvPath } from "../config/env";
-import { runtimeConfig } from "../config/runtime";
-import { SECRET_EMPTY_PLACEHOLDER, SECRET_PLACEHOLDER } from "../constants/admin/admin-constants";
+import { fileConfig, getConfigFilePath } from "../config/config.file";
+import { env, getDotenvPath } from "../config/env";
+import {
+  FIXED_HLS_PORT,
+  FIXED_MEDIAMTX_API_PORT,
+  FIXED_POSTGRES_PORT,
+  FIXED_PUBLIC_HTTP_PORT,
+  FIXED_REDIS_PORT,
+  FIXED_RTMP_PORT,
+  FIXED_RTMPS_PORT,
+  FIXED_WEBRTC_UDP_PORT,
+  FIXED_WHIP_PORT,
+} from "../constants/config/config-constants";
 import { BadRequest, Conflict, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { getTargetDirectory } from "../lib/storage";
@@ -13,8 +22,33 @@ import type { AuthenticatedUser } from "../types/auth";
 
 type ConfigValue = string | number | boolean | null;
 
-const maskSecretPresence = (value: string | undefined): string =>
-  value && value.length > 0 ? SECRET_PLACEHOLDER : SECRET_EMPTY_PLACEHOLDER;
+type SettingsEntry = {
+  key: string;
+  value: ConfigValue;
+  sensitive?: boolean;
+  sourcePath?: string;
+  children?: SettingsEntry[];
+};
+
+type SettingsEntryResponse = {
+  key: string;
+  value: ConfigValue;
+  sensitive: boolean;
+  source_path: string | null;
+  children: SettingsEntryResponse[];
+};
+
+const maskSecretValue = (value: string | undefined): string => {
+  if (!value) {
+    return "(not set)";
+  }
+
+  if (value.length === 1) {
+    return "*";
+  }
+
+  return `${value[0]}**${value[value.length - 1]}`;
+};
 
 const toUserRole = (role: UserRole): "admin" | "user" => (role === UserRole.admin ? "admin" : "user");
 
@@ -98,81 +132,83 @@ export class AdminService {
     const sections: Array<{
       title: string;
       description?: string;
-      entries: Array<{
-        key: string;
-        value: ConfigValue;
-        sensitive?: boolean;
-        sourcePath?: string;
-      }>;
+      entries: SettingsEntry[];
     }> = [
       {
-        title: "Runtime",
-        description: "Node process environment loaded from .env.",
+        title: "config.json",
+        description: "Values loaded from config.json.",
         entries: [
-          { key: "NODE_ENV", value: runtimeConfig.NODE_ENV, sourcePath: getDotenvPath() },
-          { key: "PORT", value: runtimeConfig.PORT, sourcePath: getDotenvPath() },
-        ],
-      },
-      {
-        title: "Storage",
-        description: "Filesystem locations resolved at startup.",
-        entries: [
-          { key: "DATA_ROOT", value: runtimeConfig.DATA_ROOT, sourcePath: getConfigFilePath() },
-          { key: "TARGET_DIRECTORY", value: getTargetDirectory(), sourcePath: getConfigFilePath() },
+          { key: "TARGET_DIRECTORY", value: fileConfig.TARGET_DIRECTORY, sourcePath: getConfigFilePath() },
+          { key: "CORS_ORIGIN", value: fileConfig.CORS_ORIGIN, sourcePath: getConfigFilePath() },
+          { key: "WORKER_CONCURRENCY", value: fileConfig.WORKER_CONCURRENCY, sourcePath: getConfigFilePath() },
+          { key: "DELETE_RAW_AFTER_PROCESSING", value: fileConfig.DELETE_RAW_AFTER_PROCESSING, sourcePath: getConfigFilePath() },
+          { key: "JWT_EXPIRES_IN", value: fileConfig.JWT_EXPIRES_IN, sourcePath: getConfigFilePath() },
+          {
+            key: "JWT_REFRESH_THRESHOLD_SECONDS",
+            value: fileConfig.JWT_REFRESH_THRESHOLD_SECONDS,
+            sourcePath: getConfigFilePath(),
+          },
+          {
+            key: "SIGNED_FILE_URL_EXPIRES_IN",
+            value: fileConfig.SIGNED_FILE_URL_EXPIRES_IN,
+            sourcePath: getConfigFilePath(),
+          },
         ],
       },
       {
         title: "Ports",
-        description: "Public-facing service ports.",
+        description: "Public host ports and Caddy-routed internal service ports.",
         entries: [
-          { key: "PUBLIC_HTTP_PORT", value: runtimeConfig.PUBLIC_HTTP_PORT, sourcePath: getConfigFilePath() },
-          { key: "RTMP_PORT", value: runtimeConfig.RTMP_PORT },
-          { key: "RTMPS_PORT", value: runtimeConfig.RTMPS_PORT },
-          { key: "HLS_PORT", value: runtimeConfig.HLS_PORT },
-          { key: "MEDIAMTX_API_PORT", value: runtimeConfig.MEDIAMTX_API_PORT },
+          {
+            key: `${FIXED_PUBLIC_HTTP_PORT}/tcp`,
+            value: "Caddy public HTTP entrypoint for dashboard, API, HLS, and WHIP signaling",
+            children: [
+              { key: "backend:3000/tcp", value: "Backend API, Swagger UI, OpenAPI JSON, signed files" },
+              { key: "dashboard:8088/tcp", value: "Dashboard web UI" },
+              { key: `mediamtx:${FIXED_HLS_PORT}/tcp`, value: "HLS playback via /hls/*" },
+              { key: `mediamtx:${FIXED_WHIP_PORT}/tcp`, value: "WHIP publish signaling via /live/*/whip" },
+            ],
+          },
+          { key: `${FIXED_RTMP_PORT}/tcp`, value: "MediaMTX RTMP ingest endpoint for publisher connections" },
+          { key: `${FIXED_RTMPS_PORT}/tcp`, value: "MediaMTX RTMPS ingest endpoint for encrypted publisher connections" },
+          { key: `${FIXED_WEBRTC_UDP_PORT}/udp`, value: "MediaMTX WHIP/WebRTC ICE media UDP endpoint" },
+          {
+            key: `mediamtx:${FIXED_MEDIAMTX_API_PORT}/tcp`,
+            value: "MediaMTX control API used internally by backend to inspect active paths and service state",
+          },
+          { key: `postgres:${FIXED_POSTGRES_PORT}/tcp`, value: "PostgreSQL database, internal stack access only" },
+          { key: `redis:${FIXED_REDIS_PORT}/tcp`, value: "Redis cache and BullMQ backend, internal stack access only" },
         ],
       },
       {
-        title: "Streaming",
-        description: "Endpoints handed out to publishers and players.",
+        title: ".env",
+        description: "Values loaded from .env. Secret values are masked.",
         entries: [
-          { key: "HLS_PATH_PREFIX", value: runtimeConfig.HLS_PATH_PREFIX },
-          { key: "WHIP_PATH_PREFIX", value: runtimeConfig.WHIP_PATH_PREFIX },
-          { key: "MEDIAMTX_API_URL", value: runtimeConfig.MEDIAMTX_API_URL },
-        ],
-      },
-      {
-        title: "RTMPS",
-        description: "TLS settings for the secure RTMP listener.",
-        entries: [
-          { key: "RTMPS_ENABLED", value: runtimeConfig.RTMPS_ENABLED, sourcePath: getDotenvPath() },
-          { key: "RTMPS_ENCRYPTION_MODE", value: runtimeConfig.RTMPS_ENCRYPTION_MODE, sourcePath: getDotenvPath() },
-          { key: "RTMPS_CERT_PATH", value: runtimeConfig.RTMPS_CERT_PATH, sourcePath: getDotenvPath() },
-          { key: "RTMPS_KEY_PATH", value: runtimeConfig.RTMPS_KEY_PATH, sourcePath: getDotenvPath() },
-        ],
-      },
-      {
-        title: "Sessions",
-        description: "Auth, signed URL, and worker tuning.",
-        entries: [
-          { key: "JWT_EXPIRES_IN", value: runtimeConfig.JWT_EXPIRES_IN, sourcePath: getConfigFilePath() },
-          { key: "JWT_REFRESH_THRESHOLD_SECONDS", value: runtimeConfig.JWT_REFRESH_THRESHOLD_SECONDS, sourcePath: getConfigFilePath() },
-          { key: "SIGNED_FILE_URL_EXPIRES_IN", value: runtimeConfig.SIGNED_FILE_URL_EXPIRES_IN, sourcePath: getConfigFilePath() },
-          { key: "WORKER_CONCURRENCY", value: runtimeConfig.WORKER_CONCURRENCY, sourcePath: getConfigFilePath() },
-          { key: "DELETE_RAW_AFTER_PROCESSING", value: runtimeConfig.DELETE_RAW_AFTER_PROCESSING, sourcePath: getConfigFilePath() },
-          { key: "CORS_ORIGIN", value: runtimeConfig.CORS_ORIGIN, sourcePath: getConfigFilePath() },
-        ],
-      },
-      {
-        title: "Secrets",
-        description: "Credentials and optional integration secrets (values are masked).",
-        entries: [
-          { key: "JWT_SECRET", value: maskSecretPresence(runtimeConfig.JWT_SECRET), sensitive: true, sourcePath: getDotenvPath() },
-          { key: "ADMIN_DEFAULT_PASSWORD", value: maskSecretPresence(runtimeConfig.ADMIN_DEFAULT_PASSWORD), sensitive: true, sourcePath: getDotenvPath() },
-          { key: "HF_TOKEN", value: maskSecretPresence(runtimeConfig.HF_TOKEN), sensitive: true, sourcePath: getDotenvPath() },
+          { key: "NODE_ENV", value: env.NODE_ENV, sourcePath: getDotenvPath() },
+          { key: "PORT", value: env.PORT, sourcePath: getDotenvPath() },
+          { key: "DATABASE_URL", value: maskSecretValue(env.DATABASE_URL), sensitive: true, sourcePath: getDotenvPath() },
+          { key: "JWT_SECRET", value: maskSecretValue(env.JWT_SECRET), sensitive: true, sourcePath: getDotenvPath() },
+          {
+            key: "ADMIN_DEFAULT_PASSWORD",
+            value: maskSecretValue(env.ADMIN_DEFAULT_PASSWORD),
+            sensitive: true,
+            sourcePath: getDotenvPath(),
+          },
+          { key: "HF_TOKEN", value: maskSecretValue(env.HF_TOKEN), sensitive: true, sourcePath: getDotenvPath() },
+          { key: "RTMPS_ENCRYPTION_MODE", value: env.RTMPS_ENCRYPTION_MODE ?? null, sourcePath: getDotenvPath() },
+          { key: "RTMPS_CERT_PATH", value: env.RTMPS_CERT_PATH ?? null, sourcePath: getDotenvPath() },
+          { key: "RTMPS_KEY_PATH", value: env.RTMPS_KEY_PATH ?? null, sourcePath: getDotenvPath() },
         ],
       },
     ];
+
+    const toSettingsEntryResponse = (entry: SettingsEntry): SettingsEntryResponse => ({
+      key: entry.key,
+      value: entry.value,
+      sensitive: Boolean(entry.sensitive),
+      source_path: entry.sourcePath ?? null,
+      children: (entry.children ?? []).map(toSettingsEntryResponse),
+    });
 
     return {
       settings: {
@@ -182,12 +218,7 @@ export class AdminService {
         sections: sections.map((section) => ({
           title: section.title,
           description: section.description ?? null,
-          entries: section.entries.map((entry) => ({
-            key: entry.key,
-            value: entry.value,
-            sensitive: Boolean(entry.sensitive),
-            source_path: entry.sourcePath ?? null,
-          })),
+          entries: section.entries.map(toSettingsEntryResponse),
         })),
       },
     };

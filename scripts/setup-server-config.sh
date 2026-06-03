@@ -73,13 +73,8 @@ detect_server_ip() {
 
 http_origin_for() {
   local host="$1"
-  local port="$2"
 
-  if [[ "$port" == "80" ]]; then
-    echo "http://${host}"
-  else
-    echo "http://${host}:${port}"
-  fi
+  echo "http://${host}"
 }
 
 generate_jwt_secret() {
@@ -157,16 +152,6 @@ ask_secret_optional_value() {
 
 is_positive_int() {
   [[ "$1" =~ ^[0-9]+$ ]] && (( "$1" > 0 ))
-}
-
-validate_port() {
-  local name="$1"
-  local value="$2"
-
-  if ! is_positive_int "$value" || (( value > 65535 )); then
-    echo "${name} must be a port number between 1 and 65535." >&2
-    exit 1
-  fi
 }
 
 validate_target_directory() {
@@ -262,7 +247,6 @@ write_config_file() {
   {
     printf '{\n'
     printf '  "TARGET_DIRECTORY": %s,\n' "$(json_string "$TARGET_DIRECTORY")"
-    printf '  "PUBLIC_HTTP_PORT": %s,\n' "$PUBLIC_HTTP_PORT"
     printf '  "CORS_ORIGIN": %s,\n' "$(json_string "$CORS_ORIGIN")"
     printf '  "WORKER_CONCURRENCY": %s,\n' "$WORKER_CONCURRENCY"
     printf '  "DELETE_RAW_AFTER_PROCESSING": %s,\n' "$DELETE_RAW_AFTER_PROCESSING"
@@ -289,8 +273,7 @@ main() {
 
   echo "[config.json]"
   TARGET_DIRECTORY="$(ask_with_default "TARGET_DIRECTORY" "~/ego-flow/ego-flow-data" "absolute path or ~/...")"
-  PUBLIC_HTTP_PORT="$(ask_with_default "PUBLIC_HTTP_PORT" "80" "port number, e.g. 80")"
-  default_cors_origin="$(http_origin_for "$server_ip" "$PUBLIC_HTTP_PORT")"
+  default_cors_origin="$(http_origin_for "$server_ip")"
   CORS_ORIGIN="$(ask_with_default "CORS_ORIGIN" "$default_cors_origin" "origin URL or *, e.g. http://${server_ip}")"
   WORKER_CONCURRENCY="$(ask_with_default "WORKER_CONCURRENCY" "2" "positive integer")"
   DELETE_RAW_AFTER_PROCESSING="$(ask_with_default "DELETE_RAW_AFTER_PROCESSING" "true" "true or false")"
@@ -316,7 +299,6 @@ main() {
   fi
 
   validate_target_directory "$TARGET_DIRECTORY"
-  validate_port "PUBLIC_HTTP_PORT" "$PUBLIC_HTTP_PORT"
   validate_boolean "DELETE_RAW_AFTER_PROCESSING" "$DELETE_RAW_AFTER_PROCESSING"
   validate_rtmps_mode "$RTMPS_ENCRYPTION_MODE"
 
