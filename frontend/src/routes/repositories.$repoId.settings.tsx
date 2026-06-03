@@ -24,6 +24,7 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { formatDateTime } from "#/lib/format";
+import { defaultRepositoriesSearch } from "#/lib/route-search";
 
 export const Route = createFileRoute("/repositories/$repoId/settings")({
 	component: RepositorySettingsPage,
@@ -91,7 +92,8 @@ function RepositorySettingsPage() {
 				queryKey: ["repositories", "deactivated"],
 			});
 			await navigate({
-				to: "/profile",
+				to: "/repositories",
+				search: defaultRepositoriesSearch,
 			});
 		},
 	});
