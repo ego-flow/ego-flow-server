@@ -21,6 +21,15 @@ export const authTokenPath = (tokenId: string) =>
 export const repositoryPath = (repoId: string) =>
 	`${ApiEndpoint.Repositories}/${repoId}`;
 
+export const repositoryDeactivatePath = (repoId: string) =>
+	`${repositoryPath(repoId)}/deactivate`;
+
+export const repositoryDeleteReadinessPath = (repoId: string) =>
+	`${repositoryPath(repoId)}/delete-readiness`;
+
+export const repositoryPermanentDeletePath = (repoId: string) =>
+	repositoryPath(repoId);
+
 export const repositoryMembersPath = (repoId: string) =>
 	`${repositoryPath(repoId)}/members`;
 

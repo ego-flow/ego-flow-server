@@ -5,8 +5,11 @@ import type {
 	RepositoryVisibility,
 } from "#/constants/repository/repository-constants";
 import {
+	repositoryDeactivatePath,
+	repositoryDeleteReadinessPath,
 	repositoryMemberPath,
 	repositoryMembersPath,
+	repositoryPermanentDeletePath,
 	repositoryPath,
 } from "#/utils/api-paths";
 
@@ -34,6 +37,16 @@ export interface RepositoryMember {
 	role: RepositoryRole;
 	isOwner: boolean;
 	createdAt: string;
+}
+
+export interface RepositoryDeleteReadiness {
+	repositoryId: string;
+	canDelete: boolean;
+	checks: {
+		isDeactivated: boolean;
+		activeStreamingSessionCount: number;
+		finalizingSegmentCount: number;
+	};
 }
 
 interface RepositoryApiRecord {
@@ -77,10 +90,10 @@ export async function requestRepositories() {
 	) satisfies RepositoryRecord[];
 }
 
-export async function requestMyRepositories() {
+export async function requestMaintainRepositories() {
 	const response = await apiClient.get<{
 		repositories: RepositoryApiRecord[];
-	}>(ApiEndpoint.RepositoriesMine);
+	}>(ApiEndpoint.RepositoriesMaintain);
 
 	return response.data.repositories.map(
 		normalizeRepository,
@@ -130,13 +143,55 @@ export async function requestUpdateRepository(
 	return normalizeRepository(response.data.repository);
 }
 
-export async function requestDeleteRepository(repoId: string) {
+export async function requestDeactivateRepository(repoId: string) {
+	const response = await apiClient.delete<{
+		id: string;
+		deactivated: boolean;
+	}>(repositoryDeactivatePath(repoId));
+
+	return response.data;
+}
+
+export async function requestRepositoryDeleteReadiness(repoId: string) {
+	const response = await apiClient.get<{
+		repository_id: string;
+		can_delete: boolean;
+		checks: {
+			is_deactivated: boolean;
+			active_streaming_session_count: number;
+			finalizing_segment_count: number;
+		};
+	}>(repositoryDeleteReadinessPath(repoId));
+
+	return {
+		repositoryId: response.data.repository_id,
+		canDelete: response.data.can_delete,
+		checks: {
+			isDeactivated: response.data.checks.is_deactivated,
+			activeStreamingSessionCount:
+				response.data.checks.active_streaming_session_count,
+			finalizingSegmentCount: response.data.checks.finalizing_segment_count,
+		},
+	} satisfies RepositoryDeleteReadiness;
+}
+
+export async function requestPermanentDeleteRepository(repoId: string) {
 	const response = await apiClient.delete<{
 		id: string;
 		deleted: boolean;
-	}>(repositoryPath(repoId));
+	}>(repositoryPermanentDeletePath(repoId));
 
 	return response.data;
+}
+
+export async function requestDeleteRepository(repoId: string) {
+	await requestDeactivateRepository(repoId);
+	const readiness = await requestRepositoryDeleteReadiness(repoId);
+	if (!readiness.canDelete) {
+		throw new Error("Repository is not ready for permanent deletion.");
+	}
+
+	return requestPermanentDeleteRepository(repoId);
 }
 
 export async function requestRepositoryMembers(repoId: string) {

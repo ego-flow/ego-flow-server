@@ -44,9 +44,9 @@ router.post(
   }),
 );
 
-// GET /api/v1/repositories/mine
+// GET /api/v1/repositories/maintain
 router.get(
-  "/mine",
+  "/maintain",
   requireDashboardOrApp,
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
@@ -94,6 +94,38 @@ router.get(
       user.role,
       ownerId,
       repoName,
+    );
+    res.status(200).json(response);
+  }),
+);
+
+// DELETE /api/v1/repositories/:repoId/deactivate
+router.delete(
+  "/:repoId/deactivate",
+  requireDashboardSession,
+  validate(repositoryIdParamSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const user = getAuthUser(req);
+    const response = await repositoryService.deactivateRepository(
+      user.userId,
+      user.role,
+      (req.params as RepositoryIdParamInput).repoId,
+    );
+    res.status(200).json(response);
+  }),
+);
+
+// GET /api/v1/repositories/:repoId/delete-readiness
+router.get(
+  "/:repoId/delete-readiness",
+  requireDashboardSession,
+  validate(repositoryIdParamSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const user = getAuthUser(req);
+    const response = await repositoryService.getRepositoryDeleteReadiness(
+      user.userId,
+      user.role,
+      (req.params as RepositoryIdParamInput).repoId,
     );
     res.status(200).json(response);
   }),
@@ -157,10 +189,9 @@ router.delete(
   "/:repoId",
   requireDashboardSession,
   validate(repositoryIdParamSchema, "params"),
-  repoAccess({ minRole: "admin" }),
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    const response = await repositoryService.deleteRepository(
+    const response = await repositoryService.permanentlyDeleteRepository(
       user.userId,
       user.role,
       (req.params as RepositoryIdParamInput).repoId,

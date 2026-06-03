@@ -12,6 +12,7 @@ const repository = {
   ownerId: "admin",
   visibility: "public",
   description: null,
+  deactivated: false,
   createdAt: new Date("2026-05-29T00:00:00.000Z"),
   updatedAt: new Date("2026-05-29T00:00:00.000Z"),
 };
@@ -22,6 +23,10 @@ const operationCalls: Array<{ model: string; method: string; args?: unknown }> =
 const fakePrisma: any = {
   repository: {
     findUnique: async () => repository,
+    update: (args: unknown) => {
+      operationCalls.push({ model: "repository", method: "update", args });
+      return { ...repository, deactivated: true };
+    },
     delete: (args: unknown) => {
       operationCalls.push({ model: "repository", method: "delete", args });
       return { model: "repository", method: "delete" };
@@ -42,6 +47,7 @@ const fakePrisma: any = {
   },
   recordingSession: {
     findFirst: async () => null,
+    count: async () => 0,
     deleteMany: (args: unknown) => {
       operationCalls.push({ model: "recordingSession", method: "deleteMany", args });
       return { model: "recordingSession", method: "deleteMany" };
@@ -49,6 +55,7 @@ const fakePrisma: any = {
   },
   recordingSegment: {
     findFirst: async () => null,
+    count: async () => 0,
     deleteMany: (args: unknown) => {
       operationCalls.push({ model: "recordingSegment", method: "deleteMany", args });
       return { model: "recordingSegment", method: "deleteMany" };
@@ -71,10 +78,12 @@ beforeEach(() => {
   fakePrisma.repository.findUnique = async () => repository;
   fakePrisma.video.findMany = async () => [];
   fakePrisma.recordingSession.findFirst = async () => null;
+  fakePrisma.recordingSession.count = async () => 0;
   fakePrisma.recordingSegment.findFirst = async () => null;
+  fakePrisma.recordingSegment.count = async () => 0;
 });
 
-test("deleteRepository rejects an active streaming session", async () => {
+test("deactivateRepository rejects an active streaming session", async () => {
   const findFirstCalls: unknown[] = [];
   fakePrisma.recordingSession.findFirst = async (args: unknown) => {
     findFirstCalls.push(args);
@@ -82,7 +91,7 @@ test("deleteRepository rejects an active streaming session", async () => {
   };
 
   await assert.rejects(
-    () => repositoryService.deleteRepository("admin", "admin", repository.id),
+    () => repositoryService.deactivateRepository("admin", "admin", repository.id),
     (error: any) =>
       error?.code === "CONFLICT" &&
       error?.message === "Repository cannot be modified while a stream is active.",
@@ -95,7 +104,7 @@ test("deleteRepository rejects an active streaming session", async () => {
   assert.equal(operationCalls.length, 0);
 });
 
-test("deleteRepository rejects an in-progress recording finalization", async () => {
+test("deactivateRepository rejects an in-progress recording finalization", async () => {
   const segmentFindCalls: unknown[] = [];
   fakePrisma.recordingSegment.findFirst = async (args: unknown) => {
     segmentFindCalls.push(args);
@@ -103,7 +112,7 @@ test("deleteRepository rejects an in-progress recording finalization", async () 
   };
 
   await assert.rejects(
-    () => repositoryService.deleteRepository("admin", "admin", repository.id),
+    () => repositoryService.deactivateRepository("admin", "admin", repository.id),
     (error: any) =>
       error?.code === "CONFLICT" &&
       error?.message === "Repository cannot be modified while recording finalization is in progress.",
@@ -123,8 +132,52 @@ test("deleteRepository rejects an in-progress recording finalization", async () 
   assert.equal(operationCalls.length, 0);
 });
 
-test("deleteRepository allows pending sessions and deletes repository-owned records", async () => {
-  const result = await repositoryService.deleteRepository("admin", "admin", repository.id);
+test("deactivateRepository allows pending sessions and marks repository deactivated", async () => {
+  const result = await repositoryService.deactivateRepository("admin", "admin", repository.id);
+
+  assert.deepEqual(result, {
+    id: repository.id,
+    deactivated: true,
+  });
+  assert.deepEqual(operationCalls.map((call) => `${call.model}.${call.method}`), [
+    "repository.update",
+  ]);
+});
+
+test("getRepositoryDeleteReadiness requires deactivation and no active work", async () => {
+  fakePrisma.recordingSession.count = async () => 1;
+
+  const result = await repositoryService.getRepositoryDeleteReadiness("admin", "admin", repository.id);
+
+  assert.deepEqual(result, {
+    repository_id: repository.id,
+    can_delete: false,
+    checks: {
+      is_deactivated: false,
+      active_streaming_session_count: 1,
+      finalizing_segment_count: 0,
+    },
+  });
+});
+
+test("permanentlyDeleteRepository rejects an active repository", async () => {
+  await assert.rejects(
+    () => repositoryService.permanentlyDeleteRepository("admin", "admin", repository.id),
+    (error: any) =>
+      error?.code === "VALIDATION_ERROR" &&
+      error?.message === "Deactivate the repository before permanent deletion.",
+  );
+
+  assert.equal(operationCalls.length, 0);
+});
+
+test("permanentlyDeleteRepository allows pending sessions and deletes repository-owned records", async () => {
+  fakePrisma.repository.findUnique = async () => ({
+    ...repository,
+    deactivated: true,
+  });
+
+  const result = await repositoryService.permanentlyDeleteRepository("admin", "admin", repository.id);
 
   assert.deepEqual(result, {
     id: repository.id,

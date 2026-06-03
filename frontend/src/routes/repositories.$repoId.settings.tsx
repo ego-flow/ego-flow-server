@@ -230,7 +230,7 @@ function RepositorySettingsPage() {
 										onClick={() => {
 											if (
 												!window.confirm(
-													"Delete this repository and all associated files?",
+													"Deactivate and permanently delete this repository and all associated files?",
 												)
 											) {
 												return;

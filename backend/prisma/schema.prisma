@@ -103,12 +103,14 @@ model Repository {
   visibility         RepoVisibility @default(public)
   description        String?        @db.VarChar(500)
   contributors       Json           @default("[]")
+  deactivated        Boolean        @default(false)
   createdAt          DateTime       @default(now()) @map("created_at")
   updatedAt          DateTime       @updatedAt @map("updated_at")
 
   @@unique([ownerId, name])
   @@index([ownerId], map: "idx_repos_owner_id")
   @@index([visibility], map: "idx_repos_visibility")
+  @@index([deactivated], map: "idx_repos_deactivated")
   @@map("repositories")
 }
 

@@ -46,11 +46,13 @@ Current API list based on the server codebase.
 |---|---|---|---|
 | `POST /api/v1/repositories` | `{ name, visibility?, description? }` | `{ repository }` | Create repository |
 | `GET /api/v1/repositories` | none | `{ repositories }` | List accessible repositories |
-| `GET /api/v1/repositories/mine` | none | `{ repositories }` | List repositories the current user can maintain |
+| `GET /api/v1/repositories/maintain` | none | `{ repositories }` | List repositories the current user can maintain |
 | `GET /api/v1/repositories/resolve?slug=owner/name` | `slug` or `owner_id` plus `name` | `{ repository }` | Resolve repository by owner/name |
 | `GET /api/v1/repositories/:repoId` | `repoId` | `{ repository }` | Read repository detail |
 | `PATCH /api/v1/repositories/:repoId` | `{ name?, visibility?, description? }` | `{ repository }` | Update repository settings |
-| `DELETE /api/v1/repositories/:repoId` | `repoId` | `{ id, deleted: true }` | Delete repository |
+| `DELETE /api/v1/repositories/:repoId/deactivate` | `repoId` | `{ id, deactivated: true }` | Deactivate repository before permanent deletion |
+| `GET /api/v1/repositories/:repoId/delete-readiness` | `repoId` | `{ repository_id, can_delete, checks }` | Check whether a repository can be permanently deleted |
+| `DELETE /api/v1/repositories/:repoId` | `repoId` | `{ id, deleted: true }` | Permanently delete a deactivated repository |
 | `GET /api/v1/repositories/:repoId/members` | `repoId` | `{ repository, members }` | List repository members |
 | `POST /api/v1/repositories/:repoId/members` | `{ user_id, role }` | `{ repository, members }` | Add or update repository member |
 | `PATCH /api/v1/repositories/:repoId/members/:userId` | `{ role }` | `{ repository, members }` | Update repository member role |

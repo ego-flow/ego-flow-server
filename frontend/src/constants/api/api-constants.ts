@@ -12,6 +12,6 @@ export enum ApiEndpoint {
 	AuthPythonTokens = "/auth/python/tokens",
 	LiveStreams = "/live-streams",
 	Repositories = "/repositories",
-	RepositoriesMine = "/repositories/mine",
+	RepositoriesMaintain = "/repositories/maintain",
 	UsersMePassword = "/users/me/password",
 }

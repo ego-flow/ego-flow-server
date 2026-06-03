@@ -234,6 +234,27 @@ export const openApiDocument = {
           deactivated: { type: "boolean", example: true },
         },
       },
+      RepositoryDeleteReadiness: {
+        type: "object",
+        required: ["repository_id", "can_delete", "checks"],
+        properties: {
+          repository_id: { type: "string", format: "uuid" },
+          can_delete: { type: "boolean" },
+          checks: {
+            type: "object",
+            required: [
+              "is_deactivated",
+              "active_streaming_session_count",
+              "finalizing_segment_count",
+            ],
+            properties: {
+              is_deactivated: { type: "boolean" },
+              active_streaming_session_count: { type: "integer", minimum: 0 },
+              finalizing_segment_count: { type: "integer", minimum: 0 },
+            },
+          },
+        },
+      },
       RepositoryMember: {
         type: "object",
         required: ["user_id", "display_name", "is_active", "role", "is_owner", "created_at"],
@@ -1301,7 +1322,7 @@ export const openApiDocument = {
         },
       },
     },
-    "/repositories/mine": {
+    "/repositories/maintain": {
       get: {
         tags: ["Repositories"],
         summary: "List repositories where the current user has maintain or admin access",
@@ -1315,6 +1336,48 @@ export const openApiDocument = {
             },
           },
           "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/repositories/{repoId}/deactivate": {
+      delete: {
+        tags: ["Repositories"],
+        summary: "Deactivate a repository before permanent deletion",
+        parameters: [{ $ref: "#/components/parameters/RepoId" }],
+        responses: {
+          "200": {
+            description: "Repository deactivated",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/DeactivateResult" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+          "409": { $ref: "#/components/responses/Conflict" },
+        },
+      },
+    },
+    "/repositories/{repoId}/delete-readiness": {
+      get: {
+        tags: ["Repositories"],
+        summary: "Check whether a repository can be permanently deleted",
+        parameters: [{ $ref: "#/components/parameters/RepoId" }],
+        responses: {
+          "200": {
+            description: "Repository permanent delete readiness",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/RepositoryDeleteReadiness" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
         },
       },
     },
@@ -1401,11 +1464,11 @@ export const openApiDocument = {
       },
       delete: {
         tags: ["Repositories"],
-        summary: "Delete a repository",
+        summary: "Permanently delete a deactivated repository with no active streaming or finalization",
         parameters: [{ $ref: "#/components/parameters/RepoId" }],
         responses: {
           "200": {
-            description: "Repository deleted",
+            description: "Repository permanently deleted",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/DeleteResult" },
@@ -1415,6 +1478,7 @@ export const openApiDocument = {
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/Forbidden" },
           "404": { $ref: "#/components/responses/NotFound" },
+          "400": { $ref: "#/components/responses/BadRequest" },
           "409": { $ref: "#/components/responses/Conflict" },
         },
       },
