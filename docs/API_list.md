@@ -21,8 +21,9 @@ Current API list based on the server codebase.
 | `POST /api/v1/auth/dashboard/logout` | dashboard cookie | `{ logged_out: true }` | Revoke dashboard session |
 | `GET /api/v1/auth/dashboard/session` | dashboard cookie | `{ user: { id, role, display_name } }` | Read current dashboard session |
 | `PUT /api/v1/auth/dashboard/me/password` | `{ currentPassword, newPassword }` | `{ message }` | Change current dashboard user's password |
-| `POST /api/v1/auth/python/tokens` | `{ id, password, name }` | `{ id, name, token, created_at, rotated_previous }` | Issue or rotate Python static token |
+| `POST /api/v1/auth/python/tokens` | dashboard cookie, `{ name }` | `{ id, name, token, created_at, rotated_previous }` | Issue or rotate Python static token |
 | `GET /api/v1/auth/python/tokens` | dashboard cookie | `{ token }` | Read current user's active Python token metadata |
+| `GET /api/v1/auth/python/token/validate` | Python bearer token | `{ valid: true, user: { id, role, display_name } }` | Validate current Python static token |
 | `DELETE /api/v1/auth/python/tokens/:tokenId` | `tokenId` | `{ id, revoked: true }` | Revoke Python API token |
 | `POST /api/v1/auth/publish` | MediaMTX payload: `action`, `path`, `query`, `protocol?` | `200` or `401`, empty body | RTMP/WHIP publish ticket auth callback |
 

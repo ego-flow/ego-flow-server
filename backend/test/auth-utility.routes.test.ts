@@ -47,16 +47,21 @@ const { adminService } =
   require("../src/services/admin.service") as typeof import("../src/services/admin.service");
 const { apiTokenService } =
   require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
+const { dashboardSessionService } =
+  require("../src/services/dashboard-session.service") as typeof import("../src/services/dashboard-session.service");
 const { authService } =
   require("../src/services/auth.service") as typeof import("../src/services/auth.service");
 const { authRoutes } =
   require("../src/routes/auth.routes") as typeof import("../src/routes/auth.routes");
+const { DASHBOARD_SESSION_COOKIE_NAME } =
+  require("../src/constants/auth/auth-constants") as typeof import("../src/constants/auth/auth-constants");
 
 const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
 const originalGetAuthenticatedUser = adminService.getAuthenticatedUser;
 const originalVerifyAccessToken = jwtLib.verifyAccessToken;
 const originalShouldRefreshToken = jwtLib.shouldRefreshToken;
 const originalIssuePythonToken = authService.issuePythonToken;
+const originalVerifyDashboardSession = dashboardSessionService.verifySession;
 
 let server: import("node:http").Server | null = null;
 
@@ -81,6 +86,7 @@ beforeEach(() => {
   (jwtLib as any).verifyAccessToken = originalVerifyAccessToken;
   (jwtLib as any).shouldRefreshToken = originalShouldRefreshToken;
   authService.issuePythonToken = originalIssuePythonToken;
+  dashboardSessionService.verifySession = originalVerifyDashboardSession;
 });
 
 afterEach(async () => {
@@ -98,13 +104,22 @@ afterEach(async () => {
   }
 });
 
-test("POST /auth/python/tokens issues a Python static token", async () => {
+test("POST /auth/python/tokens issues a Python static token for a dashboard session", async () => {
   const baseUrl = await startServer();
 
-  authService.issuePythonToken = async (input) => {
+  dashboardSessionService.verifySession = async (rawToken: string) => {
+    assert.equal(rawToken, "dashboard-token");
+    return {
+      sessionId: "session-1",
+      userId: "alice",
+      role: "user",
+      displayName: "Alice Kim",
+    };
+  };
+
+  authService.issuePythonToken = async (userId, input) => {
+    assert.equal(userId, "alice");
     assert.deepEqual(input, {
-      id: "alice",
-      password: "password",
       name: "python-package",
     });
 
@@ -121,10 +136,9 @@ test("POST /auth/python/tokens issues a Python static token", async () => {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      Cookie: `${DASHBOARD_SESSION_COOKIE_NAME}=dashboard-token`,
     },
     body: JSON.stringify({
-      id: "alice",
-      password: "password",
       name: "python-package",
     }),
   });
@@ -137,6 +151,73 @@ test("POST /auth/python/tokens issues a Python static token", async () => {
     created_at: "2026-06-03T00:00:00.000Z",
     rotated_previous: false,
   });
+});
+
+test("POST /auth/python/tokens rejects requests without a dashboard session", async () => {
+  const baseUrl = await startServer();
+
+  const response = await fetch(`${baseUrl}/api/v1/auth/python/tokens`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "python-package",
+    }),
+  });
+
+  assert.equal(response.status, 401);
+});
+
+test("GET /auth/python/token/validate returns the Python token owner", async () => {
+  const baseUrl = await startServer();
+  const rawToken = "ef_0123456789abcdef0123456789abcdef01234567";
+
+  apiTokenService.verifyPythonToken = async (token: string) => {
+    assert.equal(token, rawToken);
+    return {
+      userId: "alice",
+      role: "user",
+    };
+  };
+  adminService.getAuthenticatedUser = async (userId: string) => {
+    assert.equal(userId, "alice");
+    return {
+      userId,
+      role: "user",
+      displayName: "Alice Kim",
+    };
+  };
+
+  const response = await fetch(`${baseUrl}/api/v1/auth/python/token/validate`, {
+    headers: {
+      Authorization: `Bearer ${rawToken}`,
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    valid: true,
+    user: {
+      id: "alice",
+      role: "user",
+      display_name: "Alice Kim",
+    },
+  });
+});
+
+test("GET /auth/python/token/validate rejects invalid Python tokens", async () => {
+  const baseUrl = await startServer();
+
+  apiTokenService.verifyPythonToken = async () => null;
+
+  const response = await fetch(`${baseUrl}/api/v1/auth/python/token/validate`, {
+    headers: {
+      Authorization: "Bearer ef_deadbeefdeadbeefdeadbeefdeadbeefdeadbe",
+    },
+  });
+
+  assert.equal(response.status, 401);
 });
 
 test("legacy generic auth endpoints are not mounted", async () => {

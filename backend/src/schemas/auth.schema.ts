@@ -9,7 +9,7 @@ export const dashboardLoginSchema = loginSchema.extend({
   remember_me: z.boolean().optional().default(false),
 });
 
-export const issuePythonTokenSchema = loginSchema.extend({
+export const issuePythonTokenSchema = z.object({
   name: z.string().trim().min(1).max(100),
 });
 

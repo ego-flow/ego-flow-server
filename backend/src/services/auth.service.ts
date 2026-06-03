@@ -105,9 +105,8 @@ export class AuthService {
     };
   }
 
-  async issuePythonToken(input: IssuePythonTokenInput) {
-    const user = await this.authenticatePassword(input);
-    return apiTokenService.issueToken(user.id, {
+  async issuePythonToken(userId: string, input: IssuePythonTokenInput) {
+    return apiTokenService.issueToken(userId, {
       name: input.name,
     });
   }

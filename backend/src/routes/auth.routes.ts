@@ -4,7 +4,7 @@ import { AuthCredentialKind } from "../constants/auth/auth-constants";
 import { asyncHandler } from "../lib/async-handler";
 import { clearDashboardSessionCookie, setDashboardSessionCookie } from "../lib/dashboard-session-cookie";
 import { getAuthUser } from "../lib/request-context";
-import { requireDashboardSession } from "../middleware/auth.middleware";
+import { requireDashboardSession, requirePythonToken } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import type { ApiTokenIdParamInput } from "../schemas/api-token.schema";
 import { apiTokenIdParamSchema } from "../schemas/api-token.schema";
@@ -84,9 +84,11 @@ router.put(
 // POST /api/v1/auth/python/tokens
 router.post(
   "/python/tokens",
+  requireDashboardSession,
   validate(issuePythonTokenSchema),
   asyncHandler(async (req, res) => {
-    const response = await authService.issuePythonToken(req.body);
+    const user = getAuthUser(req);
+    const response = await authService.issuePythonToken(user.userId, req.body);
     res.status(201).json(response);
   }),
 );
@@ -99,6 +101,23 @@ router.get(
     const user = getAuthUser(req);
     const token = await apiTokenService.getCurrentToken(user.userId);
     res.status(200).json({ token });
+  }),
+);
+
+// GET /api/v1/auth/python/token/validate
+router.get(
+  "/python/token/validate",
+  requirePythonToken,
+  asyncHandler(async (req, res) => {
+    const user = getAuthUser(req);
+    res.status(200).json({
+      valid: true,
+      user: {
+        id: user.userId,
+        role: user.role,
+        display_name: user.displayName,
+      },
+    });
   }),
 );
 

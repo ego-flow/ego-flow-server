@@ -86,11 +86,25 @@ export const openApiDocument = {
       },
       IssuePythonTokenRequest: {
         type: "object",
-        required: ["id", "password", "name"],
+        required: ["name"],
         properties: {
-          id: { type: "string", maxLength: 64, example: "admin" },
-          password: { type: "string", example: "changeme123" },
           name: { type: "string", minLength: 1, maxLength: 100, example: "python-package" },
+        },
+      },
+      PythonTokenValidateResponse: {
+        type: "object",
+        required: ["valid", "user"],
+        properties: {
+          valid: { type: "boolean", example: true },
+          user: {
+            type: "object",
+            required: ["id", "role", "display_name"],
+            properties: {
+              id: { type: "string", example: "alice" },
+              role: { type: "string", enum: ["admin", "user"] },
+              display_name: { type: "string", example: "Alice Kim" },
+            },
+          },
         },
       },
       DashboardSessionResponse: {
@@ -1081,8 +1095,8 @@ export const openApiDocument = {
     "/auth/python/tokens": {
       post: {
         tags: ["Auth"],
-        summary: "Issue or rotate a Python static token with user credentials",
-        security: [],
+        summary: "Issue or rotate the current dashboard user's Python static token",
+        security: [{ dashboardCookie: [] }],
         requestBody: {
           required: true,
           content: {
@@ -1114,6 +1128,24 @@ export const openApiDocument = {
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/CurrentApiTokenResponse" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/auth/python/token/validate": {
+      get: {
+        tags: ["Auth"],
+        summary: "Validate the current Python static token",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "Python token is valid",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PythonTokenValidateResponse" },
               },
             },
           },
