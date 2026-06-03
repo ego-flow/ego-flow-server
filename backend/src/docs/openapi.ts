@@ -23,7 +23,6 @@ export const openApiDocument = {
     { name: "Recordings" },
     { name: "Hooks" },
     { name: "Videos" },
-    { name: "Users" },
     { name: "Admin" },
   ],
   components: {
@@ -85,6 +84,15 @@ export const openApiDocument = {
           remember_me: { type: "boolean", default: false },
         },
       },
+      IssuePythonTokenRequest: {
+        type: "object",
+        required: ["id", "password", "name"],
+        properties: {
+          id: { type: "string", maxLength: 64, example: "admin" },
+          password: { type: "string", example: "changeme123" },
+          name: { type: "string", minLength: 1, maxLength: 100, example: "python-package" },
+        },
+      },
       DashboardSessionResponse: {
         type: "object",
         required: ["user"],
@@ -97,21 +105,6 @@ export const openApiDocument = {
         required: ["logged_out"],
         properties: {
           logged_out: { type: "boolean", example: true },
-        },
-      },
-      ValidateAuthResponse: {
-        type: "object",
-        required: ["user"],
-        properties: {
-          user: {
-            type: "object",
-            required: ["id", "role", "display_name"],
-            properties: {
-              id: { type: "string", example: "alice" },
-              role: { type: "string", enum: ["admin", "user"] },
-              display_name: { type: "string", example: "Alice Kim" },
-            },
-          },
         },
       },
       HealthResponse: {
@@ -544,13 +537,6 @@ export const openApiDocument = {
           newPassword: { type: "string" },
         },
       },
-      CreateApiTokenRequest: {
-        type: "object",
-        required: ["name"],
-        properties: {
-          name: { type: "string", minLength: 1, maxLength: 100, example: "python-package" },
-        },
-      },
       ApiTokenMetadata: {
         type: "object",
         required: ["id", "name", "last_used_at", "created_at"],
@@ -963,32 +949,6 @@ export const openApiDocument = {
         },
       },
     },
-    "/auth/login": {
-      post: {
-        tags: ["Auth"],
-        summary: "Legacy app login and receive an app access token",
-        security: [],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/LoginRequest" },
-            },
-          },
-        },
-        responses: {
-          "200": {
-            description: "Login succeeded",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/LoginResponse" },
-              },
-            },
-          },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-        },
-      },
-    },
     "/auth/app/login": {
       post: {
         tags: ["Auth"],
@@ -1083,30 +1043,43 @@ export const openApiDocument = {
         },
       },
     },
-    "/auth/tokens": {
-      get: {
+    "/auth/dashboard/me/password": {
+      put: {
         tags: ["Auth"],
-        summary: "Get the current user's active Python token metadata",
-        responses: {
-          "200": {
-            description: "Current Python token status",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/CurrentApiTokenResponse" },
-              },
-            },
-          },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-        },
-      },
-      post: {
-        tags: ["Auth"],
-        summary: "Issue or rotate the current user's Python token",
+        summary: "Change the current dashboard user's password",
+        security: [{ dashboardCookie: [] }],
         requestBody: {
           required: true,
           content: {
             "application/json": {
-              schema: { $ref: "#/components/schemas/CreateApiTokenRequest" },
+              schema: { $ref: "#/components/schemas/ChangePasswordRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Password changed",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/MessageResponse" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
+    "/auth/python/tokens": {
+      post: {
+        tags: ["Auth"],
+        summary: "Issue or rotate a Python static token with user credentials",
+        security: [],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/IssuePythonTokenRequest" },
             },
           },
         },
@@ -1123,17 +1096,16 @@ export const openApiDocument = {
           "401": { $ref: "#/components/responses/Unauthorized" },
         },
       },
-    },
-    "/auth/validate": {
       get: {
         tags: ["Auth"],
-        summary: "Validate the current bearer token",
+        summary: "Get the current dashboard user's active Python token metadata",
+        security: [{ dashboardCookie: [] }],
         responses: {
           "200": {
-            description: "Authenticated user",
+            description: "Current Python token status",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/ValidateAuthResponse" },
+                schema: { $ref: "#/components/schemas/CurrentApiTokenResponse" },
               },
             },
           },
@@ -1141,10 +1113,11 @@ export const openApiDocument = {
         },
       },
     },
-    "/auth/tokens/{tokenId}": {
+    "/auth/python/tokens/{tokenId}": {
       delete: {
         tags: ["Auth"],
         summary: "Revoke a Python token",
+        security: [{ dashboardCookie: [] }],
         parameters: [{ $ref: "#/components/parameters/TokenId" }],
         responses: {
           "200": {
@@ -2052,32 +2025,6 @@ export const openApiDocument = {
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/Forbidden" },
           "404": { $ref: "#/components/responses/NotFound" },
-        },
-      },
-    },
-    "/users/me/password": {
-      put: {
-        tags: ["Users"],
-        summary: "Change the current user's password",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/ChangePasswordRequest" },
-            },
-          },
-        },
-        responses: {
-          "200": {
-            description: "Password changed",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/MessageResponse" },
-              },
-            },
-          },
-          "400": { $ref: "#/components/responses/BadRequest" },
-          "401": { $ref: "#/components/responses/Unauthorized" },
         },
       },
     },

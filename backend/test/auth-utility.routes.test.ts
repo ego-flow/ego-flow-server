@@ -47,6 +47,8 @@ const { adminService } =
   require("../src/services/admin.service") as typeof import("../src/services/admin.service");
 const { apiTokenService } =
   require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
+const { authService } =
+  require("../src/services/auth.service") as typeof import("../src/services/auth.service");
 const { authRoutes } =
   require("../src/routes/auth.routes") as typeof import("../src/routes/auth.routes");
 
@@ -54,6 +56,7 @@ const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
 const originalGetAuthenticatedUser = adminService.getAuthenticatedUser;
 const originalVerifyAccessToken = jwtLib.verifyAccessToken;
 const originalShouldRefreshToken = jwtLib.shouldRefreshToken;
+const originalIssuePythonToken = authService.issuePythonToken;
 
 let server: import("node:http").Server | null = null;
 
@@ -77,6 +80,7 @@ beforeEach(() => {
   adminService.getAuthenticatedUser = originalGetAuthenticatedUser;
   (jwtLib as any).verifyAccessToken = originalVerifyAccessToken;
   (jwtLib as any).shouldRefreshToken = originalShouldRefreshToken;
+  authService.issuePythonToken = originalIssuePythonToken;
 });
 
 afterEach(async () => {
@@ -94,73 +98,62 @@ afterEach(async () => {
   }
 });
 
-test("GET /auth/validate returns the authenticated user for JWT and Python tokens", async () => {
+test("POST /auth/python/tokens issues a Python static token", async () => {
   const baseUrl = await startServer();
 
-  (jwtLib as any).verifyAccessToken = (() => ({
-    userId: "alice",
-    role: "user",
-  })) as typeof jwtLib.verifyAccessToken;
-  (jwtLib as any).shouldRefreshToken = (() => false) as typeof jwtLib.shouldRefreshToken;
-  adminService.getAuthenticatedUser = async (userId: string) => ({
-    userId,
-    role: "user",
-    displayName: "Alice Kim",
-  });
-  apiTokenService.verifyPythonToken = async () => ({
-    userId: "alice",
-    role: "user",
+  authService.issuePythonToken = async (input) => {
+    assert.deepEqual(input, {
+      id: "alice",
+      password: "password",
+      name: "python-package",
+    });
+
+    return {
+      id: "token-id",
+      name: input.name,
+      token: "ef_0123456789abcdef0123456789abcdef01234567",
+      created_at: "2026-06-03T00:00:00.000Z",
+      rotated_previous: false,
+    };
+  };
+
+  const response = await fetch(`${baseUrl}/api/v1/auth/python/tokens`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      id: "alice",
+      password: "password",
+      name: "python-package",
+    }),
   });
 
-  const jwtResponse = await fetch(`${baseUrl}/api/v1/auth/validate`, {
-    headers: {
-      Authorization: "Bearer jwt-token",
-    },
-  });
-  assert.equal(jwtResponse.status, 200);
-  assert.deepEqual(await jwtResponse.json(), {
-    user: {
-      id: "alice",
-      role: "user",
-      display_name: "Alice Kim",
-    },
-    auth: {
-      kind: "app",
-    },
-  });
-
-  const pythonResponse = await fetch(`${baseUrl}/api/v1/auth/validate`, {
-    headers: {
-      Authorization: "Bearer ef_0123456789abcdef0123456789abcdef01234567",
-    },
-  });
-  assert.equal(pythonResponse.status, 200);
-  assert.deepEqual(await pythonResponse.json(), {
-    user: {
-      id: "alice",
-      role: "user",
-      display_name: "Alice Kim",
-    },
-    auth: {
-      kind: "python",
-    },
+  assert.equal(response.status, 201);
+  assert.deepEqual(await response.json(), {
+    id: "token-id",
+    name: "python-package",
+    token: "ef_0123456789abcdef0123456789abcdef01234567",
+    created_at: "2026-06-03T00:00:00.000Z",
+    rotated_previous: false,
   });
 });
 
-test("GET /auth/validate returns 401 for an invalid token", async () => {
+test("legacy generic auth endpoints are not mounted", async () => {
   const baseUrl = await startServer();
 
-  apiTokenService.verifyPythonToken = async () => null;
+  const validateResponse = await fetch(`${baseUrl}/api/v1/auth/validate`);
+  assert.equal(validateResponse.status, 404);
 
-  const response = await fetch(`${baseUrl}/api/v1/auth/validate`, {
-    headers: {
-      Authorization: "Bearer ef_deadbeefdeadbeefdeadbeefdeadbeefdeadbe",
-    },
+  const loginResponse = await fetch(`${baseUrl}/api/v1/auth/login`, {
+    method: "POST",
   });
+  assert.equal(loginResponse.status, 404);
 
-  assert.equal(response.status, 401);
-  const body = await response.json();
-  assert.equal(body.error.code, "UNAUTHORIZED");
+  const tokenResponse = await fetch(`${baseUrl}/api/v1/auth/tokens`, {
+    method: "POST",
+  });
+  assert.equal(tokenResponse.status, 404);
 });
 
 test("POST /auth/publish accepts WebRTC publish when ticket matches stream path", async () => {

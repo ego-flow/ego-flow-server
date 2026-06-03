@@ -16,16 +16,14 @@ Current API list based on the server codebase.
 
 | Endpoint | Input | Response | Purpose |
 |---|---|---|---|
-| `POST /api/v1/auth/login` | `{ id, password }` | `{ token, user }` | App/general JWT login |
-| `POST /api/v1/auth/app/login` | `{ id, password }` | `{ token, user }` | App login alias |
+| `POST /api/v1/auth/app/login` | `{ id, password }` | `{ token, user }` | App JWT login |
 | `POST /api/v1/auth/dashboard/login` | `{ id, password, remember_me? }` | `{ user }` plus session cookie | Dashboard cookie login |
 | `POST /api/v1/auth/dashboard/logout` | dashboard cookie | `{ logged_out: true }` | Revoke dashboard session |
 | `GET /api/v1/auth/dashboard/session` | dashboard cookie | `{ user: { id, role, display_name } }` | Read current dashboard session |
-| `GET /api/v1/auth/validate` | dashboard/app/python auth | `{ user, auth: { kind } }` | Validate any supported credential |
-| `PUT /api/v1/users/me/password` | `{ currentPassword, newPassword }` | `{ message }` | Change current user's password |
-| `POST /api/v1/auth/tokens` | `{ name }` | `{ id, name, token, created_at, rotated_previous }` | Issue Python API token |
-| `GET /api/v1/auth/tokens` | dashboard cookie | `{ token }` | Read current user's active Python token metadata |
-| `DELETE /api/v1/auth/tokens/:tokenId` | `tokenId` | `{ id, revoked: true }` | Revoke Python API token |
+| `PUT /api/v1/auth/dashboard/me/password` | `{ currentPassword, newPassword }` | `{ message }` | Change current dashboard user's password |
+| `POST /api/v1/auth/python/tokens` | `{ id, password, name }` | `{ id, name, token, created_at, rotated_previous }` | Issue or rotate Python static token |
+| `GET /api/v1/auth/python/tokens` | dashboard cookie | `{ token }` | Read current user's active Python token metadata |
+| `DELETE /api/v1/auth/python/tokens/:tokenId` | `tokenId` | `{ id, revoked: true }` | Revoke Python API token |
 | `POST /api/v1/auth/publish` | MediaMTX payload: `action`, `path`, `query`, `protocol?` | `200` or `401`, empty body | RTMP/WHIP publish ticket auth callback |
 
 ## Admin

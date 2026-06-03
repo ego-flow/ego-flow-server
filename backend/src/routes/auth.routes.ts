@@ -4,26 +4,17 @@ import { AuthCredentialKind } from "../constants/auth/auth-constants";
 import { asyncHandler } from "../lib/async-handler";
 import { clearDashboardSessionCookie, setDashboardSessionCookie } from "../lib/dashboard-session-cookie";
 import { getAuthUser } from "../lib/request-context";
-import { requireDashboardOrAppOrPython, requireDashboardSession } from "../middleware/auth.middleware";
+import { requireDashboardSession } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import type { ApiTokenIdParamInput } from "../schemas/api-token.schema";
-import { apiTokenIdParamSchema, createApiTokenSchema } from "../schemas/api-token.schema";
-import { dashboardLoginSchema, loginSchema, publishAuthSchema } from "../schemas/auth.schema";
+import { apiTokenIdParamSchema } from "../schemas/api-token.schema";
+import { dashboardLoginSchema, issuePythonTokenSchema, loginSchema, publishAuthSchema } from "../schemas/auth.schema";
+import { changeMyPasswordSchema } from "../schemas/user.schema";
 import { apiTokenService } from "../services/api-token.service";
 import { authService } from "../services/auth.service";
 import { dashboardSessionService } from "../services/dashboard-session.service";
 
 const router = Router();
-
-// POST /api/v1/auth/login
-router.post(
-  "/login",
-  validate(loginSchema),
-  asyncHandler(async (req, res) => {
-    const response = await authService.login(req.body);
-    res.status(200).json(response);
-  }),
-);
 
 // POST /api/v1/auth/app/login
 router.post(
@@ -78,21 +69,31 @@ router.get(
   }),
 );
 
-// POST /api/v1/auth/tokens
-router.post(
-  "/tokens",
+// PUT /api/v1/auth/dashboard/me/password
+router.put(
+  "/dashboard/me/password",
   requireDashboardSession,
-  validate(createApiTokenSchema),
+  validate(changeMyPasswordSchema),
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    const response = await apiTokenService.issueToken(user.userId, req.body);
+    const response = await authService.changeMyPassword(user.userId, req.body);
+    res.status(200).json(response);
+  }),
+);
+
+// POST /api/v1/auth/python/tokens
+router.post(
+  "/python/tokens",
+  validate(issuePythonTokenSchema),
+  asyncHandler(async (req, res) => {
+    const response = await authService.issuePythonToken(req.body);
     res.status(201).json(response);
   }),
 );
 
-// GET /api/v1/auth/tokens
+// GET /api/v1/auth/python/tokens
 router.get(
-  "/tokens",
+  "/python/tokens",
   requireDashboardSession,
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
@@ -101,28 +102,9 @@ router.get(
   }),
 );
 
-// GET /api/v1/auth/validate
-router.get(
-  "/validate",
-  requireDashboardOrAppOrPython,
-  asyncHandler(async (req, res) => {
-    const user = getAuthUser(req);
-    res.status(200).json({
-      user: {
-        id: user.userId,
-        role: user.role,
-        display_name: user.displayName,
-      },
-      auth: {
-        kind: req.auth?.kind ?? null,
-      },
-    });
-  }),
-);
-
-// DELETE /api/v1/auth/tokens/:tokenId
+// DELETE /api/v1/auth/python/tokens/:tokenId
 router.delete(
-  "/tokens/:tokenId",
+  "/python/tokens/:tokenId",
   requireDashboardSession,
   validate(apiTokenIdParamSchema, "params"),
   asyncHandler(async (req, res) => {

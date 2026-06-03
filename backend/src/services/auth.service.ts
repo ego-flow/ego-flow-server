@@ -4,9 +4,10 @@ import { RecordingSessionIngestType, UserRole } from "@prisma/client";
 import { ErrorCode, Unauthorized } from "../lib/errors";
 import { signAccessToken } from "../lib/jwt";
 import { prisma } from "../lib/prisma";
-import type { LoginInput, PublishAuthInput } from "../schemas/auth.schema";
+import type { IssuePythonTokenInput, LoginInput, PublishAuthInput } from "../schemas/auth.schema";
 import type { ChangeMyPasswordInput } from "../schemas/user.schema";
 import type { AppUserRole } from "../types/auth";
+import { apiTokenService } from "./api-token.service";
 import { streamOwnershipService } from "./stream-ownership.service";
 import { streamService } from "./stream.service";
 import { dashboardSessionService } from "./dashboard-session.service";
@@ -102,6 +103,13 @@ export class AuthService {
         displayName: user.displayName,
       },
     };
+  }
+
+  async issuePythonToken(input: IssuePythonTokenInput) {
+    const user = await this.authenticatePassword(input);
+    return apiTokenService.issueToken(user.id, {
+      name: input.name,
+    });
   }
 
   /**
