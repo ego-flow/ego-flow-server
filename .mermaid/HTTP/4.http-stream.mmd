@@ -7,7 +7,7 @@ sequenceDiagram
   participant DB as [DB]
   participant Queue as [Finalize Queue]
 
-  Note over App,Backend: 전제<br/>.mermaid/3.http-start.mmd 단계가 성공했다.<br/>RecordingSession.status = STREAMING<br/>RecordingSegment.status = WRITING<br/>Redis stream:recording:{recordingSessionId}에 HTTP upload cache가 있다.
+  Note over App,Backend: 전제<br/>.mermaid/HTTP/3.http-start.mmd 단계가 성공했다.<br/>RecordingSession.status = STREAMING<br/>RecordingSegment.status = WRITING<br/>Redis stream:recording:{recordingSessionId}에 HTTP upload cache가 있다.
 
   loop chunk upload
     App->>Backend: HTTP chunk upload 요청

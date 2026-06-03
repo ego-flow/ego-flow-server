@@ -102,4 +102,4 @@ sequenceDiagram
 %% close-intent가 있으면 NORMAL_DISCONNECT, 없으면 stream-not-ready/reconcile이 UNEXPECTED_DISCONNECT로 기록한다.
 %% stream-not-ready와 reconcile 모두 live cache와 active set을 정리한 뒤 tryEnqueueFinalize를 호출한다.
 %% reconcile은 STREAMING session만 보정한다. PENDING session을 별도로 CLOSED 정리하는 bg reconcile loop는 없다.
-%% segment-complete hook, finalize enqueue 및 worker 처리 상세 흐름은 .mermaid/4.rtmp-stream.mmd에서 다룬다.
+%% segment-complete hook, finalize enqueue 및 worker 처리 상세 흐름은 .mermaid/RTMP/4.rtmp-stream.mmd에서 다룬다.

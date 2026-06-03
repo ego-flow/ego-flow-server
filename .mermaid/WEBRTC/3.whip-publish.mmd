@@ -20,26 +20,26 @@ sequenceDiagram
   Note over Caddy,MTX: Caddy는 /live/.../whip path를<br/>MediaMTX webrtcAddress(:8889)로 proxy한다.<br/>forward_auth는 쓰지 않는다.<br/>publish auth는 MediaMTX authHTTPAddress가 담당한다.
 
   MTX->>Backend: publish auth callback
-  Note over MTX,Backend: API<br/>POST /api/v1/auth/publish<br/><br/>Payload 핵심 값<br/>action=publish<br/>path=live/{repositoryName}/{recordingSessionId}<br/>query=ticket=t_{uuid}<br/>protocol=webrtc
+  Note over MTX,Backend: API<br/>POST /api/v1/auth/mediamtx<br/><br/>Payload 핵심 값<br/>action=publish<br/>path=live/{repositoryName}/{recordingSessionId}<br/>query=ticket=t_{uuid}<br/>protocol=webrtc<br/><br/>이 endpoint는 MediaMTX 공통 auth callback이며,<br/>publish action은 publish ticket 검증 branch로 들어간다.
 
   alt auth payload invalid
     Backend-->>MTX: 401 Unauthorized
-    Note over Backend,MTX: publishAuthSchema parse 실패<br/>MediaMTX에는 빈 401 응답만 반환
+    Note over Backend,MTX: mediaMtxAuthSchema parse 실패<br/>MediaMTX에는 빈 401 응답만 반환
     MTX-->>Caddy: WHIP publish rejected
     Caddy-->>App: WHIP publish rejected
   else action is not publish
     Backend-->>MTX: 401 Unauthorized
-    Note over Backend,MTX: non-publish action은 이 endpoint에서 처리하지 않는다.
+    Note over Backend,MTX: 이 WHIP publish path에서는 action=publish만 허용한다.<br/>같은 endpoint의 HLS read/playback branch는<br/>.mermaid/STREAMING/hls-playback.mmd에서 다룬다.
     MTX-->>Caddy: WHIP publish rejected
     Caddy-->>App: WHIP publish rejected
   else legacy credential present
     Backend-->>MTX: 401 Unauthorized
-    Note over Backend,MTX: password/token/query.pass/query.token 기반 publish credential은 허용하지 않는다.
+    Note over Backend,MTX: password/token/query.pass/query.token 기반 publish credential은 허용하지 않는다.<br/>publish ticket source는 query.ticket 하나만 허용한다.
     MTX-->>Caddy: WHIP publish rejected
     Caddy-->>App: WHIP publish rejected
   else ticket credential only
     Backend->>Redis: publish ticket 조회 및 검증
-    Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>checks: exists, status=active, ingestType=MEDIAMTX, streamPath == path<br/>검증 성공 시 TTL을 60 seconds로 갱신
+    Note over Backend,Redis: key: stream:ticket:{ticketId}<br/><br/>checks<br/>ticket exists<br/>JSON parse success<br/>status = active<br/>ingestType = MEDIAMTX<br/>streamPath == normalized path<br/><br/>검증 성공 시 TTL을 60 seconds로 갱신<br/>protocol=webrtc 값은 allow 조건으로 쓰지 않는다.
 
     alt ticket invalid
       Backend-->>MTX: 401 Unauthorized
@@ -47,7 +47,7 @@ sequenceDiagram
       Caddy-->>App: WHIP publish rejected
       Note over App,Caddy: App은 WHIP POST 실패를 publish start failure로 처리하고<br/>register부터 새 session을 시작한다.
     else ticket valid
-      Note over Backend,Redis: auth 단계에서는 ticket consume, DB update, active set update를 하지 않는다.
+      Note over Backend,Redis: auth 단계에서는 ticket consume, DB 조회, DB update,<br/>RecordingSession 상태 변경, active set update를 하지 않는다.<br/>이 단계는 MediaMTX publish 허용 여부만 결정한다.
       Backend-->>MTX: 200 OK
     end
   end
@@ -130,5 +130,5 @@ sequenceDiagram
 %% 이 문서는 publish-ticket 발급 이후 WHIP publish 인증, SDP offer/answer,
 %% stream-ready, live cache 등록, 첫 recording segment 생성까지만 다룬다.
 %% 실제 WebRTC media 전송부터 stream 종료, hook 처리, finalize enqueue까지는
-%% .mermaid/4.whip-stream.mmd에서 다룬다.
-%% RTMP publish 흐름은 .mermaid/3.rtmp-publish.mmd에서 따로 다룬다.
+%% .mermaid/WEBRTC/4.whip-stream.mmd에서 다룬다.
+%% RTMP publish 흐름은 .mermaid/RTMP/3.rtmp-publish.mmd에서 따로 다룬다.

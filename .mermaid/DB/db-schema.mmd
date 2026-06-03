@@ -49,6 +49,7 @@ erDiagram
     RepoVisibility visibility "default public"
     varchar description "varchar(500), nullable"
     json contributors "default []"
+    boolean deactivated "default false"
     timestamp created_at "default now"
     timestamp updated_at "updatedAt"
   }
@@ -103,7 +104,7 @@ erDiagram
     varchar vlm_video_path "varchar(1024), nullable"
     varchar dashboard_video_path "varchar(1024), nullable"
     varchar thumbnail_path "varchar(1024), nullable"
-    bigint size_bytes "nullable"
+    bigint sizeBytes "nullable"
     varchar vlm_sha256 "varchar(64), nullable"
     varchar recorder "varchar(64), nullable, logical users.id"
     VideoStatus status
@@ -152,6 +153,7 @@ erDiagram
   %% Indexes:
   %% repositories.owner_id -> idx_repos_owner_id
   %% repositories.visibility -> idx_repos_visibility
+  %% repositories.deactivated -> idx_repos_deactivated
   %% repo_members.repository_id -> idx_repo_members_repo_id
   %% repo_members.user_id -> idx_repo_members_user_id
   %% recording_sessions(repository_id, status) -> idx_recording_sessions_repo_status

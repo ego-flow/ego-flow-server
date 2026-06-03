@@ -60,8 +60,8 @@ sequenceDiagram
       Caddy->>MTX: proxy to MediaMTX
     end
 
-    MTX->>Backend: publish auth callback
-    Note over MTX,Backend: API<br/>POST /api/v1/auth/publish<br/><br/>ticket 검증 성공 시 publish 허용
+    MTX->>Backend: MediaMTX auth callback
+    Note over MTX,Backend: API<br/>POST /api/v1/auth/mediamtx<br/><br/>action=publish<br/>ticket 검증 성공 시 publish 허용
 
     par publish start hooks
       MTX->>Backend: stream-ready hook
@@ -108,10 +108,17 @@ sequenceDiagram
 %% RTMP/WHIP publish auth, MediaMTX hooks, finalize worker는 server-side 내부 흐름이다.
 %% App은 streaming 재시작 시 기존 recordingSessionId나 publish_ticket을 직접 재사용하지 않고 register부터 다시 호출한다.
 %% HTTP ingest는 live playback을 제공하지 않지만 dashboard Live tab 목록에는 표시된다.
-%% 상세 register 흐름은 .mermaid/1.register.mmd를 참고한다.
-%% 상세 publish-ticket 흐름은 .mermaid/2.publish-ticket.mmd를 참고한다.
-%% 상세 HTTP start 흐름은 .mermaid/3.http-start.mmd를 참고한다.
-%% 상세 HTTP chunk/finish/timeout 흐름은 .mermaid/4.http-stream.mmd를 참고한다.
-%% 상세 RTMP 흐름은 .mermaid/3.rtmp-publish.mmd와 .mermaid/4.rtmp-stream.mmd를 참고한다.
-%% 상세 WHIP 흐름은 .mermaid/3.whip-publish.mmd와 .mermaid/4.whip-stream.mmd를 참고한다.
-%% 상세 HLS playback 흐름은 .mermaid/hls-playback.mmd를 참고한다.
+%% HLS playback은 Caddy /hls proxy를 쓰지 않는다. Dashboard/Python은 playback-ticket 발급 후 :8888 native HLS URL을 직접 요청한다.
+%% HLS playback URL 형식은 http://{host}:8888/{stream_path}/index.m3u8?ticket={playback_ticket} 이다.
+%% HLS hot path는 MediaMTX auth callback이 Redis stream:hls-ticket:{ticketId}와 stream:recording:{recordingSessionId}만 검증한다.
+%% Public API에서는 live stream identifier 명칭을 recordingSessionId로 통일한다.
+%% RTMP register/publish-ticket 상세는 .mermaid/RTMP/1.register.mmd와 .mermaid/RTMP/2.publish-ticket.mmd를 참고한다.
+%% WHIP register/publish-ticket 상세는 .mermaid/WEBRTC/1.register.mmd와 .mermaid/WEBRTC/2.publish-ticket.mmd를 참고한다.
+%% HTTP register/publish-ticket 상세는 .mermaid/HTTP/1.register.mmd와 .mermaid/HTTP/2.publish-ticket.mmd를 참고한다.
+%% 상세 HTTP start 흐름은 .mermaid/HTTP/3.http-start.mmd를 참고한다.
+%% 상세 HTTP chunk/finish/timeout 흐름은 .mermaid/HTTP/4.http-stream.mmd를 참고한다.
+%% 상세 RTMP 흐름은 .mermaid/RTMP/3.rtmp-publish.mmd와 .mermaid/RTMP/4.rtmp-stream.mmd를 참고한다.
+%% 상세 WHIP 흐름은 .mermaid/WEBRTC/3.whip-publish.mmd와 .mermaid/WEBRTC/4.whip-stream.mmd를 참고한다.
+%% HLS playback 공통 개요는 .mermaid/STREAMING/hls-playback.mmd를 참고한다.
+%% Dashboard HLS playback 상세는 .mermaid/STREAMING/dashboard-hls-playback.mmd를 참고한다.
+%% Python HLS playback 상세는 .mermaid/STREAMING/python-hls-playback.mmd를 참고한다.

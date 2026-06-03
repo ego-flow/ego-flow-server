@@ -25,7 +25,7 @@ Current API list based on the server codebase.
 | `GET /api/v1/auth/python/tokens` | dashboard cookie | `{ token }` | Read current user's active Python token metadata |
 | `GET /api/v1/auth/python/tokens/validate` | Python bearer token | `{ valid: true, user: { id, role, display_name } }` | Validate current Python static token |
 | `DELETE /api/v1/auth/python/tokens/:tokenId` | `tokenId` | `{ id, revoked: true }` | Revoke Python API token |
-| `POST /api/v1/auth/publish` | MediaMTX payload: `action`, `path`, `query`, `protocol?` | `200` or `401`, empty body | RTMP/WHIP publish ticket auth callback |
+| `POST /api/v1/auth/mediamtx` | MediaMTX payload: `action`, `path`, `query`, `protocol?`, `token?` | `200` or `401`, empty body | MediaMTX publish and HLS playback auth callback |
 
 ## Admin
 
@@ -74,8 +74,8 @@ Current API list based on the server codebase.
 | Endpoint | Input | Response | Purpose |
 |---|---|---|---|
 | `GET /api/v1/live-streams` | auth | `{ streams }` | List Redis active sessions. `MEDIAMTX` sessions can play HLS; `HTTP` sessions are listed only |
-| `GET /api/v1/live-streams/:streamId` | `streamId` | live stream detail plus `playback_ready` | Read one live session detail |
-| `GET /api/v1/hls-auth?path=...` | auth plus `path` | `200`, empty body | Caddy HLS `forward_auth` gate |
+| `GET /api/v1/live-streams/:recordingSessionId` | `recordingSessionId` | live stream detail plus `playback_ready` | Read one live session detail |
+| `POST /api/v1/live-streams/:recordingSessionId/playback-ticket` | dashboard cookie or Python token | `{ playback_ticket, playback_ticket_expires_at }` | Issue short TTL HLS playback ticket |
 
 ## Streaming
 

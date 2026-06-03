@@ -105,9 +105,9 @@ stateDiagram-v2
   }
 
   state "Video" as Video {
-    [*] --> VIDEO_COMPLETED: finalize success<br/>create videos row
-    [*] --> VIDEO_FAILED: finalize final failure<br/>create failed videos row
-    [*] --> VIDEO_FAILED: HTTP timeout failure<br/>create failed videos row without finalize
+    [*] --> VIDEO_COMPLETED: finalize success<br/>upsert videos row
+    [*] --> VIDEO_FAILED: finalize final failure<br/>upsert failed videos row
+    [*] --> VIDEO_FAILED: HTTP timeout failure<br/>upsert failed videos row without finalize
 
     state "COMPLETED" as VIDEO_COMPLETED
     state "FAILED" as VIDEO_FAILED
@@ -154,4 +154,4 @@ stateDiagram-v2
 %% segment-complete는 누락된 segment를 복구 생성하지 않고, 기존 단일 RecordingSegment만 WRITE_DONE으로 확정한 뒤 enqueue를 시도한다.
 %% segment-complete hook이 누락되면 WRITING segment는 자동으로 WRITE_DONE/FAILED로 보정하지 않는다.
 %% RecordingSegment.status가 raw segment write와 후처리 상태를 표현한다.
-%% Video row는 finalize가 성공하거나 최종 실패했을 때 생성된다.
+%% Video row는 finalize가 성공하거나 최종 실패했을 때 recording_session_id unique key 기준으로 upsert된다.

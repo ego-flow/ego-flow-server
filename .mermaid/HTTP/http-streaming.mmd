@@ -77,7 +77,7 @@ sequenceDiagram
 
 %% 참고:
 %% HTTP ingest는 live playback을 제공하지 않는다.
-%% dashboard Live tab에는 active upload 목록으로 표시되며 playback_available=false, hls_path=null이다.
+%% dashboard Live tab에는 active upload 목록으로 표시되며 playback_available=false이다.
 %% App은 upload 중 reconnect를 지원하지 않는다. 중단 후 재시도는 register부터 새 session으로 시작한다.
 %% chunk body는 append 가능한 muxed media byte stream이어야 한다. backend는 chunk를 재인코딩하거나 muxing하지 않고 raw file에 append만 한다.
 %% chunk hot path는 JWT signature/expiry, Redis, filesystem만 사용한다. DB에는 chunkAt, bytesReceived, lastSequence 같은 진행률 필드를 저장하지 않는다.

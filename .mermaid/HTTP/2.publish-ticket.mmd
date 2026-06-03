@@ -50,10 +50,10 @@ sequenceDiagram
               Note over App,Backend: Error<br/>Recording session registration has expired. Please register again.
             else ticket 발급 가능
               Backend->>Backend: ticket metadata 생성
-              Note over Backend: ticketId = t_{uuid}<br/>streamPath = session.streamPath<br/>ingestType = session.ingestType
+              Note over Backend: ticketId = t_{uuid}<br/>streamPath = session.streamPath<br/>ingestType = session.ingestType<br/>HTTP ingest flow에서는 HTTP
 
               Backend->>Redis: publish ticket 저장
-              Note over Backend,Redis: key: stream:ticket:{ticketId}<br/><br/>value fields<br/>recordingSessionId: {recordingSessionId}<br/>repositoryId: {repositoryId}<br/>userId: {userId}<br/>ingestType: MEDIAMTX 또는 HTTP<br/>streamPath: live/{repositoryName}/{recordingSessionId}<br/>status: active<br/><br/>TTL: 60 seconds
+              Note over Backend,Redis: key: stream:ticket:{ticketId}<br/><br/>value fields<br/>recordingSessionId: {recordingSessionId}<br/>repositoryId: {repositoryId}<br/>userId: {userId}<br/>ingestType: HTTP<br/>streamPath: live/{repositoryName}/{recordingSessionId}<br/>status: active<br/><br/>TTL: 60 seconds
               Redis-->>Backend: ticket 저장 완료
 
               Backend-->>App: 200 OK
@@ -71,9 +71,9 @@ sequenceDiagram
 %% recording_sessions row는 갱신하지 않는다.
 %% publish-ticket 단계에서 Redis에 쓰는 값은 stream:ticket:{ticketId} 하나다.
 %% ticket value에는 recording session의 ingestType을 저장한다.
-%% MediaMTX auth/stream-ready는 ingestType=MEDIAMTX ticket만 허용한다.
+%% MediaMTX publish auth(/api/v1/auth/mediamtx action=publish)와 stream-ready는 ingestType=MEDIAMTX ticket만 허용한다.
 %% HTTP stream start는 ingestType=HTTP ticket만 허용한다.
 %% expiresAt은 JSON에 저장하지 않고 Redis TTL만 사용한다.
-%% 이후 RTMP publish/auth/stream-ready 흐름은 .mermaid/3.rtmp-publish.mmd에서 다룬다.
-%% 이후 WHIP publish/auth/stream-ready 흐름은 .mermaid/3.whip-publish.mmd에서 다룬다.
-%% 이후 HTTP API based streaming start 흐름은 .mermaid/3.http-start.mmd에서 다룬다.
+%% 이후 RTMP publish/auth/stream-ready 흐름은 .mermaid/RTMP/3.rtmp-publish.mmd에서 다룬다.
+%% 이후 WHIP publish/auth/stream-ready 흐름은 .mermaid/WEBRTC/3.whip-publish.mmd에서 다룬다.
+%% 이후 HTTP API based streaming start 흐름은 .mermaid/HTTP/3.http-start.mmd에서 다룬다.

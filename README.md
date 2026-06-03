@@ -45,7 +45,7 @@ Using that HTTP base URL, the stack exposes:
 - Dashboard: `{PUBLIC_HTTP_BASE}`
 - RTMP ingest: `rtmp://localhost:1935/live`
 - RTMPS ingest: `rtmps://localhost:1936/live`
-- HLS output: `{PUBLIC_HTTP_BASE}/hls`
+- HLS output: `http://localhost:8888/live/{repo}/{recordingSessionId}/index.m3u8?ticket={playback_ticket}`
 
 Current seeded dashboard login:
 
@@ -66,11 +66,11 @@ That helper lives in the parent repository root. It stops the running stack, pul
 
 | Port | Default | Purpose |
 | --- | --- | --- |
-| `80/tcp` | fixed | Public HTTP entrypoint for dashboard, API, Swagger UI, OpenAPI JSON, HLS, WHIP, and `/files/*` |
+| `80/tcp` | fixed | Public HTTP entrypoint for dashboard, API, Swagger UI, OpenAPI JSON, WHIP signaling, and `/files/*` |
 | `1935` | fixed | RTMP ingest endpoint for publisher connections |
 | `1936` | fixed | Optional RTMPS ingest endpoint for encrypted publisher connections |
 | `8189/udp` | fixed | WHIP/WebRTC ICE media endpoint |
-| `8888` | fixed | Internal MediaMTX HLS playback |
+| `8888/tcp` | fixed | Direct MediaMTX HLS playback endpoint |
 | `9997` | fixed | Internal MediaMTX control API used by backend |
 
 ## Storage and Target Directory
@@ -134,7 +134,7 @@ Only `TARGET_DIRECTORY` is required and does not have a default. Everything else
 | `WORKER_CONCURRENCY` | No | `2` | Number of recording finalize jobs the worker can process in parallel. |
 | `DELETE_RAW_AFTER_PROCESSING` | No | `true` | Whether raw recorded segments are deleted after successful post-processing. |
 
-The reverse proxy listens on fixed host port `80` and forwards `/api*`, `/api-docs*`, and `/files*` to the backend, `/hls*` to MediaMTX, `/live/*/whip` to MediaMTX WHIP, while sending all remaining web routes to the dashboard. backend `3000`, dashboard `8088`, MediaMTX HLS `8888`, and MediaMTX WHIP `8889` stay internal to the Docker network behind Caddy.
+The reverse proxy listens on fixed host port `80` and forwards `/api*`, `/api-docs*`, and `/files*` to the backend, `/live/*/whip` to MediaMTX WHIP, while sending all remaining web routes to the dashboard. backend `3000`, dashboard `8088`, and MediaMTX WHIP `8889` stay internal to the Docker network behind Caddy. HLS playback is exposed directly through MediaMTX on `8888/tcp`.
 
 ### .env
 

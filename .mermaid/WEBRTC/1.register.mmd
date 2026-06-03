@@ -7,12 +7,12 @@ sequenceDiagram
 
   App->>App: Start Streaming 버튼 클릭
   App->>Backend: register 요청
-  Note over App,Backend: API<br/>POST /api/v1/streams/register<br/><br/>Headers<br/>Authorization: Bearer appAccessToken<br/>Content-Type: application/json<br/><br/>Body<br/>repositoryId: repository_uuid<br/>deviceType: optional_device_type<br/>ingestType: MEDIAMTX 또는 HTTP
+  Note over App,Backend: API<br/>POST /api/v1/streams/register<br/><br/>Headers<br/>Authorization: Bearer appAccessToken<br/>Content-Type: application/json<br/><br/>Body<br/>repositoryId: repository_uuid<br/>deviceType: optional_device_type<br/>ingestType: MEDIAMTX
 
   Backend->>Backend: requireAppJwt
   Note over Backend: Bearer token 추출<br/>App JWT 검증<br/>사용자 존재 확인<br/>필요 시 X-Refreshed-Token 응답 헤더 설정
   Backend->>Backend: validate(streamRegisterSchema)
-  Note over Backend: repositoryId: uuid<br/>deviceType: optional string, max 100<br/>ingestType: required enum MEDIAMTX | HTTP
+  Note over Backend: repositoryId: uuid<br/>deviceType: optional string, max 100<br/>ingestType: required enum MEDIAMTX | HTTP<br/>WHIP/WebRTC flow는 MEDIAMTX를 보낸다.
 
   alt auth or validation failed
     Backend-->>App: 401 Unauthorized or 400 Validation Error
@@ -53,18 +53,18 @@ sequenceDiagram
       Note over Backend,DB: recording_sessions 대상 row: id = reusableSession.id<br/>status = PENDING 유지<br/>updated_at = now
       DB-->>Backend: refreshedSession
       Backend->>Redis: PENDING session cache 갱신
-      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: repository_uuid<br/>repositoryName: repository_name<br/>userId: user_id<br/>ingestType: MEDIAMTX 또는 HTTP<br/>deviceType: optional_device_type<br/>status: PENDING<br/>TTL: 300 seconds
+      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: repository_uuid<br/>repositoryName: repository_name<br/>userId: user_id<br/>ingestType: MEDIAMTX<br/>deviceType: optional_device_type<br/>status: PENDING<br/>TTL: 300 seconds
       Backend-->>App: 200 OK
       Note over App,Backend: Response Body<br/>recordingSessionId: existing_recording_session_id
     else PENDING 세션 없음
       Backend->>Backend: 신규 session metadata 생성
       Note over Backend: recordingSessionId = randomUUID()<br/>streamPath = live/{repositoryName}/{recordingSessionId}<br/>targetDirectory = getTargetDirectory()
       Backend->>DB: 신규 RecordingSession row 생성
-      Note over Backend,DB: recording_sessions 저장 값<br/>id = recordingSessionId<br/>repository_id = repositoryId<br/>owner_id = repository.ownerId<br/>user_id = userId<br/>device_type = optional deviceType<br/>ingest_type = ingestType<br/>stream_path = live/{repositoryName}/{recordingSessionId}<br/>status = PENDING<br/>target_directory = getTargetDirectory()
+      Note over Backend,DB: recording_sessions 저장 값<br/>id = recordingSessionId<br/>repository_id = repositoryId<br/>owner_id = repository.ownerId<br/>user_id = userId<br/>device_type = optional deviceType<br/>ingest_type = MEDIAMTX<br/>stream_path = live/{repositoryName}/{recordingSessionId}<br/>status = PENDING<br/>target_directory = getTargetDirectory()
       Note over DB: recording_sessions 신규 row<br/>end_reason = null<br/>ready_at = null<br/>closed_at = null<br/>created_at/updated_at = DB/Prisma 자동 기록
       DB-->>Backend: session
       Backend->>Redis: PENDING session cache 저장
-      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: repository_uuid<br/>repositoryName: repository_name<br/>userId: user_id<br/>ingestType: MEDIAMTX 또는 HTTP<br/>deviceType: optional_device_type<br/>status: PENDING<br/>TTL: 300 seconds
+      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: repository_uuid<br/>repositoryName: repository_name<br/>userId: user_id<br/>ingestType: MEDIAMTX<br/>deviceType: optional_device_type<br/>status: PENDING<br/>TTL: 300 seconds
       Backend-->>App: 200 OK
       Note over App,Backend: Response Body<br/>recordingSessionId: new_recording_session_id
     end

@@ -27,11 +27,11 @@ sequenceDiagram
   Note over App,MTX: publish(streamKey, type=live)
 
   MTX->>Backend: publish auth callback
-  Note over MTX,Backend: API<br/>POST /api/v1/auth/publish<br/><br/>Payload 핵심 값<br/>action=publish<br/>path=live/{repositoryName}/{recordingSessionId}<br/>query=ticket=t_{uuid}<br/>protocol=rtmp
+  Note over MTX,Backend: API<br/>POST /api/v1/auth/mediamtx<br/><br/>Payload 핵심 값<br/>action=publish<br/>path=live/{repositoryName}/{recordingSessionId}<br/>query=ticket=t_{uuid}<br/>protocol=rtmp
 
   alt auth payload invalid
     Backend-->>MTX: 401 Unauthorized
-    Note over Backend,MTX: publishAuthSchema parse 실패<br/>MediaMTX에는 빈 401 응답만 반환
+    Note over Backend,MTX: mediaMtxAuthSchema parse 실패<br/>MediaMTX에는 빈 401 응답만 반환
     MTX-->>App: RTMP publish rejected
   else action is not publish
     Backend-->>MTX: 401 Unauthorized
@@ -129,4 +129,4 @@ sequenceDiagram
 %% 이 문서는 publish-ticket 발급 이후 RTMP publish 인증, stream-ready, live cache 등록,
 %% 첫 recording segment 생성까지만 다룬다.
 %% 실제 RTMP media chunk 전송부터 stream 종료, hook 처리, finalize enqueue까지는
-%% .mermaid/4.rtmp-stream.mmd에서 다룬다.
+%% .mermaid/RTMP/4.rtmp-stream.mmd에서 다룬다.
