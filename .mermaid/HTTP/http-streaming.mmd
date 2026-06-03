@@ -4,6 +4,7 @@ sequenceDiagram
   participant Backend as [Backend API]
   participant Redis as [Redis]
   participant DB as [DB]
+  participant Storage as [Shared Raw Volume]
   participant Queue as [Finalize Queue]
   participant Worker as [Finalize Worker]
 
@@ -25,6 +26,8 @@ sequenceDiagram
   Note over Backend,Redis: required<br/>ticket.status=active<br/>ticket.ingestType=HTTP<br/>ticket.recordingSessionId={recordingSessionId}<br/>ticket.userId=request user
   Backend->>DB: RecordingSession PENDING -> STREAMING
   Backend->>DB: RecordingSegment(WRITING) 생성
+  Backend->>Storage: raw path 준비
+  Note over Backend,Storage: /data/raw/http/{repositoryName}/{recordingSessionId}/recording.mp4<br/>/data/raw is shared by backend and worker containers.
   Backend->>Redis: active upload cache 저장
   Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>value: repositoryId, repositoryName, userId, ingestType=HTTP, deviceType, status=STREAMING, rawPath, bytesReceived=0, lastSequence=null, lastChunkAt=now<br/>TTL: 7200s<br/><br/>set: stream:active:sessions<br/>member: recordingSessionId
   Backend-->>App: status=STREAMING, bytes_received=0, last_sequence=null

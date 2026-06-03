@@ -47,7 +47,7 @@ sequenceDiagram
             Note over App,Backend: Error<br/>Publish ticket does not match this recording session.
           else metadata valid
             Backend->>Storage: raw directory 준비
-            Note over Backend,Storage: rawPath<br/>{DATA_ROOT}/raw/http/{repositoryName}/{recordingSessionId}/recording.mp4<br/><br/>action<br/>mkdir parent directory recursively
+            Note over Backend,Storage: rawPath<br/>/data/raw/http/{repositoryName}/{recordingSessionId}/recording.mp4<br/><br/>/data/raw is the shared raw volume mount used by backend and worker.<br/><br/>action<br/>mkdir parent directory recursively
 
             Backend->>DB: start transaction
             Note over Backend,DB: recording_sessions guarded update<br/>where id = recordingSessionId<br/>status = PENDING<br/>ingest_type = HTTP<br/><br/>update<br/>status = STREAMING<br/>ready_at = existing ready_at or now

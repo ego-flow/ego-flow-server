@@ -1,5 +1,6 @@
 export const DEFAULT_CONFIG_FILE_NAME = "config.json";
 export const FIXED_REDIS_URL = "redis://redis:6379";
+export const FIXED_RAW_ROOT = "/data/raw";
 export const FIXED_POSTGRES_PORT = 5432;
 export const FIXED_REDIS_PORT = 6379;
 export const FIXED_PUBLIC_HTTP_PORT = 80;

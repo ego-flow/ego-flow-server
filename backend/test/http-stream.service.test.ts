@@ -150,6 +150,8 @@ const fakePrisma: any = {
 (globalThis as any).__egoflowRedis = fakeRedis;
 (globalThis as any).__egoflowPrisma = fakePrisma;
 
+const { runtimeConfig } =
+  require("../src/config/runtime") as typeof import("../src/config/runtime");
 const { httpStreamService } =
   require("../src/services/http-stream.service") as typeof import("../src/services/http-stream.service");
 const { streamOwnershipService } =
@@ -159,6 +161,8 @@ const { recordingSessionService } =
 
 const originalConsumePublishTicket = streamOwnershipService.consumePublishTicket;
 const originalTryEnqueueFinalize = recordingSessionService.tryEnqueueFinalize;
+const mutableRuntimeConfig = runtimeConfig as unknown as { RAW_ROOT: string };
+const originalRawRoot = mutableRuntimeConfig.RAW_ROOT;
 
 const resetCalls = () => {
   for (const calls of Object.values(prismaCalls)) {
@@ -170,6 +174,7 @@ beforeEach(async () => {
   fakeRedis.clear();
   resetCalls();
   tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "egoflow-http-stream-"));
+  mutableRuntimeConfig.RAW_ROOT = tempRoot;
   currentSession = { ...session };
   currentSegment = null;
   forcedFindManySessions = null;
@@ -178,6 +183,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  mutableRuntimeConfig.RAW_ROOT = originalRawRoot;
   await fs.rm(tempRoot, { recursive: true, force: true });
 });
 
@@ -214,11 +220,13 @@ test("start consumes an HTTP publish ticket and creates upload cache", async () 
   assert.equal(currentSegment?.status, RecordingSegmentStatus.WRITING);
   assert.deepEqual(await fakeRedis.smembers("stream:active:sessions"), [session.id]);
   const cache = fakeRedis.getJson<RecordingSessionLiveCache>(`stream:recording:${session.id}`);
+  const expectedRawPath = path.join(tempRoot, "http", "test2", session.id, "recording.mp4");
   assert.equal(cache?.ingestType, "HTTP");
   assert.equal(cache?.status, "STREAMING");
   assert.equal(cache?.bytesReceived, 0);
   assert.equal(cache?.lastSequence, null);
-  assert.equal(typeof cache?.rawPath, "string");
+  assert.equal(cache?.rawPath, expectedRawPath);
+  assert.equal(currentSegment?.rawPath, expectedRawPath);
 });
 
 test("appendChunk validates hot path from Redis and does not query DB", async () => {

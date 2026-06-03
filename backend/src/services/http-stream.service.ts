@@ -335,7 +335,7 @@ export class HttpStreamService {
 
   private buildRawPath(streamPath: string, recordingSessionId: string) {
     const repositoryName = recordingSessionService.extractRepositoryName(streamPath);
-    return path.join(env.DATA_ROOT, "raw", "http", repositoryName, recordingSessionId, "recording.mp4");
+    return path.join(env.RAW_ROOT, "http", repositoryName, recordingSessionId, "recording.mp4");
   }
 
   private buildStreamingCache(params: {
