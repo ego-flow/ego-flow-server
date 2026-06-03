@@ -199,7 +199,7 @@ backend container는 시작 시 Prisma schema push와 production seed를 수행�
 Backend health: http://<server-ip>/api/v1/health
 Swagger UI:     http://<server-ip>/api-docs
 Dashboard:      http://<server-ip>
-HLS output:     http://<server-ip>:8888/live/{repo}/{recordingSessionId}/index.m3u8?ticket={playback_ticket}
+HLS output:     http://<server-ip>:8888/live/{repo}/{recordingSessionId}/index.m3u8?ticket={playback_ticket}&user_id={viewer_user_id}
 RTMP ingest:    rtmp://<server-ip>:1935/live
 RTMPS ingest:   rtmps://<server-ip>:1936/live
 ```
