@@ -20,6 +20,7 @@ import {
 	requestUpdateRepository,
 	requestUpdateRepositoryMember,
 } from "#/api/repositories";
+import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -45,6 +46,10 @@ function RepositorySettingsPage() {
 		RepositoryRole.Read,
 	);
 	const [isDeactivateDialogOpen, setIsDeactivateDialogOpen] = useState(false);
+	const [removeMemberConfirm, setRemoveMemberConfirm] = useState<{
+		userId: string;
+		displayName: string;
+	} | null>(null);
 
 	const repositoryQuery = useQuery({
 		queryKey: ["repository", repoId],
@@ -107,6 +112,17 @@ function RepositorySettingsPage() {
 		onSuccess: async () => {
 			setMemberUserId("");
 			setMemberRole(RepositoryRole.Read);
+			await queryClient.invalidateQueries({
+				queryKey: ["repository-members", repoId],
+			});
+		},
+	});
+
+	const removeMemberMutation = useMutation({
+		mutationFn: (userId: string) =>
+			requestDeleteRepositoryMember(repoId, userId),
+		onSuccess: async () => {
+			setRemoveMemberConfirm(null);
 			await queryClient.invalidateQueries({
 				queryKey: ["repository-members", repoId],
 			});
@@ -393,25 +409,11 @@ function RepositorySettingsPage() {
 																<Button
 																	type="button"
 																	variant="outline"
+																	disabled={removeMemberMutation.isPending}
 																	onClick={() => {
-																		if (
-																			!window.confirm(
-																				`Remove ${member.userId} from this repository?`,
-																			)
-																		) {
-																			return;
-																		}
-
-																		void requestDeleteRepositoryMember(
-																			repoId,
-																			member.userId,
-																		).then(async () => {
-																			await queryClient.invalidateQueries({
-																				queryKey: [
-																					"repository-members",
-																					repoId,
-																				],
-																			});
+																		setRemoveMemberConfirm({
+																			userId: member.userId,
+																			displayName: member.displayName,
 																		});
 																	}}
 																>
@@ -425,11 +427,45 @@ function RepositorySettingsPage() {
 										))
 									)}
 								</div>
+
+								{removeMemberMutation.isError ? (
+									<p className="mt-4 text-sm text-red-700 dark:text-red-300">
+										{getApiErrorMessage(
+											removeMemberMutation.error,
+											"Failed to remove repository member.",
+										)}
+									</p>
+								) : null}
 							</section>
 						) : null}
 					</>
 				) : null}
 			</main>
+			<ConfirmDialog
+				open={Boolean(removeMemberConfirm)}
+				title="Remove repository member"
+				description={
+					<>
+						Remove{" "}
+						<span className="font-semibold text-[var(--sea-ink)]">
+							{removeMemberConfirm?.displayName}
+						</span>{" "}
+						from this repository? Their repository access will be revoked.
+					</>
+				}
+				variant="destructive"
+				confirmLabel="Remove"
+				pendingLabel="Removing..."
+				isPending={removeMemberMutation.isPending}
+				onCancel={() => setRemoveMemberConfirm(null)}
+				onConfirm={() => {
+					if (!removeMemberConfirm) {
+						return;
+					}
+
+					removeMemberMutation.mutate(removeMemberConfirm.userId);
+				}}
+			/>
 			{isDeactivateDialogOpen ? (
 				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
 					<section className="island-shell w-full max-w-2xl rounded-2xl p-6 shadow-xl">

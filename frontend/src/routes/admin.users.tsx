@@ -13,6 +13,7 @@ import {
 } from "#/api/admin";
 import { getApiErrorMessage } from "#/api/client";
 import { requestAdminTokens, requestRevokeToken } from "#/api/tokens";
+import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -37,6 +38,13 @@ function AdminUsersPage() {
 	const [deleteDialogUser, setDeleteDialogUser] = useState<AdminUser | null>(
 		null,
 	);
+	const [revokeTokenConfirm, setRevokeTokenConfirm] = useState<{
+		tokenId: string;
+		userId: string;
+	} | null>(null);
+	const [deactivateUserConfirm, setDeactivateUserConfirm] = useState<{
+		userId: string;
+	} | null>(null);
 
 	const isCreateUserDisabled = !newUserId.trim();
 
@@ -89,6 +97,7 @@ function AdminUsersPage() {
 	const deactivateUserMutation = useMutation({
 		mutationFn: (userId: string) => requestDeactivateUser(userId),
 		onSuccess: async () => {
+			setDeactivateUserConfirm(null);
 			await queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
 			setSelectedTab("deactivated");
 		},
@@ -108,6 +117,7 @@ function AdminUsersPage() {
 	const revokeTokenMutation = useMutation({
 		mutationFn: (tokenId: string) => requestRevokeToken(tokenId),
 		onSuccess: async () => {
+			setRevokeTokenConfirm(null);
 			await queryClient.invalidateQueries({
 				queryKey: ["admin", "python-tokens"],
 			});
@@ -396,15 +406,10 @@ function AdminUsersPage() {
 																	variant="outline"
 																	disabled={revokeTokenMutation.isPending}
 																	onClick={() => {
-																		if (
-																			!window.confirm(
-																				`Revoke the Python token for ${user.id}?`,
-																			)
-																		) {
-																			return;
-																		}
-
-																		revokeTokenMutation.mutate(token.id);
+																		setRevokeTokenConfirm({
+																			tokenId: token.id,
+																			userId: user.id,
+																		});
 																	}}
 																>
 																	Revoke token
@@ -441,15 +446,9 @@ function AdminUsersPage() {
 																			user.role === UserRole.Admin
 																		}
 																		onClick={() => {
-																			if (
-																				!window.confirm(
-																					`Deactivate ${user.id}?`,
-																				)
-																			) {
-																				return;
-																			}
-
-																			deactivateUserMutation.mutate(user.id);
+																			setDeactivateUserConfirm({
+																				userId: user.id,
+																			});
 																		}}
 																	>
 																		Deactivate
@@ -516,6 +515,59 @@ function AdminUsersPage() {
 					</div>
 				</section>
 			</main>
+
+			<ConfirmDialog
+				open={Boolean(revokeTokenConfirm)}
+				title="Revoke Python token"
+				description={
+					<>
+						Revoke the Python token for{" "}
+						<span className="font-semibold text-[var(--sea-ink)]">
+							{revokeTokenConfirm?.userId}
+						</span>
+						? The token will stop working immediately.
+					</>
+				}
+				variant="destructive"
+				confirmLabel="Revoke token"
+				pendingLabel="Revoking..."
+				isPending={revokeTokenMutation.isPending}
+				onCancel={() => setRevokeTokenConfirm(null)}
+				onConfirm={() => {
+					if (!revokeTokenConfirm) {
+						return;
+					}
+
+					revokeTokenMutation.mutate(revokeTokenConfirm.tokenId);
+				}}
+			/>
+
+			<ConfirmDialog
+				open={Boolean(deactivateUserConfirm)}
+				title="Deactivate user"
+				description={
+					<>
+						Deactivate{" "}
+						<span className="font-semibold text-[var(--sea-ink)]">
+							{deactivateUserConfirm?.userId}
+						</span>
+						? The account will be moved to inactive users and can no longer be
+						used for normal access.
+					</>
+				}
+				variant="destructive"
+				confirmLabel="Deactivate"
+				pendingLabel="Deactivating..."
+				isPending={deactivateUserMutation.isPending}
+				onCancel={() => setDeactivateUserConfirm(null)}
+				onConfirm={() => {
+					if (!deactivateUserConfirm) {
+						return;
+					}
+
+					deactivateUserMutation.mutate(deactivateUserConfirm.userId);
+				}}
+			/>
 
 			{deleteDialogUser ? (
 				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6">

@@ -6,6 +6,7 @@ import {
 	useSearch,
 } from "@tanstack/react-router";
 import { AlertTriangle, ArrowLeft, Download, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { getApiErrorMessage } from "#/api/client";
 import {
 	requestDeleteVideo,
@@ -13,6 +14,7 @@ import {
 	requestVideoDownload,
 	requestVideoStatus,
 } from "#/api/videos";
+import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { Button } from "#/components/ui/button";
 import { VideoStatus } from "#/constants/video/video-constants";
 import {
@@ -46,6 +48,7 @@ function RepositoryVideoDetailPage() {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const repositorySearch = useSearch({ from: "/repositories/$repoId" });
+	const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
 	const detailQuery = useQuery({
 		queryKey: ["video-detail", repoId, videoId],
@@ -60,6 +63,7 @@ function RepositoryVideoDetailPage() {
 	const deleteMutation = useMutation({
 		mutationFn: () => requestDeleteVideo(repoId, videoId),
 		onSuccess: async () => {
+			setIsDeleteConfirmOpen(false);
 			removeVideoSnapshot(videoId);
 			await queryClient.invalidateQueries({
 				queryKey: ["videos", "repository", repoId],
@@ -135,15 +139,7 @@ function RepositoryVideoDetailPage() {
 							variant="destructive"
 							disabled={deleteMutation.isPending}
 							onClick={() => {
-								if (
-									!window.confirm(
-										"Delete this video and remove all generated files?",
-									)
-								) {
-									return;
-								}
-
-								deleteMutation.mutate();
+								setIsDeleteConfirmOpen(true);
 							}}
 						>
 							<Trash2 size={16} aria-hidden="true" />
@@ -368,6 +364,19 @@ function RepositoryVideoDetailPage() {
 					</section>
 				</aside>
 			</section>
+			<ConfirmDialog
+				open={isDeleteConfirmOpen}
+				title="Delete video"
+				description="Delete this video and remove all generated files? This action cannot be undone."
+				variant="destructive"
+				confirmLabel="Delete video"
+				pendingLabel="Deleting..."
+				isPending={deleteMutation.isPending}
+				onCancel={() => setIsDeleteConfirmOpen(false)}
+				onConfirm={() => {
+					deleteMutation.mutate();
+				}}
+			/>
 		</main>
 	);
 }

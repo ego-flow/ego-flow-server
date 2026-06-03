@@ -13,6 +13,7 @@ import {
 	requestCurrentToken,
 	requestRevokeToken,
 } from "#/api/tokens";
+import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -50,6 +51,14 @@ function ProfilePage() {
 	const [deleteRepositoryId, setDeleteRepositoryId] = useState<string | null>(
 		null,
 	);
+	const [revokeTokenConfirm, setRevokeTokenConfirm] = useState<{
+		tokenId: string;
+		tokenName: string;
+	} | null>(null);
+	const [deleteRepositoryConfirm, setDeleteRepositoryConfirm] = useState<{
+		repositoryId: string;
+		repositoryName: string;
+	} | null>(null);
 
 	const currentTokenQuery = useQuery({
 		queryKey: ["auth", "token"],
@@ -96,6 +105,7 @@ function ProfilePage() {
 	const revokeTokenMutation = useMutation({
 		mutationFn: (tokenId: string) => requestRevokeToken(tokenId),
 		onSuccess: async () => {
+			setRevokeTokenConfirm(null);
 			setIssuedToken(null);
 			setCopyFeedback(null);
 			await queryClient.invalidateQueries({ queryKey: ["auth", "token"] });
@@ -124,6 +134,7 @@ function ProfilePage() {
 			setDeleteRepositoryId(repoId);
 		},
 		onSuccess: async (_response, repoId) => {
+			setDeleteRepositoryConfirm(null);
 			setReadinessByRepositoryId((previous) => {
 				const next = { ...previous };
 				delete next[repoId];
@@ -348,11 +359,10 @@ function ProfilePage() {
 									variant="destructive"
 									disabled={revokeTokenMutation.isPending}
 									onClick={() => {
-										if (!window.confirm("Revoke the current Python token?")) {
-											return;
-										}
-
-										revokeTokenMutation.mutate(currentToken.id);
+										setRevokeTokenConfirm({
+											tokenId: currentToken.id,
+											tokenName: currentToken.name,
+										});
 									}}
 								>
 									Revoke
@@ -484,17 +494,10 @@ function ProfilePage() {
 														isDeletingRepository
 													}
 													onClick={() => {
-														if (
-															!window.confirm(
-																`Permanently delete ${repository.name}? This cannot be undone.`,
-															)
-														) {
-															return;
-														}
-
-														permanentDeleteRepositoryMutation.mutate(
-															repository.id,
-														);
+														setDeleteRepositoryConfirm({
+															repositoryId: repository.id,
+															repositoryName: repository.name,
+														});
 													}}
 												>
 													Delete permanently
@@ -584,6 +587,60 @@ function ProfilePage() {
 					</Button>
 				</div>
 			</section>
+
+			<ConfirmDialog
+				open={Boolean(revokeTokenConfirm)}
+				title="Revoke Python token"
+				description={
+					<>
+						The token{" "}
+						<span className="font-semibold text-[var(--sea-ink)]">
+							{revokeTokenConfirm?.tokenName}
+						</span>{" "}
+						will stop working immediately.
+					</>
+				}
+				variant="destructive"
+				confirmLabel="Revoke token"
+				pendingLabel="Revoking..."
+				isPending={revokeTokenMutation.isPending}
+				onCancel={() => setRevokeTokenConfirm(null)}
+				onConfirm={() => {
+					if (!revokeTokenConfirm) {
+						return;
+					}
+
+					revokeTokenMutation.mutate(revokeTokenConfirm.tokenId);
+				}}
+			/>
+
+			<ConfirmDialog
+				open={Boolean(deleteRepositoryConfirm)}
+				title="Delete repository permanently"
+				description={
+					<>
+						<span className="font-semibold text-[var(--sea-ink)]">
+							{deleteRepositoryConfirm?.repositoryName}
+						</span>{" "}
+						and all associated data will be permanently removed. This action
+						cannot be undone.
+					</>
+				}
+				variant="destructive"
+				confirmLabel="Delete permanently"
+				pendingLabel="Deleting..."
+				isPending={permanentDeleteRepositoryMutation.isPending}
+				onCancel={() => setDeleteRepositoryConfirm(null)}
+				onConfirm={() => {
+					if (!deleteRepositoryConfirm) {
+						return;
+					}
+
+					permanentDeleteRepositoryMutation.mutate(
+						deleteRepositoryConfirm.repositoryId,
+					);
+				}}
+			/>
 
 			{issuedToken ? (
 				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
