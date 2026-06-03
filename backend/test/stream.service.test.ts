@@ -505,11 +505,51 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
       stream_path: "live/test2/session-1",
       status: "live",
       playback_available: true,
-      bytes_received: null,
-      last_sequence: null,
-      last_chunk_at: null,
     },
   ]);
+});
+
+test("getLiveStreamDetail exposes HTTP upload progress from Redis cache", async () => {
+  const lastChunkAt = Date.parse("2026-05-29T01:02:03.000Z");
+  fakePrisma.recordingSession.findUnique = async () => ({
+    id: "session-http",
+    repositoryId: repository.id,
+    ownerId: repository.ownerId,
+    userId: "maintainer-1",
+    deviceType: "phone_android",
+    ingestType: RecordingSessionIngestType.HTTP,
+    streamPath: "live/test2/session-http",
+    status: RecordingSessionStatus.STREAMING,
+    targetDirectory: "/data",
+    readyAt: new Date("2026-05-29T01:00:00.000Z"),
+    closedAt: null,
+    createdAt: new Date("2026-05-29T00:00:00.000Z"),
+    updatedAt: new Date("2026-05-29T01:00:00.000Z"),
+  });
+  repositoryService.getRepositoryAccess = async () => ({
+    repository,
+    effectiveRole: "read",
+    isSystemAdmin: false,
+  });
+  fakeRedis.setJson("stream:recording:session-http", {
+    repositoryId: repository.id,
+    repositoryName: repository.name,
+    userId: "maintainer-1",
+    deviceType: "phone_android",
+    ingestType: "HTTP",
+    status: "STREAMING",
+    bytesReceived: 8192,
+    lastSequence: 7,
+    lastChunkAt,
+  } satisfies RecordingSessionLiveCache);
+
+  const detail = await streamService.getLiveStreamDetail("session-http", "viewer-1", "user");
+
+  assert.equal(detail.playback_available, false);
+  assert.equal(detail.playback_ready, false);
+  assert.equal(detail.bytes_received, 8192);
+  assert.equal(detail.last_sequence, 7);
+  assert.equal(detail.last_chunk_at, "2026-05-29T01:02:03.000Z");
 });
 
 test("issueHlsPlaybackTicket authorizes read access and stores a Redis playback ticket", async () => {

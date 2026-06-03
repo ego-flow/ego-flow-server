@@ -12,9 +12,6 @@ export interface LiveStreamSummary {
 	streamPath: string;
 	status: "live";
 	playbackAvailable: boolean;
-	bytesReceived: number | null;
-	lastSequence: number | null;
-	lastChunkAt: string | null;
 }
 
 export interface LiveStreamDetail extends LiveStreamSummary {
@@ -22,6 +19,9 @@ export interface LiveStreamDetail extends LiveStreamSummary {
 	streamPath: string;
 	registeredAt: string;
 	playbackReady: boolean;
+	bytesReceived: number | null;
+	lastSequence: number | null;
+	lastChunkAt: string | null;
 }
 
 export interface LiveStreamPlaybackTicket {
@@ -38,9 +38,6 @@ interface LiveStreamSummaryApiRecord {
 	stream_path: string;
 	status: "live";
 	playback_available: boolean;
-	bytes_received: number | null;
-	last_sequence: number | null;
-	last_chunk_at: string | null;
 }
 
 interface LiveStreamDetailApiRecord {
@@ -56,6 +53,9 @@ interface LiveStreamDetailApiRecord {
 	status: "live";
 	playback_available: boolean;
 	playback_ready: boolean;
+	bytes_received: number | null;
+	last_sequence: number | null;
+	last_chunk_at: string | null;
 }
 
 const normalizeLiveStreamSummary = (
@@ -70,9 +70,6 @@ const normalizeLiveStreamSummary = (
 	streamPath: stream.stream_path,
 	status: stream.status,
 	playbackAvailable: stream.playback_available,
-	bytesReceived: stream.bytes_received,
-	lastSequence: stream.last_sequence,
-	lastChunkAt: stream.last_chunk_at,
 });
 
 const normalizeLiveStreamDetail = (
@@ -90,9 +87,9 @@ const normalizeLiveStreamDetail = (
 	status: stream.status,
 	playbackAvailable: stream.playback_available,
 	playbackReady: stream.playback_ready,
-	bytesReceived: null,
-	lastSequence: null,
-	lastChunkAt: null,
+	bytesReceived: stream.bytes_received,
+	lastSequence: stream.last_sequence,
+	lastChunkAt: stream.last_chunk_at,
 });
 
 export async function requestLiveStreams() {

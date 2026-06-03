@@ -23,7 +23,7 @@ sequenceDiagram
   Note over Backend,Redis: set: stream:active:sessions<br/>MGET: stream:recording:{recordingSessionId}<br/><br/>active set membership을 live 후보로 본다.<br/>cache status 재검증은 목록 응답 생성 조건으로 쓰지 않는다.
 
   Backend-->>Python: 200 { streams }
-  Note over Backend,Python: item fields<br/>recording_session_id<br/>repository_id<br/>repository_name<br/>user_id<br/>device_type<br/>ingest_type<br/>stream_path<br/>status=live<br/>playback_available<br/>bytes_received<br/>last_sequence<br/>last_chunk_at
+  Note over Backend,Python: item fields<br/>recording_session_id<br/>repository_id<br/>repository_name<br/>user_id<br/>device_type<br/>ingest_type<br/>stream_path<br/>status=live<br/>playback_available
 
   Python->>Python: playback 대상 stream 선택
   Note over Python: playback_available=true인 MEDIAMTX stream만 HLS 대상<br/>HTTP ingest stream은 목록에는 보이지만 playback 대상이 아니다.
@@ -34,7 +34,7 @@ sequenceDiagram
     Backend->>DB: STREAMING session + repository read 권한 확인
     Backend->>MTX: active path 조회
     Note over Backend,MTX: MediaMTX Control API /v3/paths/list<br/>playback_ready 계산
-    Backend-->>Python: detail with playback_ready
+    Backend-->>Python: detail with playback_ready and nullable HTTP progress
   end
 
   Python->>Backend: POST /api/v1/live-streams/{recordingSessionId}/playback-ticket

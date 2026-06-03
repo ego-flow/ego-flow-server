@@ -389,9 +389,6 @@ export const openApiDocument = {
           "stream_path",
           "status",
           "playback_available",
-          "bytes_received",
-          "last_sequence",
-          "last_chunk_at",
         ],
         properties: {
           recording_session_id: { type: "string", format: "uuid" },
@@ -403,9 +400,6 @@ export const openApiDocument = {
           stream_path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
           status: { type: "string", enum: ["live"] },
           playback_available: { type: "boolean" },
-          bytes_received: { type: ["integer", "null"], minimum: 0 },
-          last_sequence: { type: ["integer", "null"], minimum: 0 },
-          last_chunk_at: { type: ["string", "null"], format: "date-time" },
         },
       },
       LiveStreamListResponse: {
@@ -433,6 +427,9 @@ export const openApiDocument = {
           "status",
           "playback_available",
           "playback_ready",
+          "bytes_received",
+          "last_sequence",
+          "last_chunk_at",
         ],
         properties: {
           recording_session_id: { type: "string", format: "uuid" },
@@ -447,6 +444,9 @@ export const openApiDocument = {
           status: { type: "string", enum: ["live"] },
           playback_available: { type: "boolean" },
           playback_ready: { type: "boolean" },
+          bytes_received: { type: ["integer", "null"], minimum: 0 },
+          last_sequence: { type: ["integer", "null"], minimum: 0 },
+          last_chunk_at: { type: ["string", "null"], format: "date-time" },
         },
       },
       HlsPlaybackTicketResponse: {

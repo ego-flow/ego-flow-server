@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { Activity, RadioTower, RefreshCcw, UploadCloud } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 
 import { getApiErrorMessage, getBackendOrigin } from "#/api/client";
 import {
@@ -15,6 +15,7 @@ import { useAuth } from "#/hooks/useAuth";
 
 const HlsPlayer = lazy(() => import("#/components/HlsPlayer"));
 const DIRECT_HLS_PORT = 8888;
+type IngestTab = "MEDIAMTX" | "HTTP";
 
 export const Route = createFileRoute("/live")({
 	component: LivePage,
@@ -60,6 +61,8 @@ function LivePage() {
 	const [selectedRecordingSessionId, setSelectedRecordingSessionId] = useState<
 		string | null
 	>(null);
+	const [selectedIngestTab, setSelectedIngestTab] =
+		useState<IngestTab>("MEDIAMTX");
 
 	const streamsQuery = useQuery({
 		queryKey: ["live-streams"],
@@ -69,8 +72,21 @@ function LivePage() {
 	});
 
 	const streams = streamsQuery.data ?? [];
+	const mediamtxStreams = useMemo(
+		() => streams.filter((stream) => stream.ingestType === "MEDIAMTX"),
+		[streams],
+	);
+	const httpStreams = useMemo(
+		() => streams.filter((stream) => stream.ingestType === "HTTP"),
+		[streams],
+	);
+	const visibleStreams = useMemo(
+		() =>
+			selectedIngestTab === "MEDIAMTX" ? mediamtxStreams : httpStreams,
+		[selectedIngestTab, mediamtxStreams, httpStreams],
+	);
 	const selectedStream =
-		streams.find(
+		visibleStreams.find(
 			(stream) => stream.recordingSessionId === selectedRecordingSessionId,
 		) ?? null;
 
@@ -96,6 +112,22 @@ function LivePage() {
 	const selectedDeviceType =
 		selectedStreamDetail?.deviceType ?? selectedStream?.deviceType ?? null;
 	const selectedPlaybackReady = selectedStreamDetail?.playbackReady ?? false;
+	const isHttpProgressLoading =
+		selectedStream?.ingestType === "HTTP" && selectedStreamDetailQuery.isPending;
+	const selectedBytesReceivedLabel = isHttpProgressLoading
+		? "Loading..."
+		: `${formatBytes(selectedStreamDetail?.bytesReceived ?? null)} bytes`;
+	const selectedSequenceLabel = isHttpProgressLoading
+		? "Loading..."
+		: selectedStreamDetail?.lastSequence === null ||
+			  selectedStreamDetail?.lastSequence === undefined
+			? "None"
+			: selectedStreamDetail.lastSequence;
+	const selectedLastChunkLabel = isHttpProgressLoading
+		? "Loading..."
+		: selectedStreamDetail?.lastChunkAt
+			? new Date(selectedStreamDetail.lastChunkAt).toLocaleTimeString()
+			: "None";
 	const playbackTicketQuery = useQuery({
 		queryKey: [
 			"live-streams",
@@ -142,18 +174,18 @@ function LivePage() {
 	const isAdmin = session?.user?.role === UserRole.Admin;
 
 	useEffect(() => {
-		if (streams.length === 0) {
+		if (visibleStreams.length === 0) {
 			setSelectedRecordingSessionId(null);
 			return;
 		}
 
-		const selectedExists = streams.some(
+		const selectedExists = visibleStreams.some(
 			(stream) => stream.recordingSessionId === selectedRecordingSessionId,
 		);
 		if (!selectedExists) {
-			setSelectedRecordingSessionId(streams[0].recordingSessionId);
+			setSelectedRecordingSessionId(visibleStreams[0].recordingSessionId);
 		}
-	}, [selectedRecordingSessionId, streams]);
+	}, [selectedRecordingSessionId, visibleStreams]);
 
 	if (!isReady) {
 		return null;
@@ -214,14 +246,47 @@ function LivePage() {
 							Active Sessions
 						</h2>
 					</div>
+					<div
+						className="mb-4 grid grid-cols-2 gap-2 rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] p-1"
+						role="tablist"
+						aria-label="Live stream ingest type"
+					>
+						{[
+							{
+								value: "MEDIAMTX" as const,
+								label: "MediaMTX",
+								count: mediamtxStreams.length,
+							},
+							{
+								value: "HTTP" as const,
+								label: "HTTP",
+								count: httpStreams.length,
+							},
+						].map((tab) => (
+							<button
+								key={tab.value}
+								type="button"
+								role="tab"
+								aria-selected={selectedIngestTab === tab.value}
+								onClick={() => setSelectedIngestTab(tab.value)}
+								className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+									selectedIngestTab === tab.value
+										? "bg-[var(--card)] text-[var(--sea-ink)] shadow-sm"
+										: "text-[var(--sea-ink-soft)] hover:text-[var(--sea-ink)]"
+								}`}
+							>
+								{tab.label} ({tab.count})
+							</button>
+						))}
+					</div>
 
 					{streamsQuery.isPending ? (
 						<div className="rounded-xl border border-dashed border-[var(--line)] px-4 py-10 text-center text-sm text-[var(--sea-ink-soft)]">
 							Loading streams...
 						</div>
-					) : streams.length > 0 ? (
+					) : visibleStreams.length > 0 ? (
 						<div className="space-y-3">
-							{streams.map((stream) => (
+							{visibleStreams.map((stream) => (
 								<button
 									key={stream.recordingSessionId}
 									type="button"
@@ -263,7 +328,7 @@ function LivePage() {
 											</dt>
 											<dd>
 												{stream.ingestType === "HTTP"
-													? `HTTP upload · ${formatBytes(stream.bytesReceived)} bytes`
+													? "HTTP upload"
 													: "MediaMTX"}
 											</dd>
 										</div>
@@ -290,7 +355,9 @@ function LivePage() {
 								No active streams
 							</h3>
 							<p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
-								New publishing sessions will appear here automatically.
+								No{" "}
+								{selectedIngestTab === "HTTP" ? "HTTP upload" : "MediaMTX"}{" "}
+								sessions are active.
 							</p>
 						</div>
 					)}
@@ -381,29 +448,19 @@ function LivePage() {
 											<dt className="font-semibold text-[var(--sea-ink)]">
 												Received
 											</dt>
-											<dd>{formatBytes(selectedStream.bytesReceived)} bytes</dd>
+											<dd>{selectedBytesReceivedLabel}</dd>
 										</div>
 										<div>
 											<dt className="font-semibold text-[var(--sea-ink)]">
 												Last sequence
 											</dt>
-											<dd>
-												{selectedStream.lastSequence === null
-													? "None"
-													: selectedStream.lastSequence}
-											</dd>
+											<dd>{selectedSequenceLabel}</dd>
 										</div>
 										<div>
 											<dt className="font-semibold text-[var(--sea-ink)]">
 												Last chunk
 											</dt>
-											<dd>
-												{selectedStream.lastChunkAt
-													? new Date(
-															selectedStream.lastChunkAt,
-														).toLocaleTimeString()
-													: "None"}
-											</dd>
+											<dd>{selectedLastChunkLabel}</dd>
 										</div>
 									</dl>
 								</div>

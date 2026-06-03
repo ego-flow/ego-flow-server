@@ -21,11 +21,11 @@ sequenceDiagram
     Note over Backend,Redis: set: stream:active:sessions<br/>MGET: stream:recording:{recordingSessionId}<br/><br/>active set membership을 live 후보로 본다.<br/>cache status 재검증은 목록 응답 생성 조건으로 쓰지 않는다.
 
     Backend-->>FE: 200 { streams }
-    Note over Backend,FE: item fields<br/>recording_session_id<br/>repository_id<br/>repository_name<br/>user_id<br/>device_type<br/>ingest_type<br/>stream_path<br/>status=live<br/>playback_available<br/>bytes_received<br/>last_sequence<br/>last_chunk_at<br/><br/>server-built HLS path는 반환하지 않는다.
+    Note over Backend,FE: item fields<br/>recording_session_id<br/>repository_id<br/>repository_name<br/>user_id<br/>device_type<br/>ingest_type<br/>stream_path<br/>status=live<br/>playback_available<br/><br/>server-built HLS path와 HTTP progress는 반환하지 않는다.
   end
 
-  FE->>FE: playable stream 선택
-  Note over FE: MEDIAMTX + playback_available=true인 stream만 player 대상<br/>HTTP ingest는 목록에만 보이고 playback은 막는다.
+  FE->>FE: ingest tab 선택 후 stream 선택
+  Note over FE: Active Sessions는 MediaMTX / HTTP tab으로 구분한다.<br/>MEDIAMTX + playback_available=true인 stream만 player 대상<br/>HTTP ingest는 detail panel에서 upload progress만 보여준다.
 
   loop while selected
     FE->>Backend: GET /api/v1/live-streams/{recordingSessionId}
@@ -34,7 +34,7 @@ sequenceDiagram
     Backend->>MTX: active path 조회
     Note over Backend,MTX: MediaMTX Control API /v3/paths/list<br/>stream_path가 active path인지 확인해 playback_ready 계산
     Backend-->>FE: 200 live stream detail
-    Note over Backend,FE: Response Body<br/>recording_session_id: {recordingSessionId}<br/>repository_id: {repositoryId}<br/>repository_name: {repositoryName}<br/>owner_id: {ownerId}<br/>user_id: {publisherUserId}<br/>device_type: optional_device_type | null<br/>ingest_type: MEDIAMTX | HTTP<br/>stream_path: live/{repo}/{recordingSessionId}<br/>registered_at: ISO datetime<br/>status: live<br/>playback_available: boolean<br/>playback_ready: boolean
+    Note over Backend,FE: Response Body<br/>recording_session_id: {recordingSessionId}<br/>repository_id: {repositoryId}<br/>repository_name: {repositoryName}<br/>owner_id: {ownerId}<br/>user_id: {publisherUserId}<br/>device_type: optional_device_type | null<br/>ingest_type: MEDIAMTX | HTTP<br/>stream_path: live/{repo}/{recordingSessionId}<br/>registered_at: ISO datetime<br/>status: live<br/>playback_available: boolean<br/>playback_ready: boolean<br/>bytes_received: number | null<br/>last_sequence: number | null<br/>last_chunk_at: ISO datetime | null
   end
 
   alt playback_ready=false

@@ -316,9 +316,6 @@ export class StreamService {
         stream_path: this.buildStreamPath(cache.repositoryName, recordingSessionId),
         status: "live" as const,
         playback_available: playbackAvailable,
-        bytes_received: cache.bytesReceived ?? null,
-        last_sequence: cache.lastSequence ?? null,
-        last_chunk_at: cache.lastChunkAt ? new Date(cache.lastChunkAt).toISOString() : null,
       };
     });
 
@@ -363,6 +360,21 @@ export class StreamService {
         ? activeStreamPaths.has(this.normalizeStreamPath(session.streamPath))
         : true
       : false;
+    const liveCache = this.parseLiveCache(await redis.get(streamRecordingKey(recordingSessionId)));
+    const httpProgress =
+      session.ingestType === RecordingSessionIngestType.HTTP &&
+      liveCache?.status === "STREAMING" &&
+      liveCache.repositoryId === session.repositoryId
+        ? {
+            bytes_received: liveCache.bytesReceived ?? null,
+            last_sequence: liveCache.lastSequence ?? null,
+            last_chunk_at: liveCache.lastChunkAt ? new Date(liveCache.lastChunkAt).toISOString() : null,
+          }
+        : {
+            bytes_received: null,
+            last_sequence: null,
+            last_chunk_at: null,
+          };
 
     return {
       recording_session_id: session.id,
@@ -377,6 +389,7 @@ export class StreamService {
       status: "live" as const,
       playback_available: playbackAvailable,
       playback_ready: playbackReady,
+      ...httpProgress,
     };
   }
 

@@ -74,7 +74,7 @@ Current API list based on the server codebase.
 | Endpoint | Input | Response | Purpose |
 |---|---|---|---|
 | `GET /api/v1/live-streams` | auth | `{ streams }` | List Redis active sessions. `MEDIAMTX` sessions can play HLS; `HTTP` sessions are listed only |
-| `GET /api/v1/live-streams/:recordingSessionId` | `recordingSessionId` | live stream detail plus `playback_ready` | Read one live session detail |
+| `GET /api/v1/live-streams/:recordingSessionId` | `recordingSessionId` | live stream detail plus `playback_ready` and nullable HTTP progress | Read one live session detail |
 | `POST /api/v1/live-streams/:recordingSessionId/playback-ticket` | dashboard cookie or Python token | `{ playback_ticket }` | Issue short TTL HLS playback ticket |
 
 ## Streaming
