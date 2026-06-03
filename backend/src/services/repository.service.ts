@@ -193,12 +193,16 @@ export class RepositoryService {
   /**
    * [접근 가능한 repository id 집합]
    * /live API filter를 위해 호출자 권한으로 read 가능한 repository id 집합을 계산한다.
-   * - admin: null (filter 없음)
+   * - admin: deactivated=false repository id 전체
    * - 일반 사용자: owner / member / public repository id의 합집합
    */
   async listAccessibleRepositoryIds(userId: string, userRole: AppUserRole): Promise<Set<string> | null> {
     if (userRole === "admin") {
-      return null;
+      const repositories = await prisma.repository.findMany({
+        where: { deactivated: false },
+        select: { id: true },
+      });
+      return new Set(repositories.map((repository) => repository.id));
     }
 
     const memberships = await prisma.repoMember.findMany({
@@ -238,6 +242,17 @@ export class RepositoryService {
   async listMaintainedRepositories(userId: string, userRole: AppUserRole) {
     return {
       repositories: await this.getAccessibleRepositories(userId, userRole, "maintain"),
+    };
+  }
+
+  async listDeactivatedAdminRepositories(userId: string, userRole: AppUserRole) {
+    const repositories = await this.getDeactivatedAdminRepositories(userId, userRole);
+    const videoCounts = await this.getVideoCountsByRepositoryId(repositories.map((repository) => repository.id));
+
+    return {
+      repositories: repositories.map((repository) =>
+        toRepositorySummary(toRepositoryRecord(repository), "admin", videoCounts.get(repository.id) ?? 0),
+      ),
     };
   }
 
@@ -389,7 +404,6 @@ export class RepositoryService {
 
   async deactivateRepository(userId: string, userRole: AppUserRole, repositoryId: string) {
     const access = await this.assertRepositoryLifecycleAccess(userId, userRole, repositoryId, "admin");
-    await this.ensureRepositoryIsIdle(access.repository.id, access.repository.name, { blockPending: false });
 
     if (!access.repository.deactivated) {
       await prisma.repository.update({
@@ -815,6 +829,53 @@ export class RepositoryService {
     return accessible.map((entry) =>
       toRepositorySummary(entry.record, entry.effectiveRole, videoCounts.get(entry.record.id) ?? 0),
     );
+  }
+
+  private async getDeactivatedAdminRepositories(userId: string, userRole: AppUserRole) {
+    if (userRole === "admin") {
+      return prisma.repository.findMany({
+        where: { deactivated: true },
+        orderBy: [{ ownerId: "asc" }, { name: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          ownerId: true,
+          visibility: true,
+          description: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    }
+
+    const adminMemberships = await prisma.repoMember.findMany({
+      where: {
+        userId,
+        role: RepoRole.admin,
+      },
+      select: { repositoryId: true },
+    });
+
+    if (adminMemberships.length === 0) {
+      return [];
+    }
+
+    return prisma.repository.findMany({
+      where: {
+        id: { in: adminMemberships.map((membership) => membership.repositoryId) },
+        deactivated: true,
+      },
+      orderBy: [{ ownerId: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        ownerId: true,
+        visibility: true,
+        description: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
   }
 
   private async ensureTargetUserCanBeManaged(ownerId: string, targetUserId: string) {

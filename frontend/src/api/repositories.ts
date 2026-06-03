@@ -9,8 +9,8 @@ import {
 	repositoryDeleteReadinessPath,
 	repositoryMemberPath,
 	repositoryMembersPath,
-	repositoryPermanentDeletePath,
 	repositoryPath,
+	repositoryPermanentDeletePath,
 } from "#/utils/api-paths";
 
 export {
@@ -94,6 +94,16 @@ export async function requestMaintainRepositories() {
 	const response = await apiClient.get<{
 		repositories: RepositoryApiRecord[];
 	}>(ApiEndpoint.RepositoriesMaintain);
+
+	return response.data.repositories.map(
+		normalizeRepository,
+	) satisfies RepositoryRecord[];
+}
+
+export async function requestDeactivatedRepositories() {
+	const response = await apiClient.get<{
+		repositories: RepositoryApiRecord[];
+	}>(ApiEndpoint.RepositoriesDeactivated);
 
 	return response.data.repositories.map(
 		normalizeRepository,

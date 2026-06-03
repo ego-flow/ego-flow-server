@@ -274,7 +274,7 @@ export class StreamService {
   /**
    * [Live stream 목록 - Redis read-only]
    * Redis active set으로 live 후보를 좁힌 뒤 stream:recording cache로 응답을 만든다.
-   * 1. 요청자가 접근 가능한 repository id set 계산 (admin이면 null)
+   * 1. 요청자가 접근 가능한 deactivated=false repository id set 계산
    * 2. SMEMBERS stream:active:sessions
    * 3. MGET stream:recording:{recordingSessionId}
    * 4. 접근 가능 repo만 응답에 포함

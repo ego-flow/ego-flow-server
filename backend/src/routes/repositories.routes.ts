@@ -55,6 +55,17 @@ router.get(
   }),
 );
 
+// GET /api/v1/repositories/deactivated
+router.get(
+  "/deactivated",
+  requireDashboardSession,
+  asyncHandler(async (req, res) => {
+    const user = getAuthUser(req);
+    const response = await repositoryService.listDeactivatedAdminRepositories(user.userId, user.role);
+    res.status(200).json(response);
+  }),
+);
+
 // GET /api/v1/repositories
 router.get(
   "/",

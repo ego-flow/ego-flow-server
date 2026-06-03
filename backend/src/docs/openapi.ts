@@ -1344,10 +1344,29 @@ export const openApiDocument = {
         },
       },
     },
+    "/repositories/deactivated": {
+      get: {
+        tags: ["Repositories"],
+        summary: "List deactivated repositories where the current user has admin access",
+        description: "Used by the dashboard profile management view. Public repositories are not returned unless the current user has repository admin access or system admin role.",
+        responses: {
+          "200": {
+            description: "Deactivated repository list",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/RepositoryListResponse" },
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+        },
+      },
+    },
     "/repositories/{repoId}/deactivate": {
       delete: {
         tags: ["Repositories"],
-        summary: "Deactivate a repository before permanent deletion",
+        summary: "Deactivate a repository and block new work",
+        description: "Deactivation hides the repository from normal repository views and prevents new work from starting. Existing streams and recording finalization are allowed to complete.",
         parameters: [{ $ref: "#/components/parameters/RepoId" }],
         responses: {
           "200": {
@@ -1362,7 +1381,6 @@ export const openApiDocument = {
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": { $ref: "#/components/responses/Forbidden" },
           "404": { $ref: "#/components/responses/NotFound" },
-          "409": { $ref: "#/components/responses/Conflict" },
         },
       },
     },

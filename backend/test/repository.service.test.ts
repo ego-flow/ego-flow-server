@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { RecordingSegmentStatus, RecordingSessionStatus } from "@prisma/client";
+import { RepoRole } from "@prisma/client";
 import { beforeEach, test } from "node:test";
 
 process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egoflow";
@@ -23,6 +23,7 @@ const operationCalls: Array<{ model: string; method: string; args?: unknown }> =
 const fakePrisma: any = {
   repository: {
     findUnique: async () => repository,
+    findMany: async () => [],
     update: (args: unknown) => {
       operationCalls.push({ model: "repository", method: "update", args });
       return { ...repository, deactivated: true };
@@ -33,6 +34,7 @@ const fakePrisma: any = {
     },
   },
   repoMember: {
+    findMany: async () => [],
     deleteMany: (args: unknown) => {
       operationCalls.push({ model: "repoMember", method: "deleteMany", args });
       return { model: "repoMember", method: "deleteMany" };
@@ -40,6 +42,7 @@ const fakePrisma: any = {
   },
   video: {
     findMany: async () => [],
+    groupBy: async () => [],
     deleteMany: (args: unknown) => {
       operationCalls.push({ model: "video", method: "deleteMany", args });
       return { model: "video", method: "deleteMany" };
@@ -76,63 +79,24 @@ beforeEach(() => {
   transactionOperations.length = 0;
   operationCalls.length = 0;
   fakePrisma.repository.findUnique = async () => repository;
+  fakePrisma.repository.findMany = async () => [];
+  fakePrisma.repoMember.findMany = async () => [];
   fakePrisma.video.findMany = async () => [];
+  fakePrisma.video.groupBy = async () => [];
   fakePrisma.recordingSession.findFirst = async () => null;
   fakePrisma.recordingSession.count = async () => 0;
   fakePrisma.recordingSegment.findFirst = async () => null;
   fakePrisma.recordingSegment.count = async () => 0;
 });
 
-test("deactivateRepository rejects an active streaming session", async () => {
-  const findFirstCalls: unknown[] = [];
-  fakePrisma.recordingSession.findFirst = async (args: unknown) => {
-    findFirstCalls.push(args);
-    return { id: "streaming-session" };
+test("deactivateRepository marks repository deactivated without blocking active work", async () => {
+  fakePrisma.recordingSession.findFirst = async () => {
+    throw new Error("deactivateRepository should not check active sessions");
+  };
+  fakePrisma.recordingSegment.findFirst = async () => {
+    throw new Error("deactivateRepository should not check recording segments");
   };
 
-  await assert.rejects(
-    () => repositoryService.deactivateRepository("admin", "admin", repository.id),
-    (error: any) =>
-      error?.code === "CONFLICT" &&
-      error?.message === "Repository cannot be modified while a stream is active.",
-  );
-
-  assert.deepEqual((findFirstCalls[0] as any).where, {
-    repositoryId: repository.id,
-    status: RecordingSessionStatus.STREAMING,
-  });
-  assert.equal(operationCalls.length, 0);
-});
-
-test("deactivateRepository rejects an in-progress recording finalization", async () => {
-  const segmentFindCalls: unknown[] = [];
-  fakePrisma.recordingSegment.findFirst = async (args: unknown) => {
-    segmentFindCalls.push(args);
-    return { id: "segment-1" };
-  };
-
-  await assert.rejects(
-    () => repositoryService.deactivateRepository("admin", "admin", repository.id),
-    (error: any) =>
-      error?.code === "CONFLICT" &&
-      error?.message === "Repository cannot be modified while recording finalization is in progress.",
-  );
-
-  assert.deepEqual((segmentFindCalls[0] as any).where, {
-    status: {
-      in: [
-        RecordingSegmentStatus.WRITE_DONE,
-        RecordingSegmentStatus.PROCESSING,
-      ],
-    },
-    recordingSession: {
-      repositoryId: repository.id,
-    },
-  });
-  assert.equal(operationCalls.length, 0);
-});
-
-test("deactivateRepository allows pending sessions and marks repository deactivated", async () => {
   const result = await repositoryService.deactivateRepository("admin", "admin", repository.id);
 
   assert.deepEqual(result, {
@@ -158,6 +122,55 @@ test("getRepositoryDeleteReadiness requires deactivation and no active work", as
       finalizing_segment_count: 0,
     },
   });
+});
+
+test("listDeactivatedAdminRepositories returns deactivated repositories where user is admin", async () => {
+  const memberFindCalls: unknown[] = [];
+  const repositoryFindCalls: unknown[] = [];
+  const groupByCalls: unknown[] = [];
+
+  fakePrisma.repoMember.findMany = async (args: unknown) => {
+    memberFindCalls.push(args);
+    return [{ repositoryId: repository.id }];
+  };
+  fakePrisma.repository.findMany = async (args: unknown) => {
+    repositoryFindCalls.push(args);
+    return [{ ...repository, deactivated: true }];
+  };
+  fakePrisma.video.groupBy = async (args: unknown) => {
+    groupByCalls.push(args);
+    return [{ repositoryId: repository.id, _count: { _all: 2 } }];
+  };
+
+  const result = await repositoryService.listDeactivatedAdminRepositories("alice", "user");
+
+  assert.deepEqual(memberFindCalls[0], {
+    where: {
+      userId: "alice",
+      role: RepoRole.admin,
+    },
+    select: { repositoryId: true },
+  });
+  assert.deepEqual((repositoryFindCalls[0] as any).where, {
+    id: { in: [repository.id] },
+    deactivated: true,
+  });
+  assert.deepEqual((groupByCalls[0] as any).where, {
+    repositoryId: { in: [repository.id] },
+  });
+  assert.deepEqual(result.repositories, [
+    {
+      id: repository.id,
+      name: repository.name,
+      owner_id: repository.ownerId,
+      visibility: repository.visibility,
+      description: repository.description,
+      my_role: "admin",
+      created_at: repository.createdAt.toISOString(),
+      updated_at: repository.updatedAt.toISOString(),
+      video_count: 2,
+    },
+  ]);
 });
 
 test("permanentlyDeleteRepository rejects an active repository", async () => {

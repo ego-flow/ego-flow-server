@@ -3,6 +3,12 @@ import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { getApiErrorMessage } from "#/api/client";
 import {
+	type RepositoryDeleteReadiness,
+	requestDeactivatedRepositories,
+	requestPermanentDeleteRepository,
+	requestRepositoryDeleteReadiness,
+} from "#/api/repositories";
+import {
 	requestCreateToken,
 	requestCurrentToken,
 	requestRevokeToken,
@@ -35,10 +41,25 @@ function ProfilePage() {
 	} | null>(null);
 	const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 	const [successMessage, setSuccessMessage] = useState<string | null>(null);
+	const [readinessByRepositoryId, setReadinessByRepositoryId] = useState<
+		Record<string, RepositoryDeleteReadiness>
+	>({});
+	const [readinessRepositoryId, setReadinessRepositoryId] = useState<
+		string | null
+	>(null);
+	const [deleteRepositoryId, setDeleteRepositoryId] = useState<string | null>(
+		null,
+	);
 
 	const currentTokenQuery = useQuery({
 		queryKey: ["auth", "token"],
 		queryFn: requestCurrentToken,
+	});
+
+	const deactivatedRepositoriesQuery = useQuery({
+		queryKey: ["repositories", "deactivated"],
+		queryFn: requestDeactivatedRepositories,
+		enabled: isReady && isAuthenticated,
 	});
 
 	const changePasswordMutation = useMutation({
@@ -81,6 +102,43 @@ function ProfilePage() {
 		},
 	});
 
+	const readinessMutation = useMutation({
+		mutationFn: (repoId: string) => requestRepositoryDeleteReadiness(repoId),
+		onMutate: (repoId) => {
+			setReadinessRepositoryId(repoId);
+		},
+		onSuccess: (readiness) => {
+			setReadinessByRepositoryId((previous) => ({
+				...previous,
+				[readiness.repositoryId]: readiness,
+			}));
+		},
+		onSettled: () => {
+			setReadinessRepositoryId(null);
+		},
+	});
+
+	const permanentDeleteRepositoryMutation = useMutation({
+		mutationFn: (repoId: string) => requestPermanentDeleteRepository(repoId),
+		onMutate: (repoId) => {
+			setDeleteRepositoryId(repoId);
+		},
+		onSuccess: async (_response, repoId) => {
+			setReadinessByRepositoryId((previous) => {
+				const next = { ...previous };
+				delete next[repoId];
+				return next;
+			});
+			await queryClient.invalidateQueries({
+				queryKey: ["repositories", "deactivated"],
+			});
+			await queryClient.invalidateQueries({ queryKey: ["repositories"] });
+		},
+		onSettled: () => {
+			setDeleteRepositoryId(null);
+		},
+	});
+
 	if (!isReady) {
 		return null;
 	}
@@ -91,10 +149,11 @@ function ProfilePage() {
 
 	const isPasswordMismatch = newPassword !== confirmPassword;
 	const currentToken = currentTokenQuery.data?.token ?? null;
+	const deactivatedRepositories = deactivatedRepositoriesQuery.data ?? [];
 
 	return (
 		<main className="page-wrap relative px-4 py-10">
-			<section className="island-shell mx-auto max-w-2xl rounded-2xl p-6 shadow-xl sm:p-8">
+			<section className="island-shell mx-auto max-w-4xl rounded-2xl p-6 shadow-xl sm:p-8">
 				<p className="island-kicker mb-2">Profile</p>
 				<h1 className="display-title text-3xl font-bold text-[var(--sea-ink)] sm:text-4xl">
 					{session?.user.displayName}
@@ -319,6 +378,198 @@ function ProfilePage() {
 						<p>Token values are shown only once right after issuance.</p>
 						<p>Issuing a new token immediately invalidates the previous one.</p>
 					</div>
+				</section>
+
+				<section className="mt-8 rounded-2xl border border-[var(--line)] bg-[var(--chip-bg)] p-5">
+					<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+						<div>
+							<h2 className="text-lg font-semibold text-[var(--sea-ink)]">
+								Manage Deactivated Repositories
+							</h2>
+							<p className="mt-1 text-sm text-[var(--sea-ink-soft)]">
+								Only deactivated repositories where you have admin permission
+								are listed here.
+							</p>
+						</div>
+						<Button
+							type="button"
+							variant="outline"
+							disabled={deactivatedRepositoriesQuery.isFetching}
+							onClick={() => {
+								void deactivatedRepositoriesQuery.refetch();
+							}}
+						>
+							Refresh
+						</Button>
+					</div>
+
+					{deactivatedRepositoriesQuery.isPending ? (
+						<div className="mt-5 rounded-xl border border-dashed border-[var(--line)] px-4 py-6 text-sm text-[var(--sea-ink-soft)]">
+							Loading deactivated repositories...
+						</div>
+					) : deactivatedRepositoriesQuery.isError ? (
+						<div className="mt-5 rounded-xl border border-red-500/25 bg-red-500/6 px-4 py-4 text-sm text-red-700 dark:text-red-300">
+							{getApiErrorMessage(
+								deactivatedRepositoriesQuery.error,
+								"Failed to load deactivated repositories.",
+							)}
+						</div>
+					) : deactivatedRepositories.length === 0 ? (
+						<div className="mt-5 rounded-xl border border-dashed border-[var(--line)] px-4 py-6 text-sm text-[var(--sea-ink-soft)]">
+							No deactivated repositories are available for your account.
+						</div>
+					) : (
+						<div className="mt-5 space-y-4">
+							{deactivatedRepositories.map((repository) => {
+								const readiness = readinessByRepositoryId[repository.id];
+								const isCheckingReadiness =
+									readinessRepositoryId === repository.id &&
+									readinessMutation.isPending;
+								const isDeletingRepository =
+									deleteRepositoryId === repository.id &&
+									permanentDeleteRepositoryMutation.isPending;
+								const hasDeleteBlockers = readiness
+									? readiness.checks.activeStreamingSessionCount > 0 ||
+										readiness.checks.finalizingSegmentCount > 0
+									: true;
+
+								return (
+									<article
+										key={repository.id}
+										className="rounded-xl border border-[var(--line)] bg-white/60 px-4 py-4 dark:bg-white/5"
+									>
+										<div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+											<div className="min-w-0">
+												<h3 className="truncate text-base font-semibold text-[var(--sea-ink)]">
+													{repository.name}
+												</h3>
+												<p className="mt-1 text-sm text-[var(--sea-ink-soft)]">
+													Owner: {repository.ownerId}
+												</p>
+												<div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--sea-ink-soft)]">
+													<span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1">
+														{repository.visibility}
+													</span>
+													<span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1">
+														{repository.videoCount ?? 0} videos
+													</span>
+													<span className="rounded-full bg-[var(--chip-bg)] px-2.5 py-1">
+														Updated {formatDateTime(repository.updatedAt)}
+													</span>
+												</div>
+												{repository.description ? (
+													<p className="mt-3 text-sm text-[var(--sea-ink-soft)]">
+														{repository.description}
+													</p>
+												) : null}
+											</div>
+
+											<div className="flex flex-wrap gap-2">
+												<Button
+													type="button"
+													variant="outline"
+													disabled={isCheckingReadiness || isDeletingRepository}
+													onClick={() => {
+														readinessMutation.mutate(repository.id);
+													}}
+												>
+													{readiness ? "Recheck readiness" : "Check readiness"}
+												</Button>
+												<Button
+													type="button"
+													variant="destructive"
+													disabled={
+														!readiness?.canDelete ||
+														isCheckingReadiness ||
+														isDeletingRepository
+													}
+													onClick={() => {
+														if (
+															!window.confirm(
+																`Permanently delete ${repository.name}? This cannot be undone.`,
+															)
+														) {
+															return;
+														}
+
+														permanentDeleteRepositoryMutation.mutate(
+															repository.id,
+														);
+													}}
+												>
+													Delete permanently
+												</Button>
+											</div>
+										</div>
+
+										{readiness ? (
+											<div className="mt-4 rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
+												<dl className="grid gap-3 text-sm sm:grid-cols-3">
+													<div>
+														<dt className="font-semibold text-[var(--sea-ink)]">
+															Deactivated
+														</dt>
+														<dd className="mt-1 text-[var(--sea-ink-soft)]">
+															{readiness.checks.isDeactivated ? "Yes" : "No"}
+														</dd>
+													</div>
+													<div>
+														<dt className="font-semibold text-[var(--sea-ink)]">
+															Active streams
+														</dt>
+														<dd className="mt-1 text-[var(--sea-ink-soft)]">
+															{readiness.checks.activeStreamingSessionCount}
+														</dd>
+													</div>
+													<div>
+														<dt className="font-semibold text-[var(--sea-ink)]">
+															Finalizing segments
+														</dt>
+														<dd className="mt-1 text-[var(--sea-ink-soft)]">
+															{readiness.checks.finalizingSegmentCount}
+														</dd>
+													</div>
+												</dl>
+												{readiness.canDelete ? (
+													<p className="mt-3 text-sm text-emerald-700 dark:text-emerald-300">
+														All checks passed. Permanent deletion is available.
+													</p>
+												) : hasDeleteBlockers ? (
+													<p className="mt-3 text-sm text-amber-700 dark:text-amber-300">
+														Wait for active streams and finalization to finish
+														before permanent deletion.
+													</p>
+												) : (
+													<p className="mt-3 text-sm text-amber-700 dark:text-amber-300">
+														This repository must remain deactivated before
+														permanent deletion.
+													</p>
+												)}
+											</div>
+										) : null}
+									</article>
+								);
+							})}
+						</div>
+					)}
+
+					{readinessMutation.isError ? (
+						<p className="mt-4 text-sm text-red-700 dark:text-red-300">
+							{getApiErrorMessage(
+								readinessMutation.error,
+								"Failed to check repository delete readiness.",
+							)}
+						</p>
+					) : null}
+
+					{permanentDeleteRepositoryMutation.isError ? (
+						<p className="mt-4 text-sm text-red-700 dark:text-red-300">
+							{getApiErrorMessage(
+								permanentDeleteRepositoryMutation.error,
+								"Failed to permanently delete repository.",
+							)}
+						</p>
+					) : null}
 				</section>
 
 				<div className="mt-6">
