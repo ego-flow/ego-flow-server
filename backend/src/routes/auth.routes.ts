@@ -8,7 +8,7 @@ import { requireDashboardSession, requirePythonToken } from "../middleware/auth.
 import { validate } from "../middleware/validate.middleware";
 import type { ApiTokenIdParamInput } from "../schemas/api-token.schema";
 import { apiTokenIdParamSchema } from "../schemas/api-token.schema";
-import { dashboardLoginSchema, issuePythonTokenSchema, loginSchema, publishAuthSchema } from "../schemas/auth.schema";
+import { dashboardLoginSchema, issuePythonTokenSchema, loginSchema, mediaMtxAuthSchema } from "../schemas/auth.schema";
 import { changeMyPasswordSchema } from "../schemas/user.schema";
 import { apiTokenService } from "../services/api-token.service";
 import { authService } from "../services/auth.service";
@@ -137,44 +137,43 @@ router.delete(
   }),
 );
 
+const handleMediaMtxAuth = asyncHandler(async (req, res) => {
+  const parsed = mediaMtxAuthSchema.safeParse(req.body);
+  if (!parsed.success) {
+    console.warn("[mediamtx-auth] invalid payload", {
+      action: req.body?.action,
+      path: req.body?.path,
+      protocol: req.body?.protocol,
+      user: req.body?.user,
+      id: req.body?.id,
+      ip: req.body?.ip,
+      issues: parsed.error.issues.map((issue) => ({
+        path: issue.path.join("."),
+        code: issue.code,
+        message: issue.message,
+      })),
+    });
+    res.status(401).end();
+    return;
+  }
+
+  const isAuthorized = await authService.verifyMediaMtxAuthorization(parsed.data);
+  if (!isAuthorized) {
+    res.status(401).end();
+    return;
+  }
+
+  res.status(200).end();
+});
+
 /**
- * [MediaMTX publish 인증 엔드포인트]
- * MediaMTX authHTTPAddress로 설정되어 있어 RTMP publish와 WHIP publish에서 공통 호출된다.
- * - publish: query.ticket 기반 short-lived publish ticket만 허용한다.
- * - read/playback: mediamtx.yml authHTTPExclude로 우회되며, playback 권한은 Caddy forward_auth가 담당한다.
+ * [MediaMTX 인증 엔드포인트]
+ * MediaMTX authHTTPAddress로 설정되어 publish/read/playback action을 공통 수신한다.
+ * - publish: query.ticket 기반 publish ticket만 허용한다.
+ * - read/playback + hls: playback ticket만 허용한다.
  * MediaMTX는 단순 status code(200/401)만 보므로 의도적으로 빈 응답을 돌려준다.
  */
-// POST /api/v1/auth/publish
-router.post(
-  "/publish",
-  asyncHandler(async (req, res) => {
-    const parsed = publishAuthSchema.safeParse(req.body);
-    if (!parsed.success) {
-      console.warn("[publish-auth] invalid payload", {
-        action: req.body?.action,
-        path: req.body?.path,
-        protocol: req.body?.protocol,
-        user: req.body?.user,
-        id: req.body?.id,
-        ip: req.body?.ip,
-        issues: parsed.error.issues.map((issue) => ({
-          path: issue.path.join("."),
-          code: issue.code,
-          message: issue.message,
-        })),
-      });
-      res.status(401).end();
-      return;
-    }
-
-    const isAuthorized = await authService.verifyPublishAuthorization(parsed.data);
-    if (!isAuthorized) {
-      res.status(401).end();
-      return;
-    }
-
-    res.status(200).end();
-  }),
-);
+// POST /api/v1/auth/mediamtx
+router.post("/mediamtx", handleMediaMtxAuth);
 
 export const authRoutes = router;

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const liveStreamIdParamSchema = z.object({
-  streamId: z.string().uuid(),
+export const liveStreamRecordingSessionParamSchema = z.object({
+  recordingSessionId: z.string().uuid(),
 });
 
-export type LiveStreamIdParamInput = z.infer<typeof liveStreamIdParamSchema>;
+export type LiveStreamRecordingSessionParamInput = z.infer<typeof liveStreamRecordingSessionParamSchema>;

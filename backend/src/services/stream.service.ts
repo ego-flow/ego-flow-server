@@ -272,15 +272,6 @@ export class StreamService {
   }
 
   /**
-   * [HLS playback path 조립]
-   * `/hls/live/{repository_name}/{recording_session_id}/index.m3u8` 형태의 origin-relative path를 만든다.
-   */
-  buildHlsPath(repoName: string, recordingSessionId: string) {
-    const hlsBase = env.HLS_PATH_PREFIX.replace(/\/+$/, "");
-    return `${hlsBase}/live/${repoName}/${recordingSessionId}/index.m3u8`;
-  }
-
-  /**
    * [Live stream 목록 - Redis read-only]
    * Redis active set으로 live 후보를 좁힌 뒤 stream:recording cache로 응답을 만든다.
    * 1. 요청자가 접근 가능한 repository id set 계산 (admin이면 null)
@@ -316,15 +307,15 @@ export class StreamService {
     const streams = visibleCaches.map(({ recordingSessionId, cache }) => {
       const playbackAvailable = cache.ingestType === RecordingSessionIngestType.MEDIAMTX;
       return {
-        stream_id: recordingSessionId,
+        recording_session_id: recordingSessionId,
         repository_id: cache.repositoryId,
         repository_name: cache.repositoryName,
         user_id: cache.userId,
         device_type: cache.deviceType ?? null,
         ingest_type: cache.ingestType,
+        stream_path: this.buildStreamPath(cache.repositoryName, recordingSessionId),
         status: "live" as const,
         playback_available: playbackAvailable,
-        hls_path: playbackAvailable ? this.buildHlsPath(cache.repositoryName, recordingSessionId) : null,
         bytes_received: cache.bytesReceived ?? null,
         last_sequence: cache.lastSequence ?? null,
         last_chunk_at: cache.lastChunkAt ? new Date(cache.lastChunkAt).toISOString() : null,
@@ -344,12 +335,16 @@ export class StreamService {
 
   /**
    * [Live stream 상세]
-   * streamId(recording_session_id)로 단일 stream의 상세 metadata를 반환한다.
+   * recordingSessionId로 단일 stream의 상세 metadata를 반환한다.
    * DB STREAMING 여부와 MediaMTX path 활성 여부를 교차 확인하여 playback_ready를 계산한다.
    * 접근 권한이 없거나 존재하지 않는 session은 404를 던진다.
    */
-  async getLiveStreamDetail(streamId: string, requestUserId: string, requestUserRole: AppUserRole) {
-    const session = await prisma.recordingSession.findUnique({ where: { id: streamId } });
+  async getLiveStreamDetail(
+    recordingSessionId: string,
+    requestUserId: string,
+    requestUserRole: AppUserRole,
+  ) {
+    const session = await prisma.recordingSession.findUnique({ where: { id: recordingSessionId } });
 
     if (!session || session.status !== RecordingSessionStatus.STREAMING) {
       throw NotFound("Live stream not found.");
@@ -370,7 +365,7 @@ export class StreamService {
       : false;
 
     return {
-      stream_id: session.id,
+      recording_session_id: session.id,
       repository_id: session.repositoryId,
       repository_name: repoName,
       owner_id: session.ownerId,
@@ -381,28 +376,56 @@ export class StreamService {
       registered_at: session.createdAt.toISOString(),
       status: "live" as const,
       playback_available: playbackAvailable,
-      hls_path: playbackAvailable ? this.buildHlsPath(repoName, session.id) : null,
       playback_ready: playbackReady,
     };
   }
 
-  /**
-   * [RTMP 인증 보조: live session 조회]
-   * RTMP publish/read 인증 시 auth.service에서 호출.
-   * stream path의 recordingSessionId로 Redis live cache를 조회한다.
-   * Redis live pointer가 없거나 STREAMING이 아니면 live session으로 취급하지 않는다.
-   */
-  async findLiveSessionByStreamPath(streamPath: string): Promise<RecordingSessionLiveCache | null> {
-    const cache = await recordingSessionService.getLiveCacheByPath(streamPath);
-    if (!cache) {
-      return null;
+  async issueHlsPlaybackTicket(
+    recordingSessionId: string,
+    requestUserId: string,
+    requestUserRole: AppUserRole,
+  ) {
+    const rawCache = await redis.get(streamRecordingKey(recordingSessionId));
+    const liveCache = this.parseLiveCache(rawCache);
+    if (!liveCache || liveCache.status !== "STREAMING") {
+      throw NotFound("Live stream not found.");
     }
 
-    if (cache.status !== "STREAMING") {
-      return null;
+    if (liveCache.ingestType !== RecordingSessionIngestType.MEDIAMTX) {
+      throw Conflict("Live stream playback is not available for this ingest type.");
     }
 
-    return cache;
+    const access = await repositoryService.getRepositoryAccess(
+      requestUserId,
+      requestUserRole,
+      liveCache.repositoryId,
+    );
+    if (!access) {
+      throw NotFound("Live stream not found.");
+    }
+
+    const streamPath = this.buildStreamPath(liveCache.repositoryName, recordingSessionId);
+    const ticketGrant = await streamOwnershipService.issueHlsPlaybackTicket({
+      recordingSessionId,
+      repositoryId: liveCache.repositoryId,
+      userId: requestUserId,
+      streamPath,
+    });
+
+    console.info("[hls-ticket] issued", {
+      recordingSessionId,
+      repositoryId: liveCache.repositoryId,
+      repositoryName: liveCache.repositoryName,
+      userId: requestUserId,
+      streamPath,
+      ticketId: ticketGrant.ticketId,
+      ticketTtlSec: streamOwnershipService.getHlsPlaybackTicketTtlSeconds(),
+    });
+
+    return {
+      playback_ticket: ticketGrant.ticketId,
+      playback_ticket_expires_at: ticketGrant.expiresAt.toISOString(),
+    };
   }
 
   /**

@@ -12,6 +12,6 @@ export const getServerInfo = () => ({
   },
   urls: {
     api_base: "/api/v1",
-    hls_base: env.HLS_PATH_PREFIX,
+    hls_port: env.HLS_PORT,
   },
 });

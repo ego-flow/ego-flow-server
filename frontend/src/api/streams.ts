@@ -1,17 +1,17 @@
 import { apiClient } from "#/api/client";
 import { ApiEndpoint } from "#/constants/api/api-constants";
-import { liveStreamPath } from "#/utils/api-paths";
+import { liveStreamPath, liveStreamPlaybackTicketPath } from "#/utils/api-paths";
 
 export interface LiveStreamSummary {
-	streamId: string;
+	recordingSessionId: string;
 	repositoryId: string;
 	repositoryName: string;
 	userId: string;
 	deviceType: string | null;
 	ingestType: "MEDIAMTX" | "HTTP";
+	streamPath: string;
 	status: "live";
 	playbackAvailable: boolean;
-	hlsPath: string | null;
 	bytesReceived: number | null;
 	lastSequence: number | null;
 	lastChunkAt: string | null;
@@ -24,23 +24,28 @@ export interface LiveStreamDetail extends LiveStreamSummary {
 	playbackReady: boolean;
 }
 
+export interface LiveStreamPlaybackTicket {
+	playbackTicket: string;
+	playbackTicketExpiresAt: string;
+}
+
 interface LiveStreamSummaryApiRecord {
-	stream_id: string;
+	recording_session_id: string;
 	repository_id: string;
 	repository_name: string;
 	user_id: string;
 	device_type: string | null;
 	ingest_type: "MEDIAMTX" | "HTTP";
+	stream_path: string;
 	status: "live";
 	playback_available: boolean;
-	hls_path: string | null;
 	bytes_received: number | null;
 	last_sequence: number | null;
 	last_chunk_at: string | null;
 }
 
 interface LiveStreamDetailApiRecord {
-	stream_id: string;
+	recording_session_id: string;
 	repository_id: string;
 	repository_name: string;
 	owner_id: string;
@@ -51,22 +56,21 @@ interface LiveStreamDetailApiRecord {
 	registered_at: string;
 	status: "live";
 	playback_available: boolean;
-	hls_path: string | null;
 	playback_ready: boolean;
 }
 
 const normalizeLiveStreamSummary = (
 	stream: LiveStreamSummaryApiRecord,
 ): LiveStreamSummary => ({
-	streamId: stream.stream_id,
+	recordingSessionId: stream.recording_session_id,
 	repositoryId: stream.repository_id,
 	repositoryName: stream.repository_name,
 	userId: stream.user_id,
 	deviceType: stream.device_type,
 	ingestType: stream.ingest_type,
+	streamPath: stream.stream_path,
 	status: stream.status,
 	playbackAvailable: stream.playback_available,
-	hlsPath: stream.hls_path,
 	bytesReceived: stream.bytes_received,
 	lastSequence: stream.last_sequence,
 	lastChunkAt: stream.last_chunk_at,
@@ -75,7 +79,7 @@ const normalizeLiveStreamSummary = (
 const normalizeLiveStreamDetail = (
 	stream: LiveStreamDetailApiRecord,
 ): LiveStreamDetail => ({
-	streamId: stream.stream_id,
+	recordingSessionId: stream.recording_session_id,
 	repositoryId: stream.repository_id,
 	repositoryName: stream.repository_name,
 	ownerId: stream.owner_id,
@@ -86,7 +90,6 @@ const normalizeLiveStreamDetail = (
 	registeredAt: stream.registered_at,
 	status: stream.status,
 	playbackAvailable: stream.playback_available,
-	hlsPath: stream.hls_path,
 	playbackReady: stream.playback_ready,
 	bytesReceived: null,
 	lastSequence: null,
@@ -103,10 +106,22 @@ export async function requestLiveStreams() {
 	) satisfies LiveStreamSummary[];
 }
 
-export async function requestLiveStreamDetail(streamId: string) {
+export async function requestLiveStreamDetail(recordingSessionId: string) {
 	const response = await apiClient.get<LiveStreamDetailApiRecord>(
-		liveStreamPath(streamId),
+		liveStreamPath(recordingSessionId),
 	);
 
 	return normalizeLiveStreamDetail(response.data);
+}
+
+export async function requestLiveStreamPlaybackTicket(recordingSessionId: string) {
+	const response = await apiClient.post<{
+		playback_ticket: string;
+		playback_ticket_expires_at: string;
+	}>(liveStreamPlaybackTicketPath(recordingSessionId));
+
+	return {
+		playbackTicket: response.data.playback_ticket,
+		playbackTicketExpiresAt: response.data.playback_ticket_expires_at,
+	} satisfies LiveStreamPlaybackTicket;
 }

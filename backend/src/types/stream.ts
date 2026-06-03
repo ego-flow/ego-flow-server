@@ -30,3 +30,12 @@ export interface PublishTicketRecord {
   streamPath: string;
   status: "active" | "consumed";
 }
+
+export interface HlsPlaybackTicketRecord {
+  recordingSessionId: string;
+  repositoryId: string;
+  userId: string;
+  ingestType: "MEDIAMTX";
+  streamPath: string;
+  status: "active" | "revoked";
+}

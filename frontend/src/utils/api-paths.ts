@@ -18,8 +18,11 @@ export const adminUserResetPasswordPath = (userId: string) =>
 export const authTokenPath = (tokenId: string) =>
 	`${ApiEndpoint.AuthPythonTokens}/${encodeURIComponent(tokenId)}`;
 
-export const liveStreamPath = (streamId: string) =>
-	`${ApiEndpoint.LiveStreams}/${encodeURIComponent(streamId)}`;
+export const liveStreamPath = (recordingSessionId: string) =>
+	`${ApiEndpoint.LiveStreams}/${encodeURIComponent(recordingSessionId)}`;
+
+export const liveStreamPlaybackTicketPath = (recordingSessionId: string) =>
+	`${liveStreamPath(recordingSessionId)}/playback-ticket`;
 
 export const repositoryPath = (repoId: string) =>
 	`${ApiEndpoint.Repositories}/${repoId}`;

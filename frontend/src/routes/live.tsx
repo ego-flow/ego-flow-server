@@ -3,13 +3,18 @@ import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { Activity, RadioTower, RefreshCcw, UploadCloud } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 
-import { getApiErrorMessage } from "#/api/client";
-import { requestLiveStreamDetail, requestLiveStreams } from "#/api/streams";
+import { getApiErrorMessage, getBackendOrigin } from "#/api/client";
+import {
+	requestLiveStreamDetail,
+	requestLiveStreamPlaybackTicket,
+	requestLiveStreams,
+} from "#/api/streams";
 import { Button } from "#/components/ui/button";
 import { UserRole } from "#/constants/auth/auth-constants";
 import { useAuth } from "#/hooks/useAuth";
 
 const HlsPlayer = lazy(() => import("#/components/HlsPlayer"));
+const DIRECT_HLS_PORT = 8888;
 
 export const Route = createFileRoute("/live")({
 	component: LivePage,
@@ -26,9 +31,26 @@ const formatBytes = (value: number | null) => {
 	}).format(value);
 };
 
+const buildDirectHlsUrl = (streamPath: string, playbackTicket: string) => {
+	const normalizedPath = streamPath.replace(/^\/+/, "");
+	let host = "127.0.0.1";
+
+	try {
+		host = new URL(getBackendOrigin()).hostname || host;
+	} catch {
+		if (typeof window !== "undefined" && window.location.hostname) {
+			host = window.location.hostname;
+		}
+	}
+
+	return `http://${host}:${DIRECT_HLS_PORT}/${normalizedPath}/index.m3u8?ticket=${encodeURIComponent(playbackTicket)}`;
+};
+
 function LivePage() {
 	const { isReady, isAuthenticated, session } = useAuth();
-	const [selectedStreamId, setSelectedStreamId] = useState<string | null>(null);
+	const [selectedRecordingSessionId, setSelectedRecordingSessionId] = useState<
+		string | null
+	>(null);
 
 	const streamsQuery = useQuery({
 		queryKey: ["live-streams"],
@@ -37,34 +59,87 @@ function LivePage() {
 		refetchInterval: 2000,
 	});
 
+	const streams = streamsQuery.data ?? [];
+	const selectedStream =
+		streams.find(
+			(stream) => stream.recordingSessionId === selectedRecordingSessionId,
+		) ?? null;
+
 	const selectedStreamDetailQuery = useQuery({
-		queryKey: ["live-streams", selectedStreamId],
+		queryKey: ["live-streams", selectedRecordingSessionId],
 		queryFn: () => {
-			if (!selectedStreamId) {
+			if (!selectedRecordingSessionId) {
 				throw new Error("No stream selected.");
 			}
 
-			return requestLiveStreamDetail(selectedStreamId);
+			return requestLiveStreamDetail(selectedRecordingSessionId);
 		},
-		enabled: isReady && isAuthenticated && Boolean(selectedStreamId),
+		enabled: isReady && isAuthenticated && Boolean(selectedRecordingSessionId),
 		refetchInterval: 2000,
 		retry: false,
 	});
 
+	const selectedStreamDetail =
+		selectedStreamDetailQuery.data?.recordingSessionId ===
+		selectedStream?.recordingSessionId
+			? selectedStreamDetailQuery.data
+			: null;
+	const selectedDeviceType =
+		selectedStreamDetail?.deviceType ?? selectedStream?.deviceType ?? null;
+	const selectedPlaybackReady = selectedStreamDetail?.playbackReady ?? false;
+	const playbackTicketQuery = useQuery({
+		queryKey: [
+			"live-streams",
+			selectedStream?.recordingSessionId,
+			"playback-ticket",
+		],
+		queryFn: () => {
+			if (!selectedStream) {
+				throw new Error("No stream selected.");
+			}
+
+			return requestLiveStreamPlaybackTicket(selectedStream.recordingSessionId);
+		},
+		enabled:
+			isReady &&
+			isAuthenticated &&
+			Boolean(
+				selectedStream &&
+					selectedStream.ingestType === "MEDIAMTX" &&
+					selectedStream.playbackAvailable &&
+					selectedPlaybackReady,
+			),
+		staleTime: 8 * 60 * 1000,
+		retry: false,
+	});
+	const selectedPlaybackTicket = playbackTicketQuery.data?.playbackTicket ?? null;
+	const selectedHlsUrl =
+		selectedStream && selectedPlaybackTicket
+			? buildDirectHlsUrl(selectedStream.streamPath, selectedPlaybackTicket)
+			: null;
+	const canPlaySelectedStream = Boolean(
+		selectedStream &&
+			selectedStream.ingestType === "MEDIAMTX" &&
+			selectedStream.playbackAvailable &&
+			selectedPlaybackReady &&
+			selectedPlaybackTicket &&
+			selectedHlsUrl,
+	);
+	const isAdmin = session?.user?.role === UserRole.Admin;
+
 	useEffect(() => {
-		const streams = streamsQuery.data ?? [];
 		if (streams.length === 0) {
-			setSelectedStreamId(null);
+			setSelectedRecordingSessionId(null);
 			return;
 		}
 
 		const selectedExists = streams.some(
-			(stream) => stream.streamId === selectedStreamId,
+			(stream) => stream.recordingSessionId === selectedRecordingSessionId,
 		);
 		if (!selectedExists) {
-			setSelectedStreamId(streams[0].streamId);
+			setSelectedRecordingSessionId(streams[0].recordingSessionId);
 		}
-	}, [selectedStreamId, streamsQuery.data]);
+	}, [selectedRecordingSessionId, streams]);
 
 	if (!isReady) {
 		return null;
@@ -73,26 +148,6 @@ function LivePage() {
 	if (!isAuthenticated) {
 		return <Navigate to="/login" />;
 	}
-
-	const streams = streamsQuery.data ?? [];
-	const selectedStream =
-		streams.find((stream) => stream.streamId === selectedStreamId) ?? null;
-	const selectedStreamDetail =
-		selectedStreamDetailQuery.data?.streamId === selectedStream?.streamId
-			? selectedStreamDetailQuery.data
-			: null;
-	const selectedDeviceType =
-		selectedStreamDetail?.deviceType ?? selectedStream?.deviceType ?? null;
-	const selectedHlsPath = selectedStreamDetail?.hlsPath ?? selectedStream?.hlsPath;
-	const selectedPlaybackReady = selectedStreamDetail?.playbackReady ?? false;
-	const canPlaySelectedStream = Boolean(
-		selectedStream &&
-			selectedStream.ingestType === "MEDIAMTX" &&
-			selectedStream.playbackAvailable &&
-			selectedPlaybackReady &&
-			selectedHlsPath,
-	);
-	const isAdmin = session?.user?.role === UserRole.Admin;
 
 	return (
 		<main className="page-wrap px-4 py-8 sm:py-10">
@@ -154,11 +209,13 @@ function LivePage() {
 						<div className="space-y-3">
 							{streams.map((stream) => (
 								<button
-									key={stream.streamId}
+									key={stream.recordingSessionId}
 									type="button"
-									onClick={() => setSelectedStreamId(stream.streamId)}
+									onClick={() =>
+										setSelectedRecordingSessionId(stream.recordingSessionId)
+									}
 									className={`w-full rounded-2xl border p-4 text-left transition-colors ${
-										selectedStreamId === stream.streamId
+										selectedRecordingSessionId === stream.recordingSessionId
 											? "border-[color-mix(in_oklab,var(--lagoon-deep)_55%,var(--line))] bg-[var(--link-bg-hover)]"
 											: "border-[var(--line)] bg-[color-mix(in_oklab,var(--card)_86%,transparent)] hover:bg-[var(--link-bg-hover)]"
 									}`}
@@ -200,7 +257,9 @@ function LivePage() {
 											<dt className="font-semibold text-[var(--sea-ink)]">
 												Session
 											</dt>
-											<dd className="truncate">{stream.streamId}</dd>
+											<dd className="truncate">
+												{stream.recordingSessionId}
+											</dd>
 										</div>
 									</dl>
 								</button>
@@ -243,7 +302,7 @@ function LivePage() {
 					</div>
 
 					{selectedStream ? (
-						canPlaySelectedStream && selectedHlsPath ? (
+						canPlaySelectedStream && selectedHlsUrl && selectedPlaybackTicket ? (
 							<>
 								<Suspense
 									fallback={
@@ -252,14 +311,17 @@ function LivePage() {
 										</div>
 									}
 								>
-									<HlsPlayer src={selectedHlsPath} />
+									<HlsPlayer
+										src={selectedHlsUrl}
+										playbackTicket={selectedPlaybackTicket}
+									/>
 								</Suspense>
 								<dl className="mt-5 grid gap-3 text-sm text-[var(--sea-ink-soft)]">
 									<div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
 										<dt className="font-semibold text-[var(--sea-ink)]">
-											HLS path
+											HLS URL
 										</dt>
-										<dd className="mt-1 break-all">{selectedHlsPath}</dd>
+										<dd className="mt-1 break-all">{selectedHlsUrl}</dd>
 									</div>
 								</dl>
 							</>
@@ -280,6 +342,11 @@ function LivePage() {
 													selectedStreamDetailQuery.error,
 													"Failed to load stream playback status.",
 												)
+											: playbackTicketQuery.isError
+												? getApiErrorMessage(
+														playbackTicketQuery.error,
+														"Failed to issue playback ticket.",
+													)
 											: "The stream is active, but MediaMTX has not reported a playable HLS path yet."}
 									</p>
 								</div>

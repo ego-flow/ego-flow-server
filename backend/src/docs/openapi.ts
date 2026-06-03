@@ -147,10 +147,10 @@ export const openApiDocument = {
           },
           urls: {
             type: "object",
-            required: ["api_base", "hls_base"],
+            required: ["api_base", "hls_port"],
             properties: {
               api_base: { type: "string", example: "/api/v1" },
-              hls_base: { type: "string", example: "/hls" },
+              hls_port: { type: "integer", example: 8888 },
             },
           },
         },
@@ -380,29 +380,29 @@ export const openApiDocument = {
       LiveStreamSummary: {
         type: "object",
         required: [
-          "stream_id",
+          "recording_session_id",
           "repository_id",
           "repository_name",
           "user_id",
           "device_type",
           "ingest_type",
+          "stream_path",
           "status",
           "playback_available",
-          "hls_path",
           "bytes_received",
           "last_sequence",
           "last_chunk_at",
         ],
         properties: {
-          stream_id: { type: "string", format: "uuid" },
+          recording_session_id: { type: "string", format: "uuid" },
           repository_id: { type: "string", format: "uuid" },
           repository_name: { type: "string" },
           user_id: { type: "string" },
           device_type: { type: ["string", "null"] },
           ingest_type: { type: "string", enum: ["MEDIAMTX", "HTTP"] },
+          stream_path: { type: "string", example: "live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620" },
           status: { type: "string", enum: ["live"] },
           playback_available: { type: "boolean" },
-          hls_path: { type: ["string", "null"], example: "/hls/live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620/index.m3u8" },
           bytes_received: { type: ["integer", "null"], minimum: 0 },
           last_sequence: { type: ["integer", "null"], minimum: 0 },
           last_chunk_at: { type: ["string", "null"], format: "date-time" },
@@ -421,7 +421,7 @@ export const openApiDocument = {
       LiveStreamDetail: {
         type: "object",
         required: [
-          "stream_id",
+          "recording_session_id",
           "repository_id",
           "repository_name",
           "owner_id",
@@ -432,11 +432,10 @@ export const openApiDocument = {
           "registered_at",
           "status",
           "playback_available",
-          "hls_path",
           "playback_ready",
         ],
         properties: {
-          stream_id: { type: "string", format: "uuid" },
+          recording_session_id: { type: "string", format: "uuid" },
           repository_id: { type: "string", format: "uuid" },
           repository_name: { type: "string" },
           owner_id: { type: "string" },
@@ -447,8 +446,15 @@ export const openApiDocument = {
           registered_at: { type: "string", format: "date-time" },
           status: { type: "string", enum: ["live"] },
           playback_available: { type: "boolean" },
-          hls_path: { type: ["string", "null"] },
           playback_ready: { type: "boolean" },
+        },
+      },
+      HlsPlaybackTicketResponse: {
+        type: "object",
+        required: ["playback_ticket", "playback_ticket_expires_at"],
+        properties: {
+          playback_ticket: { type: "string", example: "pt_opaque" },
+          playback_ticket_expires_at: { type: "string", format: "date-time" },
         },
       },
       HookOkResponse: {
@@ -1209,11 +1215,11 @@ export const openApiDocument = {
         },
       },
     },
-    "/auth/publish": {
+    "/auth/mediamtx": {
       post: {
         tags: ["Auth"],
-        summary: "MediaMTX publish authorization hook",
-        description: "Internal endpoint used by MediaMTX for RTMP/WHIP publish authorization.",
+        summary: "MediaMTX authorization hook",
+        description: "Internal endpoint used by MediaMTX for publish and HLS read/playback authorization.",
         security: [],
         requestBody: {
           required: true,
@@ -1792,13 +1798,13 @@ export const openApiDocument = {
         },
       },
     },
-    "/live-streams/{streamId}": {
+    "/live-streams/{recordingSessionId}": {
       get: {
         tags: ["Live Streams"],
         summary: "Get live stream detail",
         parameters: [
           {
-            name: "streamId",
+            name: "recordingSessionId",
             in: "path",
             required: true,
             schema: { type: "string", format: "uuid" },
@@ -1818,24 +1824,31 @@ export const openApiDocument = {
         },
       },
     },
-    "/hls-auth": {
-      get: {
+    "/live-streams/{recordingSessionId}/playback-ticket": {
+      post: {
         tags: ["Live Streams"],
-        summary: "Internal endpoint used by Caddy forward_auth for HLS playback authorization",
-        description:
-          "Subrequest target for Caddy `forward_auth`. Returns 200 if the authenticated caller has read access to the live stream backing the requested HLS path, 404 otherwise (existence-hiding).",
+        summary: "Issue a short-lived HLS playback ticket",
+        description: "Dashboard and Python clients call this before direct MediaMTX HLS playback.",
         parameters: [
           {
-            name: "path",
-            in: "query",
+            name: "recordingSessionId",
+            in: "path",
             required: true,
-            schema: { type: "string", example: "/hls/live/daily_kitchen/2b42c60f-8e94-4c85-933f-182c6496e620/index.m3u8" },
+            schema: { type: "string", format: "uuid" },
           },
         ],
         responses: {
-          "200": { description: "Authorized" },
+          "201": {
+            description: "Playback ticket issued",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/HlsPlaybackTicketResponse" },
+              },
+            },
+          },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "404": { $ref: "#/components/responses/NotFound" },
+          "409": { $ref: "#/components/responses/Conflict" },
         },
       },
     },

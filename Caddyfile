@@ -1,20 +1,6 @@
 :80 {
 	encode zstd gzip
 
-	handle_path /hls/* {
-		forward_auth backend:3000 {
-			uri /api/v1/hls-auth?path={http.request.orig_uri.path}
-			copy_headers Cookie Authorization
-		}
-		# MediaMTX HLS는 cookieCheck redirect 시 Location을 `/live/...` 절대경로로 내려보낸다.
-		# handle_path가 `/hls` prefix를 벗겼기 때문에 그대로 client에 돌려주면 `/hls`가 사라진
-		# 주소로 follow되어 dashboard SPA로 fall through된다. response Location header를
-		# 다시 `/hls/...`로 prefix해서 redirect chain이 같은 route에 머물도록 한다.
-		reverse_proxy mediamtx:8888 {
-			header_down Location ^(/.*)$ /hls$1
-		}
-	}
-
 	# WHIP publish ingress.
 	# Auth는 MediaMTX `authHTTPAddress`가 `?ticket=` query로 처리하므로 forward_auth 불필요.
 	# MediaMTX native WHIP path(`/live/{repo}/{recordingSessionId}/whip`)를 그대로 노출해 Location 기반 PATCH/DELETE도 같은 route로 처리한다.

@@ -37,7 +37,6 @@ export const runtimeConfig = {
   RTMPS_ENABLED: (env.RTMPS_ENCRYPTION_MODE ?? "no") !== "no",
   RTMPS_CERT_PATH: env.RTMPS_CERT_PATH ?? "/certs/server.crt",
   RTMPS_KEY_PATH: env.RTMPS_KEY_PATH ?? "/certs/server.key",
-  HLS_PATH_PREFIX: "/hls",
   WHIP_PATH_PREFIX: "/live",
   MEDIAMTX_API_URL: FIXED_MEDIAMTX_API_URL,
 } as const;

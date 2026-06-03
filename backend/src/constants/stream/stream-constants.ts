@@ -8,10 +8,4 @@ export const HTTP_STREAM_TIMEOUT_MS = 10 * 1000;
 export const HTTP_UPLOAD_LOCK_TTL_SECONDS = 10;
 export const HTTP_STREAM_CHUNK_MAX_BYTES = "64mb";
 
-export const LIVE_PLAYBACK_AUTH_CACHE_TTL_SECONDS = 30;
-export const LIVE_PLAYBACK_AUTH_CREDENTIAL_HASH_ALGORITHM = "sha256";
-export const LIVE_PLAYBACK_AUTH_CACHE_ALLOW_VALUE = "1";
-
-export enum LivePlaybackAuthCachePrefix {
-  Hls = "hlsauth",
-}
+export const HLS_PLAYBACK_TICKET_TTL_SECONDS = 10 * 60;

@@ -29,7 +29,7 @@ const optionalCredential = z.preprocess((value) => {
   return value;
 }, z.string().min(1).optional());
 
-export const publishAuthSchema = z.object({
+export const mediaMtxAuthSchema = z.object({
   user: z.preprocess((value) => {
     if (value === "" || value === null || value === undefined) {
       return undefined;
@@ -50,4 +50,4 @@ export const publishAuthSchema = z.object({
 export type LoginInput = z.infer<typeof loginSchema>;
 export type DashboardLoginInput = z.infer<typeof dashboardLoginSchema>;
 export type IssuePythonTokenInput = z.infer<typeof issuePythonTokenSchema>;
-export type PublishAuthInput = z.infer<typeof publishAuthSchema>;
+export type MediaMtxAuthInput = z.infer<typeof mediaMtxAuthSchema>;

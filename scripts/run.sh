@@ -167,7 +167,7 @@ check_prereqs() {
   echo "HTTP port: ${PUBLIC_HTTP_PORT}"
   echo "RTMP port: 1935"
   echo "RTMPS port: 1936"
-  echo "HLS internal port: ${FIXED_HLS_PORT}"
+  echo "HLS direct playback port: ${FIXED_HLS_PORT}"
   echo "Data root: ${TARGET_DIRECTORY}"
   echo "Datasets dir: ${TARGET_DIRECTORY}/datasets"
 }
@@ -489,7 +489,7 @@ up_stack() {
   echo "Dashboard:      ${http_base}"
   echo "RTMP ingest:    rtmp://localhost:1935/live"
   echo "RTMPS ingest:   rtmps://localhost:1936/live"
-  echo "HLS output:     ${http_base}/hls"
+  echo "HLS output:     http://localhost:${FIXED_HLS_PORT}/live/{repo}/{recordingSessionId}/index.m3u8?ticket={playback_ticket}"
 }
 
 doctor() {

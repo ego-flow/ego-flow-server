@@ -54,6 +54,7 @@ const { Forbidden, NotFound } = require("../src/lib/errors") as typeof import(".
 
 const originalAssertRepositoryAccess = repositoryService.assertRepositoryAccess;
 const originalListAccessibleRepositoryIds = repositoryService.listAccessibleRepositoryIds;
+const originalGetRepositoryAccess = repositoryService.getRepositoryAccess;
 
 const repository = {
   id: "566fdab1-771a-42f9-a4eb-2f1c04859874",
@@ -97,6 +98,7 @@ beforeEach(() => {
     isSystemAdmin: false,
   });
   repositoryService.listAccessibleRepositoryIds = originalListAccessibleRepositoryIds;
+  repositoryService.getRepositoryAccess = originalGetRepositoryAccess;
 });
 
 test("registerSession creates a unique MediaMTX path and caches pending metadata", async () => {
@@ -502,15 +504,15 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
 
   assert.deepEqual(streams, [
     {
-      stream_id: "session-1",
+      recording_session_id: "session-1",
       repository_id: repository.id,
       repository_name: repository.name,
       user_id: "maintainer-1",
       device_type: "phone_android",
       ingest_type: "MEDIAMTX",
+      stream_path: "live/test2/session-1",
       status: "live",
       playback_available: true,
-      hls_path: "/hls/live/test2/session-1/index.m3u8",
       bytes_received: null,
       last_sequence: null,
       last_chunk_at: null,
@@ -518,7 +520,38 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
   ]);
 });
 
+test("issueHlsPlaybackTicket authorizes read access and stores a Redis playback ticket", async () => {
+  repositoryService.getRepositoryAccess = async () => ({
+    repository,
+    effectiveRole: "read",
+    isSystemAdmin: false,
+  });
+  fakeRedis.setJson("stream:recording:session-1", {
+    repositoryId: repository.id,
+    repositoryName: repository.name,
+    userId: "maintainer-1",
+    deviceType: "phone_android",
+    ingestType: "MEDIAMTX",
+    status: "STREAMING",
+  } satisfies RecordingSessionLiveCache);
+
+  const response = await streamService.issueHlsPlaybackTicket("session-1", "viewer-1", "user");
+
+  assert.ok(response.playback_ticket.startsWith("pt_"));
+  assert.match(response.playback_ticket_expires_at, /^\d{4}-\d{2}-\d{2}T/);
+
+  const ticket = fakeRedis.getJson<Record<string, unknown>>(`stream:hls-ticket:${response.playback_ticket}`);
+  assert.equal(ticket?.recordingSessionId, "session-1");
+  assert.equal(ticket?.repositoryId, repository.id);
+  assert.equal(ticket?.userId, "viewer-1");
+  assert.equal(ticket?.ingestType, "MEDIAMTX");
+  assert.equal(ticket?.streamPath, "live/test2/session-1");
+  assert.equal(ticket?.status, "active");
+  assert.equal(fakeRedis.getTtlSeconds(`stream:hls-ticket:${response.playback_ticket}`), 600);
+});
+
 after(() => {
   repositoryService.assertRepositoryAccess = originalAssertRepositoryAccess;
   repositoryService.listAccessibleRepositoryIds = originalListAccessibleRepositoryIds;
+  repositoryService.getRepositoryAccess = originalGetRepositoryAccess;
 });

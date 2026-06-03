@@ -5,6 +5,7 @@ writeTimeout: 5s
 
 hls: yes
 hlsAddress: :8888
+hlsAllowOrigins: ["*"]
 hlsAlwaysRemux: yes
 # hls.js (light build, lowLatencyMode)이 mediamtx의 LL-HLS playlist part duration 미세
 # 변화(예: 237ms → 238ms)에 stall 했다. dashboard live playback에는 sub-second latency가
@@ -21,13 +22,9 @@ api: yes
 apiAddress: :9997
 
 authMethod: http
-authHTTPAddress: http://backend:3000/api/v1/auth/publish
-# read/playback은 Caddy `forward_auth`(/api/v1/hls-auth)가 게이트하므로
-# MediaMTX 진입 시점에 backend auth callback을 호출하지 않는다.
-# publish는 그대로 backend가 ticket 기반으로 검증한다.
+authHTTPAddress: http://backend:3000/api/v1/auth/mediamtx
+# publish는 publish ticket으로, HLS read/playback은 playback ticket으로 검증한다.
 authHTTPExclude:
-  - action: read
-  - action: playback
   - action: api
 
 pathDefaults:

@@ -15,7 +15,6 @@ import { errorMiddleware } from "./middleware/error.middleware";
 import { requireSignedFileAccess } from "./middleware/signed-file-access.middleware";
 import { authRoutes } from "./routes/auth.routes";
 import { adminRoutes } from "./routes/admin.routes";
-import { hlsAuthRoutes } from "./routes/hls-auth.routes";
 import { hooksRoutes } from "./routes/hooks.routes";
 import { httpStreamsRoutes } from "./routes/http-streams.routes";
 import { liveStreamsRoutes } from "./routes/live-streams.routes";
@@ -74,7 +73,6 @@ app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/repositories/:repoId/videos", repositoryVideosRoutes);
 app.use("/api/v1/repositories", repositoriesRoutes);
 app.use("/api/v1/live-streams", liveStreamsRoutes);
-app.use("/api/v1/hls-auth", hlsAuthRoutes);
 app.use("/api/v1/http-streams", httpStreamsRoutes);
 app.use("/api/v1/streams", streamsRoutes);
 app.use("/api/v1/hooks", hooksRoutes);
@@ -115,7 +113,6 @@ const start = async () => {
     rtmpsKeyPath: env.RTMPS_KEY_PATH,
     hlsPort: env.HLS_PORT,
     mediamtxApiPort: env.MEDIAMTX_API_PORT,
-    hlsPathPrefix: env.HLS_PATH_PREFIX,
     whipPathPrefix: env.WHIP_PATH_PREFIX,
     mediamtxApiUrl: env.MEDIAMTX_API_URL,
   });

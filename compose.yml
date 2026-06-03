@@ -154,6 +154,7 @@ services:
     ports:
       - "1935:1935"
       - "1936:1936"
+      - "8888:8888"
       - "8189:8189/udp"
     volumes:
       - ./mediamtx.yml:/mediamtx.yml:ro
