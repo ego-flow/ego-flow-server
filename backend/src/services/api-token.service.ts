@@ -90,7 +90,7 @@ export class ApiTokenService {
     };
   }
 
-  async listActiveTokensForAdmin(filter?: { userId?: string }) {
+  async listActiveTokensForAdmin() {
     const query: Parameters<typeof prisma.apiToken.findMany>[0] = {
       orderBy: [{ userId: "asc" }, { createdAt: "desc" }],
       select: {
@@ -101,12 +101,6 @@ export class ApiTokenService {
         createdAt: true,
       },
     };
-
-    if (filter?.userId) {
-      query.where = {
-        userId: filter.userId,
-      };
-    }
 
     const tokens = await prisma.apiToken.findMany(query);
     if (tokens.length === 0) {

@@ -169,7 +169,7 @@ test("POST /auth/python/tokens rejects requests without a dashboard session", as
   assert.equal(response.status, 401);
 });
 
-test("GET /auth/python/token/validate returns the Python token owner", async () => {
+test("GET /auth/python/tokens/validate returns the Python token owner", async () => {
   const baseUrl = await startServer();
   const rawToken = "ef_0123456789abcdef0123456789abcdef01234567";
 
@@ -189,7 +189,7 @@ test("GET /auth/python/token/validate returns the Python token owner", async () 
     };
   };
 
-  const response = await fetch(`${baseUrl}/api/v1/auth/python/token/validate`, {
+  const response = await fetch(`${baseUrl}/api/v1/auth/python/tokens/validate`, {
     headers: {
       Authorization: `Bearer ${rawToken}`,
     },
@@ -206,12 +206,12 @@ test("GET /auth/python/token/validate returns the Python token owner", async () 
   });
 });
 
-test("GET /auth/python/token/validate rejects invalid Python tokens", async () => {
+test("GET /auth/python/tokens/validate rejects invalid Python tokens", async () => {
   const baseUrl = await startServer();
 
   apiTokenService.verifyPythonToken = async () => null;
 
-  const response = await fetch(`${baseUrl}/api/v1/auth/python/token/validate`, {
+  const response = await fetch(`${baseUrl}/api/v1/auth/python/tokens/validate`, {
     headers: {
       Authorization: "Bearer ef_deadbeefdeadbeefdeadbeefdeadbeefdeadbe",
     },

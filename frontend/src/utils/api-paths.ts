@@ -13,7 +13,7 @@ export const adminUserDeactivatePath = (userId: string) =>
 	`${adminUserPath(userId)}/deactivate`;
 
 export const adminUserResetPasswordPath = (userId: string) =>
-	`${ApiEndpoint.AdminDashboardUsers}/${encodeURIComponent(userId)}/password`;
+	`${adminUserPath(userId)}/password`;
 
 export const authTokenPath = (tokenId: string) =>
 	`${ApiEndpoint.AuthPythonTokens}/${encodeURIComponent(tokenId)}`;

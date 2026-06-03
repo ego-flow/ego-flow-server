@@ -1135,7 +1135,7 @@ export const openApiDocument = {
         },
       },
     },
-    "/auth/python/token/validate": {
+    "/auth/python/tokens/validate": {
       get: {
         tags: ["Auth"],
         summary: "Validate the current Python static token",
@@ -2122,14 +2122,6 @@ export const openApiDocument = {
       get: {
         tags: ["Admin"],
         summary: "List active Python tokens for all users",
-        parameters: [
-          {
-            name: "user_id",
-            in: "query",
-            required: false,
-            schema: { type: "string", pattern: "^[a-z0-9_]+$", maxLength: 64 },
-          },
-        ],
         responses: {
           "200": {
             description: "Active Python token list",
@@ -2208,7 +2200,7 @@ export const openApiDocument = {
         },
       },
     },
-    "/admin/dashboard/users/{userId}/password": {
+    "/admin/users/{userId}/password": {
       put: {
         tags: ["Admin"],
         summary: "Reset a user's password",

@@ -23,7 +23,7 @@ Current API list based on the server codebase.
 | `PUT /api/v1/auth/dashboard/me/password` | `{ currentPassword, newPassword }` | `{ message }` | Change current dashboard user's password |
 | `POST /api/v1/auth/python/tokens` | dashboard cookie, `{ name }` | `{ id, name, token, created_at, rotated_previous }` | Issue or rotate Python static token |
 | `GET /api/v1/auth/python/tokens` | dashboard cookie | `{ token }` | Read current user's active Python token metadata |
-| `GET /api/v1/auth/python/token/validate` | Python bearer token | `{ valid: true, user: { id, role, display_name } }` | Validate current Python static token |
+| `GET /api/v1/auth/python/tokens/validate` | Python bearer token | `{ valid: true, user: { id, role, display_name } }` | Validate current Python static token |
 | `DELETE /api/v1/auth/python/tokens/:tokenId` | `tokenId` | `{ id, revoked: true }` | Revoke Python API token |
 | `POST /api/v1/auth/publish` | MediaMTX payload: `action`, `path`, `query`, `protocol?` | `200` or `401`, empty body | RTMP/WHIP publish ticket auth callback |
 
@@ -36,8 +36,8 @@ Current API list based on the server codebase.
 | `DELETE /api/v1/admin/users/:userId/deactivate` | `userId` | `{ id, deactivated: true }` | Deactivate user |
 | `GET /api/v1/admin/users/:userId/delete-readiness` | `userId` | `{ user_id, can_delete, checks }` | Check whether a user can be permanently deleted |
 | `DELETE /api/v1/admin/users/:userId` | `userId` | `{ id, deleted: true }` | Permanently delete user |
-| `PUT /api/v1/admin/dashboard/users/:userId/password` | `{ newPassword }` | `{ id, passwordReset: true }` | Reset user password from dashboard admin client |
-| `GET /api/v1/admin/python/tokens?user_id=` | optional `user_id` | `{ tokens }` | List active Python tokens for admin management |
+| `PUT /api/v1/admin/users/:userId/password` | `{ newPassword }` | `{ id, passwordReset: true }` | Reset user password from admin client |
+| `GET /api/v1/admin/python/tokens` | none | `{ tokens }` | List active Python tokens for admin management |
 | `GET /api/v1/admin/settings` | none | `{ settings }` | Read runtime/config/env settings |
 
 ## Repositories

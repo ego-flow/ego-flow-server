@@ -104,9 +104,9 @@ router.get(
   }),
 );
 
-// GET /api/v1/auth/python/token/validate
+// GET /api/v1/auth/python/tokens/validate
 router.get(
-  "/python/token/validate",
+  "/python/tokens/validate",
   requirePythonToken,
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);

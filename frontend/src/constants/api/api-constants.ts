@@ -3,7 +3,6 @@ export const DEFAULT_BACKEND_ORIGIN = "http://127.0.0.1";
 export const API_JSON_CONTENT_TYPE = "application/json";
 
 export enum ApiEndpoint {
-	AdminDashboardUsers = "/admin/dashboard/users",
 	AdminPythonTokens = "/admin/python/tokens",
 	AdminSettings = "/admin/settings",
 	AdminUsers = "/admin/users",

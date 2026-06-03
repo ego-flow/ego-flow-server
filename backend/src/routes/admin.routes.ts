@@ -4,8 +4,6 @@ import { asyncHandler } from "../lib/async-handler";
 import { requireDashboardSession } from "../middleware/auth.middleware";
 import { requireRole } from "../middleware/role.middleware";
 import { validate } from "../middleware/validate.middleware";
-import type { AdminApiTokenListQueryInput } from "../schemas/api-token.schema";
-import { adminApiTokenListQuerySchema } from "../schemas/api-token.schema";
 import type { AdminUserIdParamInput } from "../schemas/admin.schema";
 import { adminUserIdParamSchema, createAdminUserSchema, resetUserPasswordSchema } from "../schemas/admin.schema";
 import { apiTokenService } from "../services/api-token.service";
@@ -37,16 +35,8 @@ router.get(
 // GET /api/v1/admin/python/tokens
 router.get(
   "/python/tokens",
-  validate(adminApiTokenListQuerySchema, "query"),
-  asyncHandler(async (req, res) => {
-    const query = req.query as unknown as AdminApiTokenListQueryInput;
-    const tokens = await apiTokenService.listActiveTokensForAdmin(
-      query.user_id
-        ? {
-            userId: query.user_id,
-          }
-        : undefined,
-    );
+  asyncHandler(async (_req, res) => {
+    const tokens = await apiTokenService.listActiveTokensForAdmin();
     res.status(200).json({ tokens });
   }),
 );
@@ -81,9 +71,9 @@ router.delete(
   }),
 );
 
-// PUT /api/v1/admin/dashboard/users/:userId/password
+// PUT /api/v1/admin/users/:userId/password
 router.put(
-  "/dashboard/users/:userId/password",
+  "/users/:userId/password",
   validate(adminUserIdParamSchema, "params"),
   validate(resetUserPasswordSchema),
   asyncHandler(async (req, res) => {
