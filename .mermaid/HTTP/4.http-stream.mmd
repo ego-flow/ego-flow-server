@@ -64,22 +64,34 @@ sequenceDiagram
     Backend->>Redis: upload cache 확인
     Note over Backend,Redis: timeout condition<br/>now - lastChunkAt > 10 seconds
 
-    alt not timed out
+    alt cache missing or malformed
+      Backend->>DB: timeout failure 기록
+      Note over Backend,DB: failure condition<br/>Redis upload cache가 없거나 HTTP STREAMING cache 형식이 아니다.<br/><br/>state update<br/>RecordingSession STREAMING -> CLOSED<br/>end_reason = UNEXPECTED_DISCONNECT<br/>RecordingSegment WRITING -> FAILED<br/>Video.status = FAILED
+      Backend->>Redis: HTTP upload pointer 정리
+    else not timed out
       Backend->>Backend: no-op
-    else raw file recoverable
+    else timed out and raw file recoverable
+      Backend->>Storage: raw file stat
+      Note over Backend,Storage: recover condition<br/>rawPath file exists<br/>file size > 0<br/>file size == Redis bytesReceived
+
       Backend->>DB: timeout recover 기록
-      Note over Backend,DB: atomic claim<br/>RecordingSession STREAMING -> CLOSED<br/>RecordingSegment WRITING -> WRITE_DONE<br/>end_reason = UNEXPECTED_DISCONNECT
+      Note over Backend,DB: timeout recover means upload stopped unexpectedly,<br/>but the bytes already appended to disk are internally consistent.<br/><br/>state update<br/>RecordingSession STREAMING -> CLOSED<br/>end_reason = UNEXPECTED_DISCONNECT<br/>RecordingSegment WRITING -> WRITE_DONE
       Backend->>Redis: HTTP upload pointer 정리
       Backend->>Queue: recording-finalize enqueue
-    else raw file missing or invalid
+    else timed out and raw file not usable
+      Backend->>Storage: raw file stat
+      Note over Backend,Storage: failure condition<br/>rawPath file missing<br/>or file size == 0<br/>or file size != Redis bytesReceived
+
       Backend->>DB: timeout failure 기록
-      Note over Backend,DB: atomic claim<br/>RecordingSession STREAMING -> CLOSED<br/>RecordingSegment WRITING -> FAILED<br/>Video.status = FAILED
+      Note over Backend,DB: timeout failure means the server cannot trust<br/>the partial upload as a valid raw recording.<br/><br/>state update<br/>RecordingSession STREAMING -> CLOSED<br/>end_reason = UNEXPECTED_DISCONNECT<br/>RecordingSegment WRITING -> FAILED<br/>Video.status = FAILED
       Backend->>Redis: HTTP upload pointer 정리
     end
   end
 
 %% 참고:
 %% HTTP chunk hot path는 DB session 조회 없이 JWT payload, Redis upload cache, raw file append를 사용한다.
+%% timeout recover 조건은 raw file이 존재하고 non-empty이며 Redis bytesReceived와 실제 file size가 정확히 같은 경우다.
+%% timeout failure 조건은 Redis cache missing/malformed, raw file missing, raw file 0 byte, raw file size mismatch다.
 %% timeout reconcile은 DB transaction에서 RecordingSession=STREAMING 및 RecordingSegment=WRITING 상태를 claim한 경우에만 후속 처리를 진행한다.
 %% claim 실패는 finish 또는 다른 reconcile이 먼저 처리한 race로 보고 no-op 처리한다.
 %% HTTP upload cache TTL은 7200초이며 chunk upload 때마다 refresh된다.

@@ -1,0 +1,79 @@
+sequenceDiagram
+  autonumber
+  participant App as [App]
+  participant Backend as [Backend]
+  participant DB as [DB]
+  participant Redis as [Redis]
+
+  App->>Backend: publish-ticket 요청
+  Note over App,Backend: API<br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/><br/>Body<br/>none
+
+  Backend->>Backend: requireAppJwt
+  Note over Backend: App JWT Bearer token만 허용<br/>Python token은 App JWT로 취급하지 않음<br/>사용자 존재 확인<br/>필요 시 X-Refreshed-Token 응답 헤더 설정
+
+  alt App JWT 없음 or invalid
+    Backend-->>App: 401 Unauthorized
+  else App JWT valid
+    Backend->>Backend: validate(publishTicketParamsSchema, params)
+    Note over Backend: recordingSessionId: uuid
+
+    alt params invalid
+      Backend-->>App: 400 Bad Request
+      Note over App,Backend: Error<br/>VALIDATION_ERROR
+    else params valid
+      Backend->>DB: RecordingSession 조회
+      Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId
+      DB-->>Backend: session
+
+      alt session 없음
+        Backend-->>App: 404 Not Found
+        Note over App,Backend: Error<br/>Recording session not found.
+      else session 있음
+        Backend->>Backend: session owner 검증
+        Note over Backend: session.userId == requestUserId 확인<br/>세션 생성자만 ticket 발급 가능
+        alt 세션 생성자가 아님
+          Backend-->>App: 403 Forbidden
+          Note over App,Backend: Error<br/>Only the session owner can request a publish ticket.
+        else 세션 생성자 맞음
+          Backend->>Backend: session status 검증
+          Note over Backend: PENDING 상태에서만 ticket 발급 허용
+          alt PENDING 아님
+            Backend-->>App: 409 Conflict
+            Note over App,Backend: Error<br/>Recording session is already in {status} state.
+          else PENDING session
+            Backend->>Redis: PENDING session cache 존재 확인
+            Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>required<br/>raw Redis value exists<br/>value JSON은 parse하지 않는다.
+            Redis-->>Backend: cache lookup result
+
+            alt cache 없음
+              Backend-->>App: 412 Precondition Failed
+              Note over App,Backend: Error<br/>Recording session registration has expired. Please register again.
+            else ticket 발급 가능
+              Backend->>Backend: ticket metadata 생성
+              Note over Backend: ticketId = t_{uuid}<br/>streamPath = session.streamPath<br/>ingestType = session.ingestType
+
+              Backend->>Redis: publish ticket 저장
+              Note over Backend,Redis: key: stream:ticket:{ticketId}<br/><br/>value fields<br/>recordingSessionId: {recordingSessionId}<br/>repositoryId: {repositoryId}<br/>userId: {userId}<br/>ingestType: MEDIAMTX 또는 HTTP<br/>streamPath: live/{repositoryName}/{recordingSessionId}<br/>status: active<br/><br/>TTL: 60 seconds
+              Redis-->>Backend: ticket 저장 완료
+
+              Backend-->>App: 200 OK
+              Note over App,Backend: Response Body<br/>stream_path: live/{repositoryName}/{recordingSessionId}<br/>publish_ticket: t_{uuid}
+            end
+          end
+        end
+      end
+    end
+  end
+
+%% 참고:
+%% publish-ticket 단계에서는 repository 권한을 재검증하지 않는다.
+%% PENDING 등록 유효성은 Redis stream:recording:{recordingSessionId} cache 존재 여부로만 검사한다.
+%% recording_sessions row는 갱신하지 않는다.
+%% publish-ticket 단계에서 Redis에 쓰는 값은 stream:ticket:{ticketId} 하나다.
+%% ticket value에는 recording session의 ingestType을 저장한다.
+%% MediaMTX auth/stream-ready는 ingestType=MEDIAMTX ticket만 허용한다.
+%% HTTP stream start는 ingestType=HTTP ticket만 허용한다.
+%% expiresAt은 JSON에 저장하지 않고 Redis TTL만 사용한다.
+%% 이후 RTMP publish/auth/stream-ready 흐름은 .mermaid/3.rtmp-publish.mmd에서 다룬다.
+%% 이후 WHIP publish/auth/stream-ready 흐름은 .mermaid/3.whip-publish.mmd에서 다룬다.
+%% 이후 HTTP API based streaming start 흐름은 .mermaid/3.http-start.mmd에서 다룬다.

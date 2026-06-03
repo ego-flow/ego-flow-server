@@ -1,0 +1,85 @@
+sequenceDiagram
+  autonumber
+  participant App as [App]
+  participant Backend as [Backend]
+  participant DB as [DB]
+  participant Redis as [Redis]
+
+  App->>App: Start Streaming 버튼 클릭
+  App->>Backend: register 요청
+  Note over App,Backend: API<br/>POST /api/v1/streams/register<br/><br/>Headers<br/>Authorization: Bearer appAccessToken<br/>Content-Type: application/json<br/><br/>Body<br/>repositoryId: repository_uuid<br/>deviceType: optional_device_type<br/>ingestType: MEDIAMTX 또는 HTTP
+
+  Backend->>Backend: requireAppJwt
+  Note over Backend: Bearer token 추출<br/>App JWT 검증<br/>사용자 존재 확인<br/>필요 시 X-Refreshed-Token 응답 헤더 설정
+  Backend->>Backend: validate(streamRegisterSchema)
+  Note over Backend: repositoryId: uuid<br/>deviceType: optional string, max 100<br/>ingestType: required enum MEDIAMTX | HTTP
+
+  alt auth or validation failed
+    Backend-->>App: 401 Unauthorized or 400 Validation Error
+    Note over Backend,App: App JWT가 없거나 유효하지 않으면 401<br/>repositoryId UUID 또는 deviceType max length 검증 실패 시 400
+  else auth and validation passed
+  Backend->>DB: repository 접근 정보 조회
+  Note over Backend,DB: repositories: id = repositoryId row<br/>일반 user는 repo_members: repositoryId + userId row 조회<br/>membership이 없고 public repository면 read 권한으로 조회<br/>system admin은 repo_members 없이 admin role로 통과
+  DB-->>Backend: repository 기본 정보 + 사용자의 effective repository role
+  Backend->>Backend: repository maintain 권한 검증
+  Note over Backend: assertRepositoryAccess<br/>required role: maintain<br/>system admin, repository admin, maintain만 통과<br/>public read 권한만으로는 실패
+
+  alt repository 없음
+    Backend->>DB: 기존 PENDING session 정리
+    Note over Backend,DB: recording_sessions에서<br/>동일 repository/user/deviceType의 PENDING 세션을<br/>repository missing cleanup으로 CLOSED 처리
+    Note over Backend,DB: status = CLOSED<br/>end_reason = REPOSITORY_DELETED<br/>closed_at = now
+    DB-->>Backend: closed recordingSessionIds
+    Backend->>Redis: closed PENDING cache 삭제
+    Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>action: delete for each closed recordingSessionId
+    Backend-->>App: 404 Not Found
+    Note over Backend: repository row가 없으면 cleanup 후 NOT_FOUND 반환
+  else maintain 권한 없음
+    Backend->>DB: 기존 PENDING session 정리
+    Note over Backend,DB: recording_sessions에서<br/>동일 repository/user/deviceType의 PENDING 세션을<br/>ACCESS_FORBIDDEN 사유로 CLOSED 처리
+    Note over Backend,DB: status = CLOSED<br/>end_reason = ACCESS_FORBIDDEN<br/>closed_at = now
+    DB-->>Backend: closed recordingSessionIds
+    Backend->>Redis: closed PENDING cache 삭제
+    Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>action: delete for each closed recordingSessionId
+    Backend-->>App: 403 Forbidden
+  else maintain 권한 있음
+    Backend->>DB: 재사용 가능한 PENDING session 조회
+    Note over Backend,DB: recording_sessions에서<br/>동일 repository/user/deviceType/ingestType의<br/>PENDING 세션을 created_at 최신 순으로 조회
+    DB-->>Backend: pendingSessions[]
+
+    alt 재사용 가능한 PENDING 세션 있음
+      Backend->>Backend: 재사용 session 선택
+      Note over Backend: reusableSession = pendingSessions[0]<br/>가장 최근 createdAt 세션 선택
+      Backend->>DB: 기존 PENDING session row 갱신
+      Note over Backend,DB: recording_sessions 대상 row: id = reusableSession.id<br/>status = PENDING 유지<br/>updated_at = now
+      DB-->>Backend: refreshedSession
+      Backend->>Redis: PENDING session cache 갱신
+      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: repository_uuid<br/>repositoryName: repository_name<br/>userId: user_id<br/>ingestType: MEDIAMTX 또는 HTTP<br/>deviceType: optional_device_type<br/>status: PENDING<br/>TTL: 300 seconds
+      Backend-->>App: 200 OK
+      Note over App,Backend: Response Body<br/>recordingSessionId: existing_recording_session_id
+    else PENDING 세션 없음
+      Backend->>Backend: 신규 session metadata 생성
+      Note over Backend: recordingSessionId = randomUUID()<br/>streamPath = live/{repositoryName}/{recordingSessionId}<br/>targetDirectory = getTargetDirectory()
+      Backend->>DB: 신규 RecordingSession row 생성
+      Note over Backend,DB: recording_sessions 저장 값<br/>id = recordingSessionId<br/>repository_id = repositoryId<br/>owner_id = repository.ownerId<br/>user_id = userId<br/>device_type = optional deviceType<br/>ingest_type = ingestType<br/>stream_path = live/{repositoryName}/{recordingSessionId}<br/>status = PENDING<br/>target_directory = getTargetDirectory()
+      Note over DB: recording_sessions 신규 row<br/>end_reason = null<br/>ready_at = null<br/>closed_at = null<br/>created_at/updated_at = DB/Prisma 자동 기록
+      DB-->>Backend: session
+      Backend->>Redis: PENDING session cache 저장
+      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: repository_uuid<br/>repositoryName: repository_name<br/>userId: user_id<br/>ingestType: MEDIAMTX 또는 HTTP<br/>deviceType: optional_device_type<br/>status: PENDING<br/>TTL: 300 seconds
+      Backend-->>App: 200 OK
+      Note over App,Backend: Response Body<br/>recordingSessionId: new_recording_session_id
+    end
+  end
+  end
+
+%% 참고:
+%% register response는 recordingSessionId만 반환한다.
+%% register request의 ingestType은 필수다. 서버가 default ingest type을 추론하지 않는다.
+%% register는 publish ticket, RTMP URL, stream_path, stream:active:sessions active set을 만들지 않는다.
+%% PENDING session을 별도로 CLOSED 정리하는 background reconcile loop는 없다.
+%% PENDING Redis cache TTL은 300초이며, publish-ticket은 이 cache가 남아 있는 PENDING session만 허용한다.
+%% Redis cache가 만료된 old PENDING DB row는 같은 repository/user/deviceType/ingestType register에서 재사용되면 cache가 다시 갱신된다.
+%% Access failure cleanup은 repository가 삭제되어 NOT_FOUND가 발생했거나,
+%% repository는 존재하지만 현재 사용자가 maintain 권한을 잃어 FORBIDDEN이 발생한 경우에 수행된다.
+%% NOT_FOUND cleanup은 end_reason=REPOSITORY_DELETED, FORBIDDEN cleanup은 end_reason=ACCESS_FORBIDDEN으로 기록한다.
+%% repository missing cleanup은 이미 삭제된 repository를 가리키는 PENDING session이 DB에 영구히 남지 않도록 정리한다.
+%% 다음 단계는 App이 반환받은 recordingSessionId로 POST /api/v1/streams/{recordingSessionId}/publish-ticket을 호출하는 흐름이다.
