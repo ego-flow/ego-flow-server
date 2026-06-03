@@ -133,7 +133,9 @@ test("issue and validate HLS playback ticket through Redis live cache", async ()
   assert.equal(fakeRedis.getTtlSeconds(key), 600);
 
   await fakeRedis.expire(key, 5);
-  const validation = await service.validateHlsPlaybackTicket("live/repo-name/session-1", grant.ticketId);
+  const validation = await service.validateHlsPlaybackTicket("live/repo-name/session-1", grant.ticketId, {
+    expectedUserId: "viewer-1",
+  });
 
   assert.equal(validation.ok, true);
   assert.equal(fakeRedis.getTtlSeconds(key), 600);
@@ -155,15 +157,50 @@ test("validateHlsPlaybackTicket rejects path mismatch and non-MediaMTX cache", a
     streamPath: "live/repo-name/session-1",
   });
 
-  assert.deepEqual(await service.validateHlsPlaybackTicket("live/other/session-1", grant.ticketId), {
+  assert.deepEqual(await service.validateHlsPlaybackTicket("live/other/session-1", grant.ticketId, {
+    expectedUserId: "viewer-1",
+  }), {
     ok: false,
     reason: "playback-ticket-stream-path-mismatch",
     ticketId: grant.ticketId,
   });
 
-  assert.deepEqual(await service.validateHlsPlaybackTicket("live/repo-name/session-1", grant.ticketId), {
+  assert.deepEqual(await service.validateHlsPlaybackTicket("live/repo-name/session-1", grant.ticketId, {
+    expectedUserId: "viewer-1",
+  }), {
     ok: false,
     reason: "live-cache-not-mediamtx",
+    ticketId: grant.ticketId,
+  });
+});
+
+test("validateHlsPlaybackTicket requires the playback ticket owner", async () => {
+  fakeRedis.setJson("stream:recording:session-1", {
+    repositoryId: "repo-1",
+    repositoryName: "repo-name",
+    userId: "publisher-1",
+    ingestType: "MEDIAMTX",
+    status: "STREAMING",
+  } satisfies RecordingSessionLiveCache);
+
+  const grant = await service.issueHlsPlaybackTicket({
+    recordingSessionId: "session-1",
+    repositoryId: "repo-1",
+    userId: "viewer-1",
+    streamPath: "live/repo-name/session-1",
+  });
+
+  assert.deepEqual(await service.validateHlsPlaybackTicket("live/repo-name/session-1", grant.ticketId), {
+    ok: false,
+    reason: "missing-playback-user-id",
+    ticketId: grant.ticketId,
+  });
+
+  assert.deepEqual(await service.validateHlsPlaybackTicket("live/repo-name/session-1", grant.ticketId, {
+    expectedUserId: "viewer-2",
+  }), {
+    ok: false,
+    reason: "playback-ticket-user-mismatch",
     ticketId: grant.ticketId,
   });
 });

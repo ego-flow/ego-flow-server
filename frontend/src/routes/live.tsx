@@ -31,7 +31,11 @@ const formatBytes = (value: number | null) => {
 	}).format(value);
 };
 
-const buildDirectHlsUrl = (streamPath: string, playbackTicket: string) => {
+const buildDirectHlsUrl = (
+	streamPath: string,
+	playbackTicket: string,
+	viewerUserId: string,
+) => {
 	const normalizedPath = streamPath.replace(/^\/+/, "");
 	let host = "127.0.0.1";
 
@@ -43,7 +47,12 @@ const buildDirectHlsUrl = (streamPath: string, playbackTicket: string) => {
 		}
 	}
 
-	return `http://${host}:${DIRECT_HLS_PORT}/${normalizedPath}/index.m3u8?ticket=${encodeURIComponent(playbackTicket)}`;
+	const query = new URLSearchParams({
+		ticket: playbackTicket,
+		user_id: viewerUserId,
+	});
+
+	return `http://${host}:${DIRECT_HLS_PORT}/${normalizedPath}/index.m3u8?${query.toString()}`;
 };
 
 function LivePage() {
@@ -113,9 +122,14 @@ function LivePage() {
 		retry: false,
 	});
 	const selectedPlaybackTicket = playbackTicketQuery.data?.playbackTicket ?? null;
+	const viewerUserId = session?.user?.id ?? null;
 	const selectedHlsUrl =
-		selectedStream && selectedPlaybackTicket
-			? buildDirectHlsUrl(selectedStream.streamPath, selectedPlaybackTicket)
+		selectedStream && selectedPlaybackTicket && viewerUserId
+			? buildDirectHlsUrl(
+					selectedStream.streamPath,
+					selectedPlaybackTicket,
+					viewerUserId,
+				)
 			: null;
 	const canPlaySelectedStream = Boolean(
 		selectedStream &&

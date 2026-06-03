@@ -45,7 +45,7 @@ Using that HTTP base URL, the stack exposes:
 - Dashboard: `{PUBLIC_HTTP_BASE}`
 - RTMP ingest: `rtmp://localhost:1935/live`
 - RTMPS ingest: `rtmps://localhost:1936/live`
-- HLS output: `http://localhost:8888/live/{repo}/{recordingSessionId}/index.m3u8?ticket={playback_ticket}`
+- HLS output: `http://localhost:8888/live/{repo}/{recordingSessionId}/index.m3u8?ticket={playback_ticket}&user_id={viewer_user_id}`
 
 Current seeded dashboard login:
 

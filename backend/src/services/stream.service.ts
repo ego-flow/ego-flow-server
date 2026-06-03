@@ -293,7 +293,7 @@ export class StreamService {
     const liveCaches = cacheRecords
       .map((record, index) => {
         const cache = this.parseLiveCache(record);
-        if (!cache || cache.status !== "STREAMING") {
+        if (!cache) {
           return null;
         }
         return { recordingSessionId: activeIds[index]!, cache };

@@ -55,6 +55,10 @@ type HlsPlaybackTicketValidationResult =
       ticketId: string | null;
     };
 
+type HlsPlaybackTicketValidationOptions = {
+  expectedUserId?: string | null;
+};
+
 export class StreamOwnershipService {
   getPublishTicketTtlSeconds() {
     return PUBLISH_TICKET_TTL_SECONDS;
@@ -267,9 +271,24 @@ export class StreamOwnershipService {
     return password || null;
   }
 
+  extractHlsPlaybackUserId(params: {
+    user?: string | null | undefined;
+    query?: string | null | undefined;
+  }) {
+    const queryParams = new URLSearchParams(params.query ?? "");
+    const queryUserId = queryParams.get("user_id")?.trim();
+    if (queryUserId) {
+      return queryUserId;
+    }
+
+    const user = params.user?.trim();
+    return user || null;
+  }
+
   async validateHlsPlaybackTicket(
     streamPath: string,
     ticketId?: string | null,
+    options: HlsPlaybackTicketValidationOptions = {},
   ): Promise<HlsPlaybackTicketValidationResult> {
     const normalizedTicketId = ticketId?.trim();
     if (!normalizedTicketId) {
@@ -305,6 +324,23 @@ export class StreamOwnershipService {
       return {
         ok: false,
         reason: `playback-ticket-status-${String(ticket.status).toLowerCase()}`,
+        ticketId: normalizedTicketId,
+      };
+    }
+
+    const expectedUserId = options.expectedUserId?.trim();
+    if (!expectedUserId) {
+      return {
+        ok: false,
+        reason: "missing-playback-user-id",
+        ticketId: normalizedTicketId,
+      };
+    }
+
+    if (ticket.userId !== expectedUserId) {
+      return {
+        ok: false,
+        reason: "playback-ticket-user-mismatch",
         ticketId: normalizedTicketId,
       };
     }

@@ -475,7 +475,7 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
   };
   repositoryService.listAccessibleRepositoryIds = async () => new Set([repository.id]);
 
-  await fakeRedis.sadd("stream:active:sessions", "session-1", "session-pending", "session-hidden");
+  await fakeRedis.sadd("stream:active:sessions", "session-1", "session-hidden");
   fakeRedis.setJson("stream:recording:session-1", {
     repositoryId: repository.id,
     repositoryName: repository.name,
@@ -483,14 +483,6 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
     deviceType: "phone_android",
     ingestType: "MEDIAMTX",
     status: "STREAMING",
-  } satisfies RecordingSessionLiveCache);
-  fakeRedis.setJson("stream:recording:session-pending", {
-    repositoryId: repository.id,
-    repositoryName: repository.name,
-    userId: "maintainer-1",
-    deviceType: "phone_android",
-    ingestType: "MEDIAMTX",
-    status: "PENDING",
   } satisfies RecordingSessionLiveCache);
   fakeRedis.setJson("stream:recording:session-hidden", {
     repositoryId: "99999999-9999-4999-8999-999999999999",

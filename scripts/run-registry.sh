@@ -297,7 +297,7 @@ up_stack() {
   echo "Dashboard:      ${http_base}"
   echo "RTMP ingest:    rtmp://localhost:1935/live"
   echo "RTMPS ingest:   rtmps://localhost:1936/live"
-  echo "HLS output:     http://localhost:8888/live/{repo}/{recordingSessionId}/index.m3u8?ticket={playback_ticket}"
+  echo "HLS output:     http://localhost:8888/live/{repo}/{recordingSessionId}/index.m3u8?ticket={playback_ticket}&user_id={viewer_user_id}"
 }
 
 cmd="${1:-}"

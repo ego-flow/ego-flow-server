@@ -8,6 +8,25 @@ interface HlsPlayerProps {
   className?: string
 }
 
+const appendSourceQueryParams = (requestUrl: string, sourceUrl: string) => {
+  try {
+    const source = new URL(sourceUrl, window.location.href)
+    if (!source.search) {
+      return requestUrl
+    }
+
+    const target = new URL(requestUrl, source)
+    source.searchParams.forEach((value, key) => {
+      if (!target.searchParams.has(key)) {
+        target.searchParams.set(key, value)
+      }
+    })
+    return target.toString()
+  } catch {
+    return requestUrl
+  }
+}
+
 export default function HlsPlayer({ src, playbackTicket, poster, className }: HlsPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -51,10 +70,10 @@ export default function HlsPlayer({ src, playbackTicket, poster, className }: Hl
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: true,
-          xhrSetup: (xhr: XMLHttpRequest) => {
+          xhrSetup: (xhr: XMLHttpRequest, url: string) => {
             xhr.withCredentials = false
             if (playbackTicket) {
-              xhr.setRequestHeader('Authorization', `Bearer ${playbackTicket}`)
+              xhr.open('GET', appendSourceQueryParams(url, src), true)
             }
           },
         })

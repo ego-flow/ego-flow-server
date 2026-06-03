@@ -339,7 +339,7 @@ test("POST /auth/mediamtx accepts HLS playback with playback ticket and active R
       action: "read",
       path: "live/test2/11111111-1111-4111-8111-111111111111",
       protocol: "hls",
-      token: "pt_hls",
+      query: "ticket=pt_hls&user_id=viewer-1",
       id: "hls-reader-1",
       ip: "203.0.113.10",
     }),
@@ -381,7 +381,48 @@ test("POST /auth/mediamtx rejects HLS playback when playback ticket targets anot
       action: "playback",
       path: "live/other/11111111-1111-4111-8111-111111111111",
       protocol: "hls",
-      query: "ticket=pt_hls",
+      query: "ticket=pt_hls&user_id=viewer-1",
+      id: "hls-reader-1",
+      ip: "203.0.113.10",
+    }),
+  });
+
+  assert.equal(response.status, 401);
+});
+
+test("POST /auth/mediamtx rejects HLS playback when playback ticket user mismatches", async () => {
+  const baseUrl = await startServer();
+  fakeRedisModule.redis.setJson("stream:recording:11111111-1111-4111-8111-111111111111", {
+    repositoryId: "566fdab1-771a-42f9-a4eb-2f1c04859874",
+    repositoryName: "test2",
+    userId: "maintainer-1",
+    ingestType: "MEDIAMTX",
+    status: "STREAMING",
+  });
+  await fakeRedisModule.redis.set(
+    "stream:hls-ticket:pt_hls",
+    JSON.stringify({
+      recordingSessionId: "11111111-1111-4111-8111-111111111111",
+      repositoryId: "566fdab1-771a-42f9-a4eb-2f1c04859874",
+      userId: "viewer-1",
+      ingestType: "MEDIAMTX",
+      streamPath: "live/test2/11111111-1111-4111-8111-111111111111",
+      status: "active",
+    }),
+    "EX",
+    600,
+  );
+
+  const response = await fetch(`${baseUrl}/api/v1/auth/mediamtx`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      action: "read",
+      path: "live/test2/11111111-1111-4111-8111-111111111111",
+      protocol: "hls",
+      query: "ticket=pt_hls&user_id=viewer-2",
       id: "hls-reader-1",
       ip: "203.0.113.10",
     }),

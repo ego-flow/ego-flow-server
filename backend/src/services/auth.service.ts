@@ -203,6 +203,10 @@ export class AuthService {
         query: input.query,
         password: input.password,
       });
+      const playbackUserId = streamOwnershipService.extractHlsPlaybackUserId({
+        user: input.user,
+        query: input.query,
+      });
       const credentialSource = input.token
         ? "token"
         : new URLSearchParams(input.query ?? "").get("ticket")
@@ -214,12 +218,14 @@ export class AuthService {
       const validation = await streamOwnershipService.validateHlsPlaybackTicket(
         this.normalizeMediaMtxPath(input.path),
         ticketId,
+        { expectedUserId: playbackUserId },
       );
       if (!validation.ok) {
         this.logMediaMtxAuthDecision("hls-auth", "denied", input, {
           reason: validation.reason,
           credentialSource,
           ticketId: validation.ticketId,
+          playbackUserId,
         });
         return false;
       }
@@ -230,6 +236,7 @@ export class AuthService {
         repositoryId: validation.ticket.repositoryId,
         credentialSource,
         ticketId: validation.ticketId,
+        playbackUserId,
       });
       return true;
     } catch (_error) {
