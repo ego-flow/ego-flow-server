@@ -6,9 +6,9 @@ sequenceDiagram
   participant Redis as [Redis]
   participant MTX as [MediaMTX :8888]
 
-  opt discover HLS port
+  opt capability check
     Python->>Backend: GET /api/v1/info
-    Note over Python,Backend: Auth 불필요<br/>Response urls.hls_port = 8888
+    Note over Python,Backend: Auth 불필요<br/>Python package는 capabilities.live_streams를 확인한다.<br/>HLS URL 구성에는 fixed 8888 port를 사용한다.
     Backend-->>Python: server info
   end
 
@@ -54,7 +54,7 @@ sequenceDiagram
   end
 
   Python->>Python: direct HLS URL 구성
-  Note over Python: hlsPort = /api/v1/info urls.hls_port 또는 fixed 8888<br/>viewer user id = Python token owner id<br/>url = http://{serverHost}:{hlsPort}/{stream_path}/index.m3u8?ticket={playback_ticket}&user_id={viewerUserId}
+  Note over Python: hlsPort = fixed 8888<br/>viewer user id = Python token owner id<br/>url = http://{serverHost}:8888/{stream_path}/index.m3u8?ticket={playback_ticket}&user_id={viewerUserId}
 
   Python->>MTX: GET /live/{repo}/{recordingSessionId}/index.m3u8?ticket=pt_...&user_id=viewer
   Note over Python,MTX: Authorization header는 사용하지 않는다.<br/>사용하는 HLS client가 segment URL에 query를 보존하지 않으면<br/>playlist/segment 요청 URL에 ticket과 user_id query를 다시 붙인다.
@@ -83,6 +83,7 @@ sequenceDiagram
 
 %% 참고:
 %% Python playback ticket 발급은 ef_ static token으로 수행한다.
+%% Python package는 direct HLS URL을 구성할 때 server info의 hls_port를 사용하지 않고 fixed 8888을 사용한다.
 %% completed video manifest(/api/v1/repositories/{repoId}/manifest) 흐름과 live HLS playback은 별개다.
 %% Python HLS client는 segment request까지 ticket과 user_id query가 전달되도록 해야 한다.
 %% query가 segment request까지 자동 유지되지 않는 client라면 각 playlist/segment URL에 같은 query를 다시 붙인다.

@@ -8,7 +8,7 @@ sequenceDiagram
   Python->>Backend: server capability 조회
   Note over Python,Backend: API<br/>GET /api/v1/info<br/><br/>Purpose<br/>dataset_manifest, video_download, thumbnail_download, live_streams, python_tokens 지원 여부 확인
   Backend-->>Python: 200 OK
-  Note over Backend,Python: Response Body<br/>api_version: v1<br/>server_version: server_version<br/>capabilities.dataset_manifest: true<br/>capabilities.video_download: true<br/>capabilities.thumbnail_download: true<br/>capabilities.live_streams: true<br/>capabilities.python_tokens: true<br/>urls.api_base: /api/v1<br/>urls.hls_port: hls_port
+  Note over Backend,Python: Response Body<br/>api_version: v1<br/>server_version: server_version<br/>capabilities.dataset_manifest: true<br/>capabilities.video_download: true<br/>capabilities.thumbnail_download: true<br/>capabilities.live_streams: true<br/>capabilities.python_tokens: true<br/>urls.api_base: /api/v1<br/>urls.hls_port: 8888
 
   Python->>Backend: repository slug resolve
   Note over Python,Backend: API<br/>GET /api/v1/repositories/resolve?slug={ownerId}/{repositoryName}<br/><br/>Headers<br/>Authorization: Bearer ef_raw_python_static_token
@@ -46,3 +46,4 @@ sequenceDiagram
 %% manifest는 completed video만 Python/VLM 사용 대상으로 노출한다.
 %% chunk upload 진행 상태나 live session 상태는 manifest에 포함되지 않는다.
 %% Python package는 page 단위 manifest를 받아 cache 또는 Hugging Face Dataset row로 변환한다.
+%% live HLS playback direct URL은 Python package가 fixed 8888 port로 구성한다.
