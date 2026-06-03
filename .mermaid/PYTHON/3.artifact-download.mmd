@@ -1,0 +1,41 @@
+sequenceDiagram
+  autonumber
+  participant Python as [Python Package]
+  participant Backend as [Backend]
+  participant DB as [DB]
+  participant Storage as [Storage]
+
+  Python->>Python: manifest video 선택
+  Note over Python: selected artifact<br/>video_id: video_uuid<br/>repository_id: repository_uuid<br/>artifacts.vlm_video.download_url: /api/v1/repositories/{repoId}/videos/{videoId}/download<br/>artifacts.vlm_video.sha256: expected_sha256<br/>artifacts.thumbnail.download_url: /files/... 또는 null
+
+  Python->>Backend: VLM video download 요청
+  Note over Python,Backend: API<br/>GET /api/v1/repositories/{repoId}/videos/{videoId}/download<br/><br/>Headers<br/>Authorization: Bearer ef_raw_python_static_token
+
+  Backend->>Backend: requireDashboardOrPython
+  Backend->>DB: repository read 권한 + video 조회
+  Note over Backend,DB: videos row<br/>repository_id = repoId<br/>id = videoId<br/>요청자가 read 가능한 repository의 video인지 확인
+  Backend->>Storage: video file 존재 확인
+
+  alt video missing or not readable
+    Backend-->>Python: 404 Not Found or 403 Forbidden
+  else video file available
+    Backend-->>Python: 307 Redirect
+    Note over Backend,Python: Location<br/>/files/{owner}/{repo}/{file}?signature=...
+    Python->>Storage: signed URL로 artifact bytes 다운로드
+    Note over Python,Storage: GET /files/{owner}/{repo}/{file}?signature=...<br/><br/>Python transport는 redirect를 따라가거나<br/>manifest의 signed thumbnail URL을 직접 요청한다.
+    Storage-->>Python: video bytes
+    Python->>Python: checksum 검증 및 cache 저장
+    Note over Python: sha256이 manifest 값과 다르면 download error 처리<br/>정상인 경우 destination path로 atomic replace
+  end
+
+  opt thumbnail requested
+    Python->>Storage: signed thumbnail URL 요청
+    Note over Python,Storage: GET /files/{owner}/{repo}/.thumbnails/{file}?signature=...
+    Storage-->>Python: thumbnail bytes
+    Python->>Python: thumbnail cache 저장
+  end
+
+%% 참고:
+%% VLM video artifact는 API download endpoint를 통해 signed file URL로 redirect된다.
+%% thumbnail artifact는 manifest에서 이미 signed /files URL로 제공될 수 있다.
+%% Python package는 manifest artifact metadata를 기준으로 cache reuse 또는 redownload를 결정한다.

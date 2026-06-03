@@ -1,0 +1,48 @@
+sequenceDiagram
+  autonumber
+  participant Python as [Python Package]
+  participant Backend as [Backend]
+  participant DB as [DB]
+  participant Storage as [Storage]
+
+  Python->>Backend: server capability 조회
+  Note over Python,Backend: API<br/>GET /api/v1/info<br/><br/>Purpose<br/>dataset_manifest, video_download, thumbnail_download, live_streams, python_tokens 지원 여부 확인
+  Backend-->>Python: 200 OK
+  Note over Backend,Python: Response Body<br/>api_version: v1<br/>server_version: server_version<br/>capabilities.dataset_manifest: true<br/>capabilities.video_download: true<br/>capabilities.thumbnail_download: true<br/>capabilities.live_streams: true<br/>capabilities.python_tokens: true<br/>urls.api_base: /api/v1<br/>urls.hls_port: hls_port
+
+  Python->>Backend: repository slug resolve
+  Note over Python,Backend: API<br/>GET /api/v1/repositories/resolve?slug={ownerId}/{repositoryName}<br/><br/>Headers<br/>Authorization: Bearer ef_raw_python_static_token
+
+  Backend->>Backend: requireDashboardOrAppOrPython
+  Backend->>DB: repository 접근 권한 확인
+  Note over Backend,DB: owner/name으로 repository 조회<br/>요청자가 read 가능한 repository인지 확인
+
+  alt repository not visible
+    Backend-->>Python: 404 Not Found
+  else repository visible
+    DB-->>Backend: repository metadata
+    Backend-->>Python: 200 OK
+    Note over Backend,Python: Response Body<br/>repository.id: repository_uuid<br/>repository.owner_id: owner_user_id<br/>repository.name: repository_name<br/>repository.visibility: public 또는 private<br/>repository.my_role: read | maintain | admin
+  end
+
+  loop page while has_next
+    Python->>Backend: completed video manifest page 요청
+    Note over Python,Backend: API<br/>GET /api/v1/repositories/{repoId}/manifest?page={page}&limit={limit}<br/><br/>Headers<br/>Authorization: Bearer ef_raw_python_static_token
+
+    Backend->>Backend: requirePythonToken
+    Backend->>DB: repository read 권한 확인
+    Backend->>DB: COMPLETED video page 조회
+    Note over Backend,DB: videos table<br/>repository_id = repoId<br/>status = COMPLETED<br/>page/limit 기준으로 정렬 및 pagination
+    Backend->>Storage: artifact metadata 확인
+    Note over Backend,Storage: vlm video path, size_bytes, sha256<br/>thumbnail path가 있으면 signed thumbnail URL 생성
+    Backend-->>Python: 200 OK
+    Note over Backend,Python: Response Body<br/>manifest_version: 1<br/>repository: repository metadata<br/>default_artifact: vlm_video<br/>pagination.total/page/limit/has_next<br/>videos[]: completed video metadata + artifacts
+  end
+
+  Python->>Python: manifest를 dataset row로 변환
+  Note over Python: video_id, repository_id, repository_name, owner_id<br/>duration_sec, fps, resolution, codec<br/>scene_summary, clip_segments<br/>vlm_video artifact metadata<br/>optional thumbnail metadata
+
+%% 참고:
+%% manifest는 completed video만 Python/VLM 사용 대상으로 노출한다.
+%% chunk upload 진행 상태나 live session 상태는 manifest에 포함되지 않는다.
+%% Python package는 page 단위 manifest를 받아 cache 또는 Hugging Face Dataset row로 변환한다.

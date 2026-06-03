@@ -1,0 +1,11 @@
+flowchart LR
+  Python["Python package live playback"] --> Canonical[".mermaid/STREAMING/python-hls-playback.mmd"]
+  Canonical --> List["GET /api/v1/live-streams"]
+  Canonical --> Ticket["POST /api/v1/live-streams/{recordingSessionId}/playback-ticket"]
+  Canonical --> HLS["Direct HLS to MediaMTX :8888"]
+  HLS --> Auth["POST /api/v1/auth/mediamtx"]
+
+%% 참고:
+%% Python live playback의 canonical 문서는 .mermaid/STREAMING/python-hls-playback.mmd 이다.
+%% 이 파일은 PYTHON folder에서 해당 흐름을 찾는 독자를 위한 pointer 역할만 한다.
+%% completed video manifest, artifact download 문서는 같은 PYTHON folder의 다른 문서를 참고한다.

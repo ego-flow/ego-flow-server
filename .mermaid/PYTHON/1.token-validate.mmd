@@ -1,0 +1,42 @@
+sequenceDiagram
+  autonumber
+  participant Dashboard as [Dashboard]
+  participant Python as [Python Package]
+  participant Backend as [Backend]
+  participant DB as [DB]
+
+  Dashboard->>Backend: Python static token 발급
+  Note over Dashboard,Backend: API<br/>POST /api/v1/auth/python/tokens<br/><br/>Headers<br/>Cookie: egoflow_session={dashboard_session}<br/>Content-Type: application/json<br/><br/>Body<br/>name: python_token_name
+
+  Backend->>Backend: requireDashboardSession
+  Backend->>DB: API token 저장 또는 rotate
+  Note over Backend,DB: api_tokens row<br/>user_id = dashboard user id<br/>name = requested token name<br/>token_hash = hash(raw_python_token)<br/>revoked_at = null
+  Backend-->>Dashboard: 201 Created
+  Note over Backend,Dashboard: Response Body<br/>id: token_uuid<br/>name: python_token_name<br/>token: ef_raw_python_static_token<br/>created_at: ISO datetime<br/>rotated_previous: boolean
+
+  Dashboard->>Python: 발급받은 static token 전달
+  Note over Dashboard,Python: Python package는 id/password login을 수행하지 않는다.<br/>Dashboard에서 이미 발급된 token을 설정값 또는 인자로 받는다.
+
+  Python->>Backend: token validate 요청
+  Note over Python,Backend: API<br/>GET /api/v1/auth/python/tokens/validate<br/><br/>Headers<br/>Authorization: Bearer ef_raw_python_static_token
+
+  Backend->>Backend: requirePythonToken
+  Note over Backend: Bearer token 추출<br/>ef_ prefix 확인<br/>token hash 계산
+  Backend->>DB: active API token 조회
+  Note over Backend,DB: api_tokens에서 token_hash로 조회<br/>revoked_at이 없고 user가 deactivated 상태가 아니어야 함
+
+  alt token invalid or revoked
+    DB-->>Backend: no valid token
+    Backend-->>Python: 401 Unauthorized
+  else token valid
+    DB-->>Backend: token owner user
+    Backend->>DB: last_used_at 갱신
+    Note over Backend,DB: 최근 사용 시각이 충분히 오래된 경우에만 갱신
+    Backend-->>Python: 200 OK
+    Note over Backend,Python: Response Body<br/>valid: true<br/>user.id: user_id<br/>user.role: user_role<br/>user.display_name: display_name
+  end
+
+%% 참고:
+%% Python package의 login은 password login이 아니라 Dashboard에서 발급받은 static token 검증이다.
+%% POST /api/v1/auth/python/tokens는 dashboard cookie가 필요하므로 Python package가 직접 호출하는 login API가 아니다.
+%% Python package가 서버에 요청할 때는 Authorization: Bearer ef_... static token을 사용한다.
