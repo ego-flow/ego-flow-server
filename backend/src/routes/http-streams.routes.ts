@@ -4,7 +4,7 @@ import { HTTP_STREAM_CHUNK_MAX_BYTES } from "../constants/stream/stream-constant
 import { asyncHandler } from "../lib/async-handler";
 import { getAuthUser } from "../lib/request-context";
 import { BadRequest } from "../lib/errors";
-import { requireAppJwt, requireAppJwtPayloadOnly } from "../middleware/auth.middleware";
+import { requireAppJwt } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import {
   httpStreamChunkHeadersSchema,
@@ -33,7 +33,7 @@ router.post(
 // POST /api/v1/http-streams/:recordingSessionId/chunks
 router.post(
   "/:recordingSessionId/chunks",
-  requireAppJwtPayloadOnly,
+  requireAppJwt,
   validate(recordingSessionIdParamsSchema, "params"),
   express.raw({
     type: "application/octet-stream",
