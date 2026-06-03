@@ -45,6 +45,10 @@ function AdminUsersPage() {
 	const [deactivateUserConfirm, setDeactivateUserConfirm] = useState<{
 		userId: string;
 	} | null>(null);
+	const [resetPasswordUser, setResetPasswordUser] = useState<AdminUser | null>(
+		null,
+	);
+	const [resetPasswordValue, setResetPasswordValue] = useState("");
 
 	const isCreateUserDisabled = !newUserId.trim();
 
@@ -90,6 +94,8 @@ function AdminUsersPage() {
 		mutationFn: ({ userId, password }: { userId: string; password: string }) =>
 			requestResetUserPassword(userId, password),
 		onSuccess: async () => {
+			setResetPasswordUser(null);
+			setResetPasswordValue("");
 			await queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
 		},
 	});
@@ -149,6 +155,31 @@ function AdminUsersPage() {
 	const openDeleteDialog = (user: AdminUser) => {
 		permanentDeleteMutation.reset();
 		setDeleteDialogUser(user);
+	};
+
+	const closeResetPasswordDialog = () => {
+		if (resetPasswordMutation.isPending) {
+			return;
+		}
+
+		resetPasswordMutation.reset();
+		setResetPasswordUser(null);
+		setResetPasswordValue("");
+	};
+
+	const submitResetPassword = () => {
+		if (
+			!resetPasswordUser ||
+			!resetPasswordValue ||
+			resetPasswordMutation.isPending
+		) {
+			return;
+		}
+
+		resetPasswordMutation.mutate({
+			userId: resetPasswordUser.id,
+			password: resetPasswordValue,
+		});
 	};
 
 	const deleteReadinessItems = deleteReadinessQuery.data
@@ -421,18 +452,9 @@ function AdminUsersPage() {
 																		type="button"
 																		variant="outline"
 																		onClick={() => {
-																			const nextPassword = window.prompt(
-																				`Enter a new password for ${user.id}`,
-																			);
-
-																			if (nextPassword === null) {
-																				return;
-																			}
-
-																			resetPasswordMutation.mutate({
-																				userId: user.id,
-																				password: nextPassword,
-																			});
+																			resetPasswordMutation.reset();
+																			setResetPasswordUser(user);
+																			setResetPasswordValue("");
 																		}}
 																		disabled={resetPasswordMutation.isPending}
 																	>
@@ -515,6 +537,54 @@ function AdminUsersPage() {
 					</div>
 				</section>
 			</main>
+
+			<ConfirmDialog
+				open={Boolean(resetPasswordUser)}
+				title="Reset password"
+				description={
+					<>
+						Set a new password for{" "}
+						<span className="font-semibold text-[var(--sea-ink)]">
+							{resetPasswordUser?.id}
+						</span>
+						.
+					</>
+				}
+				confirmLabel="Reset password"
+				pendingLabel="Resetting..."
+				isPending={resetPasswordMutation.isPending}
+				confirmDisabled={!resetPasswordValue}
+				onCancel={closeResetPasswordDialog}
+				onConfirm={submitResetPassword}
+			>
+				<form
+					className="space-y-2"
+					onSubmit={(event) => {
+						event.preventDefault();
+						submitResetPassword();
+					}}
+				>
+					<Label htmlFor="admin-reset-password">New password</Label>
+					<Input
+						id="admin-reset-password"
+						type="password"
+						autoComplete="new-password"
+						autoFocus
+						value={resetPasswordValue}
+						disabled={resetPasswordMutation.isPending}
+						onChange={(event) => setResetPasswordValue(event.target.value)}
+					/>
+				</form>
+
+				{resetPasswordMutation.isError ? (
+					<p className="mt-3 text-sm text-red-700 dark:text-red-300">
+						{getApiErrorMessage(
+							resetPasswordMutation.error,
+							"Failed to reset password.",
+						)}
+					</p>
+				) : null}
+			</ConfirmDialog>
 
 			<ConfirmDialog
 				open={Boolean(revokeTokenConfirm)}

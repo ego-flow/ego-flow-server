@@ -6,11 +6,13 @@ type ConfirmDialogProps = {
 	open: boolean;
 	title: string;
 	description?: ReactNode;
+	children?: ReactNode;
 	cancelLabel?: string;
 	confirmLabel?: string;
 	pendingLabel?: string;
 	variant?: "default" | "destructive";
 	isPending?: boolean;
+	confirmDisabled?: boolean;
 	onCancel: () => void;
 	onConfirm: () => void;
 };
@@ -19,11 +21,13 @@ export function ConfirmDialog({
 	open,
 	title,
 	description,
+	children,
 	cancelLabel = "Cancel",
 	confirmLabel = "Confirm",
 	pendingLabel,
 	variant = "default",
 	isPending = false,
+	confirmDisabled = false,
 	onCancel,
 	onConfirm,
 }: ConfirmDialogProps) {
@@ -58,6 +62,7 @@ export function ConfirmDialog({
 						{description}
 					</div>
 				) : null}
+				{children ? <div className="mt-5">{children}</div> : null}
 
 				<div className="mt-6 flex flex-wrap justify-end gap-3">
 					<Button
@@ -71,7 +76,7 @@ export function ConfirmDialog({
 					<Button
 						type="button"
 						variant={variant}
-						disabled={isPending}
+						disabled={isPending || confirmDisabled}
 						onClick={onConfirm}
 					>
 						{isPending && pendingLabel ? pendingLabel : confirmLabel}
