@@ -214,7 +214,7 @@ test("repo-scoped list uses repository context resolved by repoAccess", { concur
   }
 });
 
-test("repo-scoped download accepts dashboard sessions and Python bearer tokens, then redirects to a signed file URL", { concurrency: false }, async () => {
+test("repo-scoped download rejects HEAD but accepts GET dashboard sessions and Python bearer tokens", { concurrency: false }, async () => {
   const { baseUrl, close } = await startServer();
   const videoPath = path.join(targetDirectory, "alice", "daily-kitchen", ".codex-test", `${videoId}.mp4`);
 
@@ -234,9 +234,8 @@ test("repo-scoped download accepts dashboard sessions and Python bearer tokens, 
       headers: { Cookie: "egoflow_session=dashboard-session" },
       redirect: "manual",
     });
-    assert.equal(headResponse.status, 307);
-    const headLocation = headResponse.headers.get("location");
-    assert.ok(headLocation);
+    assert.equal(headResponse.status, 404);
+    assert.equal(headResponse.headers.get("location"), null);
     assert.equal(await headResponse.text(), "");
 
     const downloadResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {

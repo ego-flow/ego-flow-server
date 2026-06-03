@@ -65,7 +65,6 @@ Current API list based on the server codebase.
 | `GET /api/v1/repositories/:repoId/videos/:videoId/status` | path params | `{ id, repository_id, status, progress, error_message, processing_* }` | Read video processing status |
 | `DELETE /api/v1/repositories/:repoId/videos/:videoId` | path params | `{ id, deleted: true }` | Delete video and generated artifacts |
 | `GET /api/v1/repositories/:repoId/videos/:videoId/download` | path params | `307` signed file URL redirect | Download VLM video artifact |
-| `HEAD /api/v1/repositories/:repoId/videos/:videoId/download` | path params | `307` signed file URL redirect | Check/download VLM video artifact |
 | `GET /api/v1/repositories/:repoId/manifest?page&limit` | Python token | dataset manifest | Completed video manifest for Python/VLM usage |
 
 ## Live / Playback

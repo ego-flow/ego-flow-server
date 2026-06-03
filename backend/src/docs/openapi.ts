@@ -2045,28 +2045,6 @@ export const openApiDocument = {
           "404": { $ref: "#/components/responses/NotFound" },
         },
       },
-      head: {
-        tags: ["Videos"],
-        summary: "Resolve repository video download redirect metadata",
-        parameters: [
-          { $ref: "#/components/parameters/RepoId" },
-          { $ref: "#/components/parameters/VideoId" },
-        ],
-        responses: {
-          "307": {
-            description: "Temporary redirect to a signed video file URL",
-            headers: {
-              Location: {
-                schema: { type: "string" },
-                description: "Signed `/files/*` URL for the requested video.",
-              },
-            },
-          },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
-          "404": { $ref: "#/components/responses/NotFound" },
-        },
-      },
     },
     "/admin/users": {
       get: {

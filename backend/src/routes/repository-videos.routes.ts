@@ -113,18 +113,10 @@ router.delete(
   }),
 );
 
-// HEAD /api/v1/repositories/:repoId/videos/:videoId/download
-router.head(
-  "/:videoId/download",
-  requireDashboardOrPython,
-  repoAccess({ minRole: "read" }),
-  validate(repoVideoParamsSchema, "params"),
-  asyncHandler(async (req, res) => {
-    const params = req.params as RepoVideoParamsInput;
-    const video = await videoService.getRepositoryVideoDownload(params.repoId, params.videoId);
-    await redirectToSignedDownload(res, video);
-  }),
-);
+// Block Express' implicit HEAD handling for this GET-only redirect endpoint.
+router.head("/:videoId/download", (_req, _res, next) => {
+  next(NotFound("Route not found."));
+});
 
 // GET /api/v1/repositories/:repoId/videos/:videoId/download
 router.get(
