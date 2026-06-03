@@ -1,6 +1,6 @@
 flowchart LR
-  Dashboard["Dashboard Live tab"] -->|"dashboard cookie"| DashboardDoc[".mermaid/STREAMING/dashboard-hls-playback.mmd"]
-  Python["Python package"] -->|"ef_ static token"| PythonDoc[".mermaid/STREAMING/python-hls-playback.mmd"]
+  Dashboard["Dashboard Live tab"] -->|"dashboard cookie"| DashboardDoc[".mermaid/PLAYBACK/dashboard-hls-playback.mmd"]
+  Python["Python package"] -->|"ef_ static token"| PythonDoc[".mermaid/PLAYBACK/python-hls-playback.mmd"]
 
   DashboardDoc --> Ticket["POST /api/v1/live-streams/{recordingSessionId}/playback-ticket"]
   PythonDoc --> Ticket
@@ -13,12 +13,12 @@ flowchart LR
 
 %% 참고:
 %% 이 문서는 HLS playback의 공통 진입점만 보여준다.
-%% Dashboard 상세 흐름은 .mermaid/STREAMING/dashboard-hls-playback.mmd를 본다.
-%% Python 상세 흐름은 .mermaid/STREAMING/python-hls-playback.mmd를 본다.
+%% Dashboard 상세 흐름은 .mermaid/PLAYBACK/dashboard-hls-playback.mmd를 본다.
+%% Python 상세 흐름은 .mermaid/PLAYBACK/python-hls-playback.mmd를 본다.
 %% HLS playback은 Caddy /hls proxy 또는 Caddy forward_auth를 사용하지 않는다.
 %% client는 live API가 준 stream_path와 playback_ticket으로 native MediaMTX URL을 직접 만든다.
 %% URL 형식은 http://{serverHost}:8888/{stream_path}/index.m3u8?ticket={playback_ticket}&user_id={viewer_user_id} 이다.
 %% MediaMTX authHTTPAddress는 단일 endpoint /api/v1/auth/mediamtx 이다.
-%% /api/v1/auth/mediamtx는 action=publish를 publish ticket으로, action=read|playback + protocol=hls를 playback ticket으로 분기한다.
-%% HLS auth hot path는 DB를 조회하지 않고 stream:hls-ticket:{ticketId}, ticket.userId, query.user_id, stream:recording:{recordingSessionId}만 검증한다.
+%% /api/v1/auth/mediamtx는 action=publish를 publish ticket으로, action=read + protocol=hls를 playback ticket으로 분기한다.
+%% HLS auth hot path는 DB를 조회하지 않고 stream:hls-ticket:{ticketId}, ticket.userId, query.user_id, ticket.streamPath, stream:recording:{recordingSessionId}만 검증한다.
 %% playback ticket 발급은 Dashboard와 Python client만 허용한다. App JWT는 live list/detail 조회에는 쓸 수 있지만 playback ticket 발급에는 쓸 수 없다.

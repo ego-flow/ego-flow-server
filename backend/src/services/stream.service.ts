@@ -424,7 +424,6 @@ export class StreamService {
 
     return {
       playback_ticket: ticketGrant.ticketId,
-      playback_ticket_expires_at: ticketGrant.expiresAt.toISOString(),
     };
   }
 

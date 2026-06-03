@@ -451,10 +451,9 @@ export const openApiDocument = {
       },
       HlsPlaybackTicketResponse: {
         type: "object",
-        required: ["playback_ticket", "playback_ticket_expires_at"],
+        required: ["playback_ticket"],
         properties: {
           playback_ticket: { type: "string", example: "pt_opaque" },
-          playback_ticket_expires_at: { type: "string", format: "date-time" },
         },
       },
       HookOkResponse: {
@@ -1219,7 +1218,7 @@ export const openApiDocument = {
       post: {
         tags: ["Auth"],
         summary: "MediaMTX authorization hook",
-        description: "Internal endpoint used by MediaMTX for publish and HLS read/playback authorization.",
+        description: "Internal endpoint used by MediaMTX for publish and HLS read authorization.",
         security: [],
         requestBody: {
           required: true,

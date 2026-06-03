@@ -168,9 +168,9 @@ const handleMediaMtxAuth = asyncHandler(async (req, res) => {
 
 /**
  * [MediaMTX 인증 엔드포인트]
- * MediaMTX authHTTPAddress로 설정되어 publish/read/playback action을 공통 수신한다.
+ * MediaMTX authHTTPAddress로 설정되어 publish/read action을 공통 수신한다.
  * - publish: query.ticket 기반 publish ticket만 허용한다.
- * - read/playback + hls: playback ticket만 허용한다.
+ * - read + hls: playback ticket만 허용한다.
  * MediaMTX는 단순 status code(200/401)만 보므로 의도적으로 빈 응답을 돌려준다.
  */
 // POST /api/v1/auth/mediamtx

@@ -141,12 +141,12 @@ test("issue and validate HLS playback ticket through Redis live cache", async ()
   assert.equal(fakeRedis.getTtlSeconds(key), 600);
 });
 
-test("validateHlsPlaybackTicket rejects path mismatch and non-MediaMTX cache", async () => {
+test("validateHlsPlaybackTicket rejects path mismatch and live cache repository mismatch", async () => {
   fakeRedis.setJson("stream:recording:session-1", {
-    repositoryId: "repo-1",
+    repositoryId: "repo-2",
     repositoryName: "repo-name",
     userId: "publisher-1",
-    ingestType: "HTTP",
+    ingestType: "MEDIAMTX",
     status: "STREAMING",
   } satisfies RecordingSessionLiveCache);
 
@@ -169,7 +169,7 @@ test("validateHlsPlaybackTicket rejects path mismatch and non-MediaMTX cache", a
     expectedUserId: "viewer-1",
   }), {
     ok: false,
-    reason: "live-cache-not-mediamtx",
+    reason: "live-cache-repository-mismatch",
     ticketId: grant.ticketId,
   });
 });

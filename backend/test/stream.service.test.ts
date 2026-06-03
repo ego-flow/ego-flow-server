@@ -530,7 +530,7 @@ test("issueHlsPlaybackTicket authorizes read access and stores a Redis playback 
   const response = await streamService.issueHlsPlaybackTicket("session-1", "viewer-1", "user");
 
   assert.ok(response.playback_ticket.startsWith("pt_"));
-  assert.match(response.playback_ticket_expires_at, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(Object.hasOwn(response, "playback_ticket_expires_at"), false);
 
   const ticket = fakeRedis.getJson<Record<string, unknown>>(`stream:hls-ticket:${response.playback_ticket}`);
   assert.equal(ticket?.recordingSessionId, "session-1");

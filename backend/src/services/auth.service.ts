@@ -121,7 +121,7 @@ export class AuthService {
       return this.verifyPublishAuthorization(input);
     }
 
-    if ((input.action === "read" || input.action === "playback") && input.protocol === "hls") {
+    if (input.action === "read" && input.protocol === "hls") {
       return this.verifyHlsPlaybackAuthorization(input);
     }
 

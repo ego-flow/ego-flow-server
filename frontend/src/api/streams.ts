@@ -26,7 +26,6 @@ export interface LiveStreamDetail extends LiveStreamSummary {
 
 export interface LiveStreamPlaybackTicket {
 	playbackTicket: string;
-	playbackTicketExpiresAt: string;
 }
 
 interface LiveStreamSummaryApiRecord {
@@ -117,11 +116,9 @@ export async function requestLiveStreamDetail(recordingSessionId: string) {
 export async function requestLiveStreamPlaybackTicket(recordingSessionId: string) {
 	const response = await apiClient.post<{
 		playback_ticket: string;
-		playback_ticket_expires_at: string;
 	}>(liveStreamPlaybackTicketPath(recordingSessionId));
 
 	return {
 		playbackTicket: response.data.playback_ticket,
-		playbackTicketExpiresAt: response.data.playback_ticket_expires_at,
 	} satisfies LiveStreamPlaybackTicket;
 }

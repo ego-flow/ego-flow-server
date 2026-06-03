@@ -29,7 +29,7 @@ sequenceDiagram
     Caddy-->>App: WHIP publish rejected
   else action is not publish
     Backend-->>MTX: 401 Unauthorized
-    Note over Backend,MTX: 이 WHIP publish path에서는 action=publish만 허용한다.<br/>같은 endpoint의 HLS read/playback branch는<br/>.mermaid/STREAMING/hls-playback.mmd에서 다룬다.
+    Note over Backend,MTX: 이 WHIP publish path에서는 action=publish만 허용한다.<br/>같은 endpoint의 HLS read branch는<br/>.mermaid/PLAYBACK/hls-playback.mmd에서 다룬다.
     MTX-->>Caddy: WHIP publish rejected
     Caddy-->>App: WHIP publish rejected
   else legacy credential present

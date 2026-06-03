@@ -95,7 +95,7 @@ export class StreamOwnershipService {
     repositoryId: string;
     userId: string;
     streamPath: string;
-  }): Promise<{ ticket: HlsPlaybackTicketRecord; ticketId: string; expiresAt: Date }> {
+  }): Promise<{ ticket: HlsPlaybackTicketRecord; ticketId: string }> {
     const ticketId = `pt_${uuidv4()}`;
     const ticket: HlsPlaybackTicketRecord = {
       recordingSessionId: params.recordingSessionId,
@@ -113,11 +113,7 @@ export class StreamOwnershipService {
       HLS_PLAYBACK_TICKET_TTL_SECONDS,
     );
 
-    return {
-      ticket,
-      ticketId,
-      expiresAt: new Date(Date.now() + HLS_PLAYBACK_TICKET_TTL_SECONDS * 1000),
-    };
+    return { ticket, ticketId };
   }
 
   async validatePublishTicket(
@@ -345,14 +341,6 @@ export class StreamOwnershipService {
       };
     }
 
-    if (ticket.ingestType !== RecordingSessionIngestType.MEDIAMTX) {
-      return {
-        ok: false,
-        reason: "playback-ticket-ingest-type-mismatch",
-        ticketId: normalizedTicketId,
-      };
-    }
-
     if (ticket.streamPath !== streamPath) {
       return {
         ok: false,
@@ -385,14 +373,6 @@ export class StreamOwnershipService {
       return {
         ok: false,
         reason: "live-cache-not-streaming",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    if (liveCache.ingestType !== RecordingSessionIngestType.MEDIAMTX) {
-      return {
-        ok: false,
-        reason: "live-cache-not-mediamtx",
         ticketId: normalizedTicketId,
       };
     }

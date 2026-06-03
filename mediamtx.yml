@@ -23,7 +23,7 @@ apiAddress: :9997
 
 authMethod: http
 authHTTPAddress: http://backend:3000/api/v1/auth/mediamtx
-# publish는 publish ticket으로, HLS read/playback은 playback ticket으로 검증한다.
+# publish는 publish ticket으로, HLS read는 playback ticket으로 검증한다.
 authHTTPExclude:
   - action: api
 
