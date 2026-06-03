@@ -21,7 +21,7 @@ erDiagram
     varchar id PK "varchar(64)"
     varchar password_hash "varchar(255)"
     UserRole role "default user"
-    boolean is_active "default true"
+    boolean deactivated "default false"
     varchar display_name "varchar(255)"
     timestamp created_at "default now"
     timestamp updated_at "updatedAt"

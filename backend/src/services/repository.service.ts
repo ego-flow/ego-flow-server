@@ -425,7 +425,7 @@ export class RepositoryService {
       select: {
         id: true,
         displayName: true,
-        isActive: true,
+        deactivated: true,
       },
     });
 
@@ -438,7 +438,7 @@ export class RepositoryService {
         return {
           user_id: membership.userId,
           display_name: memberUser?.displayName ?? membership.userId,
-          is_active: memberUser?.isActive ?? false,
+          is_active: memberUser ? !memberUser.deactivated : false,
           role: toAppRepoRole(membership.role),
           is_owner: membership.userId === access.repository.ownerId,
           created_at: membership.createdAt.toISOString(),
@@ -658,7 +658,7 @@ export class RepositoryService {
       where: { id: targetUserId },
       select: {
         id: true,
-        isActive: true,
+        deactivated: true,
       },
     });
 
@@ -666,7 +666,7 @@ export class RepositoryService {
       throw NotFound("User not found.");
     }
 
-    if (!targetUser.isActive) {
+    if (targetUser.deactivated) {
       throw BadRequest("Inactive users cannot be added to a repository.");
     }
   }

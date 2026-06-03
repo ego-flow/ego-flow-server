@@ -32,11 +32,11 @@ Current API list based on the server codebase.
 |---|---|---|---|
 | `POST /api/v1/admin/users` | `{ id, password, displayName? }` | `{ user }` | Create user |
 | `GET /api/v1/admin/users` | none | `{ users }` | List users |
-| `DELETE /api/v1/admin/users/:userId` | `userId` | `{ id, deleted: true }` | Deactivate user |
+| `DELETE /api/v1/admin/users/:userId/deactivate` | `userId` | `{ id, deactivated: true }` | Deactivate user |
 | `GET /api/v1/admin/users/:userId/delete-readiness` | `userId` | `{ user_id, can_delete, checks }` | Check whether a user can be permanently deleted |
-| `DELETE /api/v1/admin/users/:userId/permanent` | `userId` | `{ id, deleted: true }` | Permanently delete user |
-| `PUT /api/v1/admin/users/:userId/reset-password` | `{ newPassword }` | `{ id, passwordReset: true }` | Reset user password |
-| `GET /api/v1/admin/api-tokens?user_id=` | optional `user_id` | `{ tokens }` | List active Python tokens for admin management |
+| `DELETE /api/v1/admin/users/:userId` | `userId` | `{ id, deleted: true }` | Permanently delete user |
+| `PUT /api/v1/admin/dashboard/users/:userId/password` | `{ newPassword }` | `{ id, passwordReset: true }` | Reset user password from dashboard admin client |
+| `GET /api/v1/admin/python/tokens?user_id=` | optional `user_id` | `{ tokens }` | List active Python tokens for admin management |
 | `GET /api/v1/admin/settings` | none | `{ settings }` | Read runtime/config/env settings |
 
 ## Repositories

@@ -34,9 +34,9 @@ router.get(
   }),
 );
 
-// GET /api/v1/admin/api-tokens
+// GET /api/v1/admin/python/tokens
 router.get(
-  "/api-tokens",
+  "/python/tokens",
   validate(adminApiTokenListQuerySchema, "query"),
   asyncHandler(async (req, res) => {
     const query = req.query as unknown as AdminApiTokenListQueryInput;
@@ -51,9 +51,9 @@ router.get(
   }),
 );
 
-// DELETE /api/v1/admin/users/:userId
+// DELETE /api/v1/admin/users/:userId/deactivate
 router.delete(
-  "/users/:userId",
+  "/users/:userId/deactivate",
   validate(adminUserIdParamSchema, "params"),
   asyncHandler(async (req, res) => {
     const response = await adminService.deactivateUser((req.params as AdminUserIdParamInput).userId);
@@ -71,9 +71,9 @@ router.get(
   }),
 );
 
-// DELETE /api/v1/admin/users/:userId/permanent
+// DELETE /api/v1/admin/users/:userId
 router.delete(
-  "/users/:userId/permanent",
+  "/users/:userId",
   validate(adminUserIdParamSchema, "params"),
   asyncHandler(async (req, res) => {
     const response = await adminService.permanentlyDeleteUser((req.params as AdminUserIdParamInput).userId);
@@ -81,9 +81,9 @@ router.delete(
   }),
 );
 
-// PUT /api/v1/admin/users/:userId/reset-password
+// PUT /api/v1/admin/dashboard/users/:userId/password
 router.put(
-  "/users/:userId/reset-password",
+  "/dashboard/users/:userId/password",
   validate(adminUserIdParamSchema, "params"),
   validate(resetUserPasswordSchema),
   asyncHandler(async (req, res) => {

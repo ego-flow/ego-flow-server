@@ -16,8 +16,9 @@ const fakePrisma: any = {
       role: UserRole.user,
       displayName: "Alice Kim",
       createdAt: new Date("2026-04-25T00:00:00.000Z"),
-      isActive: true,
+      deactivated: false,
     }),
+    update: async () => ({ id: "alice" }),
     delete: async () => ({ id: "alice" }),
   },
   repository: {
@@ -44,8 +45,9 @@ beforeEach(() => {
     role: UserRole.user,
     displayName: "Alice Kim",
     createdAt: new Date("2026-04-25T00:00:00.000Z"),
-    isActive: true,
+    deactivated: false,
   });
+  fakePrisma.user.update = async () => ({ id: "alice" });
   fakePrisma.user.delete = async () => ({ id: "alice" });
   fakePrisma.repository.findMany = async () => [];
   fakePrisma.repoMember.findMany = async () => [];
@@ -78,7 +80,7 @@ test("createUser defaults a blank displayName to the user id", async () => {
       role: UserRole.user,
       displayName: data.displayName,
       createdAt: new Date("2026-04-25T00:00:00.000Z"),
-      isActive: true,
+      deactivated: false,
     };
   };
 
@@ -116,7 +118,7 @@ test("getUserDeleteReadiness returns can_delete=true for a clean deactivated use
   fakePrisma.user.findUnique = async () => ({
     id: "alice",
     role: UserRole.user,
-    isActive: false,
+    deactivated: true,
   });
 
   const readiness = await service.getUserDeleteReadiness("alice");
@@ -133,11 +135,34 @@ test("getUserDeleteReadiness returns can_delete=true for a clean deactivated use
   });
 });
 
+test("deactivateUser marks the user deactivated", async () => {
+  let updateInput: { where: { id: string }; data: { deactivated: boolean } } | null = null;
+  fakePrisma.user.findUnique = async () => ({
+    id: "alice",
+    role: UserRole.user,
+  });
+  fakePrisma.user.update = async (input: { where: { id: string }; data: { deactivated: boolean } }) => {
+    updateInput = input;
+    return { id: input.where.id };
+  };
+
+  const result = await service.deactivateUser("alice");
+
+  assert.deepEqual(updateInput, {
+    where: { id: "alice" },
+    data: { deactivated: true },
+  });
+  assert.deepEqual(result, {
+    id: "alice",
+    deactivated: true,
+  });
+});
+
 test("permanentlyDeleteUser rejects active users", async () => {
   fakePrisma.user.findUnique = async () => ({
     id: "alice",
     role: UserRole.user,
-    isActive: true,
+    deactivated: false,
   });
 
   await assert.rejects(
@@ -154,7 +179,7 @@ test("permanentlyDeleteUser rejects users with remaining blockers", async () => 
   fakePrisma.user.findUnique = async () => ({
     id: "alice",
     role: UserRole.user,
-    isActive: false,
+    deactivated: true,
   });
   fakePrisma.repository.findMany = async () => [{ id: "repo-1" }];
 
@@ -174,7 +199,7 @@ test("permanentlyDeleteUser deletes a clean deactivated user", async () => {
   fakePrisma.user.findUnique = async () => ({
     id: "alice",
     role: UserRole.user,
-    isActive: false,
+    deactivated: true,
   });
   fakePrisma.user.delete = async ({ where }: { where: { id: string } }) => {
     deletedUserId = where.id;

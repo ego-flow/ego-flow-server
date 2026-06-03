@@ -2,8 +2,8 @@ import { apiClient } from "#/api/client";
 import { ApiEndpoint } from "#/constants/api/api-constants";
 import type { UserRole } from "#/lib/auth-session";
 import {
+	adminUserDeactivatePath,
 	adminUserDeleteReadinessPath,
-	adminUserPath,
 	adminUserPermanentDeletePath,
 	adminUserResetPasswordPath,
 } from "#/utils/api-paths";
@@ -56,7 +56,7 @@ export async function requestAdminUsers() {
 			role: UserRole;
 			displayName: string;
 			createdAt: string;
-			is_active: boolean;
+			deactivated: boolean;
 		}>;
 	}>(ApiEndpoint.AdminUsers);
 
@@ -65,7 +65,7 @@ export async function requestAdminUsers() {
 		role: user.role,
 		displayName: user.displayName,
 		createdAt: user.createdAt,
-		isActive: user.is_active,
+		isActive: !user.deactivated,
 	})) satisfies AdminUser[];
 }
 
@@ -95,7 +95,7 @@ export async function requestResetUserPassword(
 }
 
 export async function requestDeactivateUser(userId: string) {
-	const response = await apiClient.delete(adminUserPath(userId));
+	const response = await apiClient.delete(adminUserDeactivatePath(userId));
 	return response.data;
 }
 

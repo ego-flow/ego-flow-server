@@ -12,7 +12,7 @@ process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 type UserRecord = {
   id: string;
   role: UserRole;
-  isActive: boolean;
+  deactivated: boolean;
   displayName: string;
 };
 
@@ -67,7 +67,7 @@ const toTokenResult = (token: ApiTokenRecord | null) => {
       ? {
           id: user.id,
           role: user.role,
-          isActive: user.isActive,
+          deactivated: user.deactivated,
           displayName: user.displayName,
         }
       : null,
@@ -145,13 +145,13 @@ beforeEach(() => {
   users.set("alice", {
     id: "alice",
     role: UserRole.user,
-    isActive: true,
+    deactivated: false,
     displayName: "Alice Kim",
   });
   users.set("admin", {
     id: "admin",
     role: UserRole.admin,
-    isActive: true,
+    deactivated: false,
     displayName: "Administrator",
   });
 });
@@ -253,7 +253,7 @@ test("verifyPythonToken rejects inactive users and throttles last_used_at update
 
   users.set("alice", {
     ...users.get("alice")!,
-    isActive: false,
+    deactivated: true,
   });
 
   assert.equal(await service.verifyPythonToken(issued.token), null);

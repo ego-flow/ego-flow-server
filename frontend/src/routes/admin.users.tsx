@@ -46,7 +46,7 @@ function AdminUsersPage() {
 	});
 
 	const adminTokensQuery = useQuery({
-		queryKey: ["admin", "api-tokens"],
+		queryKey: ["admin", "python-tokens"],
 		queryFn: requestAdminTokens,
 	});
 
@@ -100,7 +100,7 @@ function AdminUsersPage() {
 			setDeleteDialogUser(null);
 			await queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
 			await queryClient.invalidateQueries({
-				queryKey: ["admin", "api-tokens"],
+				queryKey: ["admin", "python-tokens"],
 			});
 		},
 	});
@@ -109,7 +109,7 @@ function AdminUsersPage() {
 		mutationFn: (tokenId: string) => requestRevokeToken(tokenId),
 		onSuccess: async () => {
 			await queryClient.invalidateQueries({
-				queryKey: ["admin", "api-tokens"],
+				queryKey: ["admin", "python-tokens"],
 			});
 		},
 	});

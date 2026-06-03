@@ -35,7 +35,7 @@ export async function requestCreateToken(name: string) {
 		token: string;
 		created_at: string;
 		rotated_previous: boolean;
-	}>(ApiEndpoint.AuthTokens, {
+	}>(ApiEndpoint.AuthPythonTokens, {
 		name,
 	});
 
@@ -56,7 +56,7 @@ export async function requestCurrentToken() {
 			last_used_at: string | null;
 			created_at: string;
 		} | null;
-	}>(ApiEndpoint.AuthTokens);
+	}>(ApiEndpoint.AuthPythonTokens);
 
 	if (!response.data.token) {
 		return {
@@ -85,7 +85,7 @@ export async function requestAdminTokens() {
 			last_used_at: string | null;
 			created_at: string;
 		}>;
-	}>(ApiEndpoint.AdminApiTokens);
+	}>(ApiEndpoint.AdminPythonTokens);
 
 	return response.data.tokens.map((token) => ({
 		id: token.id,

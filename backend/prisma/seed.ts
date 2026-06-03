@@ -19,7 +19,7 @@ async function main() {
         id: "admin",
         passwordHash: adminPasswordHash,
         role: UserRole.admin,
-        isActive: true,
+        deactivated: false,
         displayName: "Administrator",
       },
     });

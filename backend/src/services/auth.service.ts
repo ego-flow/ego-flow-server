@@ -57,7 +57,7 @@ export class AuthService {
       throw Unauthorized("Invalid id or password.", ErrorCode.INVALID_CREDENTIALS);
     }
 
-    if (!user.isActive) {
+    if (user.deactivated) {
       throw Unauthorized("Invalid id or password.", ErrorCode.INVALID_CREDENTIALS);
     }
 
@@ -191,7 +191,7 @@ export class AuthService {
       throw Unauthorized("Current password is incorrect.", ErrorCode.INVALID_CREDENTIALS);
     }
 
-    if (!user.isActive) {
+    if (user.deactivated) {
       throw Unauthorized("Current password is incorrect.", ErrorCode.INVALID_CREDENTIALS);
     }
 

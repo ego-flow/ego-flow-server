@@ -28,13 +28,13 @@ const toUserResponse = (user: {
   role: UserRole;
   displayName: string;
   createdAt: Date;
-  isActive: boolean;
+  deactivated: boolean;
 }) => ({
   id: user.id,
   role: toUserRole(user.role),
   displayName: user.displayName,
   createdAt: user.createdAt.toISOString(),
-  is_active: user.isActive,
+  deactivated: user.deactivated,
 });
 
 export class AdminService {
@@ -44,7 +44,7 @@ export class AdminService {
       select: {
         id: true,
         role: true,
-        isActive: true,
+        deactivated: true,
       },
     });
 
@@ -77,7 +77,7 @@ export class AdminService {
       (membership) => !ownedRepositoryIds.has(membership.repositoryId),
     ).length;
     const checks = {
-      isDeactivated: !user.isActive,
+      isDeactivated: user.deactivated,
       ownedRepositoryCount: ownedRepositories.length,
       repositoryMembershipCount,
       recordingSessionCount,
@@ -210,7 +210,7 @@ export class AdminService {
         id: input.id,
         passwordHash,
         role: UserRole.user,
-        isActive: true,
+        deactivated: false,
         displayName,
       },
       select: {
@@ -218,7 +218,7 @@ export class AdminService {
         role: true,
         displayName: true,
         createdAt: true,
-        isActive: true,
+        deactivated: true,
       },
     });
 
@@ -235,7 +235,7 @@ export class AdminService {
         role: true,
         displayName: true,
         createdAt: true,
-        isActive: true,
+        deactivated: true,
       },
     });
 
@@ -264,13 +264,13 @@ export class AdminService {
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        isActive: false,
+        deactivated: true,
       },
     });
 
     return {
       id: user.id,
-      deleted: true,
+      deactivated: true,
     };
   }
 
@@ -346,12 +346,12 @@ export class AdminService {
       select: {
         id: true,
         role: true,
-        isActive: true,
+        deactivated: true,
         displayName: true,
       },
     });
 
-    if (!user || !user.isActive) {
+    if (!user || user.deactivated) {
       return null;
     }
 

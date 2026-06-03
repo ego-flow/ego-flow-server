@@ -190,13 +190,13 @@ export class ApiTokenService {
           select: {
             id: true,
             role: true,
-            isActive: true,
+            deactivated: true,
           },
         },
       },
     });
 
-    if (!token?.user || !token.user.isActive) {
+    if (!token?.user || token.user.deactivated) {
       return null;
     }
 

@@ -212,6 +212,14 @@ export const openApiDocument = {
           deleted: { type: "boolean", example: true },
         },
       },
+      DeactivateResult: {
+        type: "object",
+        required: ["id", "deactivated"],
+        properties: {
+          id: { type: "string" },
+          deactivated: { type: "boolean", example: true },
+        },
+      },
       RepositoryMember: {
         type: "object",
         required: ["user_id", "display_name", "is_active", "role", "is_owner", "created_at"],
@@ -587,13 +595,13 @@ export const openApiDocument = {
       },
       AdminUser: {
         type: "object",
-        required: ["id", "role", "displayName", "createdAt", "is_active"],
+        required: ["id", "role", "displayName", "createdAt", "deactivated"],
         properties: {
           id: { type: "string" },
           role: { type: "string", enum: ["admin", "user"] },
           displayName: { type: "string" },
           createdAt: { type: "string", format: "date-time" },
-          is_active: { type: "boolean" },
+          deactivated: { type: "boolean" },
         },
       },
       CreateAdminUserRequest: {
@@ -2078,7 +2086,7 @@ export const openApiDocument = {
         },
       },
     },
-    "/admin/api-tokens": {
+    "/admin/python/tokens": {
       get: {
         tags: ["Admin"],
         summary: "List active Python tokens for all users",
@@ -2107,6 +2115,28 @@ export const openApiDocument = {
     "/admin/users/{userId}": {
       delete: {
         tags: ["Admin"],
+        summary: "Permanently delete a deactivated user with no remaining blockers",
+        parameters: [{ $ref: "#/components/parameters/UserId" }],
+        responses: {
+          "200": {
+            description: "User permanently deleted",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/DeleteResult" },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+          "409": { $ref: "#/components/responses/Conflict" },
+        },
+      },
+    },
+    "/admin/users/{userId}/deactivate": {
+      delete: {
+        tags: ["Admin"],
         summary: "Deactivate a user",
         parameters: [{ $ref: "#/components/parameters/UserId" }],
         responses: {
@@ -2114,7 +2144,7 @@ export const openApiDocument = {
             description: "User deactivated",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/DeleteResult" },
+                schema: { $ref: "#/components/schemas/DeactivateResult" },
               },
             },
           },
@@ -2146,29 +2176,7 @@ export const openApiDocument = {
         },
       },
     },
-    "/admin/users/{userId}/permanent": {
-      delete: {
-        tags: ["Admin"],
-        summary: "Permanently delete a deactivated user with no remaining blockers",
-        parameters: [{ $ref: "#/components/parameters/UserId" }],
-        responses: {
-          "200": {
-            description: "User permanently deleted",
-            content: {
-              "application/json": {
-                schema: { $ref: "#/components/schemas/DeleteResult" },
-              },
-            },
-          },
-          "400": { $ref: "#/components/responses/BadRequest" },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
-          "404": { $ref: "#/components/responses/NotFound" },
-          "409": { $ref: "#/components/responses/Conflict" },
-        },
-      },
-    },
-    "/admin/users/{userId}/reset-password": {
+    "/admin/dashboard/users/{userId}/password": {
       put: {
         tags: ["Admin"],
         summary: "Reset a user's password",

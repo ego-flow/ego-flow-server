@@ -7,13 +7,16 @@ export const adminUserDeleteReadinessPath = (userId: string) =>
 	`${adminUserPath(userId)}/delete-readiness`;
 
 export const adminUserPermanentDeletePath = (userId: string) =>
-	`${adminUserPath(userId)}/permanent`;
+	adminUserPath(userId);
+
+export const adminUserDeactivatePath = (userId: string) =>
+	`${adminUserPath(userId)}/deactivate`;
 
 export const adminUserResetPasswordPath = (userId: string) =>
-	`${adminUserPath(userId)}/reset-password`;
+	`${ApiEndpoint.AdminDashboardUsers}/${encodeURIComponent(userId)}/password`;
 
 export const authTokenPath = (tokenId: string) =>
-	`${ApiEndpoint.AuthTokens}/${encodeURIComponent(tokenId)}`;
+	`${ApiEndpoint.AuthPythonTokens}/${encodeURIComponent(tokenId)}`;
 
 export const repositoryPath = (repoId: string) =>
 	`${ApiEndpoint.Repositories}/${repoId}`;
