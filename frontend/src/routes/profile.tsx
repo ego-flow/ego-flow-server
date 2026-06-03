@@ -317,7 +317,7 @@ function ProfilePage() {
 							)}
 						</div>
 					) : currentToken ? (
-						<div className="mt-5 rounded-xl border border-[var(--line)] bg-white/60 px-4 py-4">
+						<div className="mt-5 rounded-xl border border-[var(--line)] bg-[var(--card)] px-4 py-4 dark:bg-white/5">
 							<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 								<div className="space-y-2 text-sm text-[var(--sea-ink-soft)]">
 									<p className="font-semibold text-[var(--sea-ink)]">

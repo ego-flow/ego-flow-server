@@ -157,34 +157,34 @@ export class AdminService {
       },
       {
         title: "Ports",
-        description: "Public host ports, Caddy-routed internal service ports, and internal-only stack ports.",
+        description: "Stack port map.",
         entries: [
           {
             key: `${FIXED_PUBLIC_HTTP_PORT}/tcp`,
-            value: "Caddy public HTTP entrypoint for dashboard, API, and WHIP signaling",
+            value: "Dashboard, API, WHIP routing",
             children: [
-              { key: "backend:3000/tcp", value: "Backend API, Swagger UI, OpenAPI JSON, signed files" },
-              { key: "dashboard:8088/tcp", value: "Dashboard web UI" },
-              { key: `mediamtx:${FIXED_WHIP_PORT}/tcp`, value: "WHIP publish signaling via /live/*/whip" },
+              { key: "backend:3000/tcp", value: "Backend API" },
+              { key: "dashboard:8088/tcp", value: "Dashboard UI" },
+              { key: `mediamtx:${FIXED_WHIP_PORT}/tcp`, value: "WHIP signaling" },
             ],
           },
-          { key: `${FIXED_RTMP_PORT}/tcp`, value: "MediaMTX RTMP ingest endpoint for publisher connections" },
+          { key: `${FIXED_RTMP_PORT}/tcp`, value: "RTMP ingest" },
           {
             key: `${FIXED_RTMPS_PORT}/tcp`,
-            value: "MediaMTX RTMPS ingest endpoint for encrypted publisher connections; optional unless RTMPS is enabled",
+            value: "RTMPS ingest",
           },
-          { key: `${FIXED_HLS_PORT}/tcp`, value: "Direct MediaMTX HLS playback endpoint" },
-          { key: `${FIXED_WEBRTC_UDP_PORT}/udp`, value: "MediaMTX WHIP/WebRTC ICE media UDP endpoint" },
+          { key: `${FIXED_HLS_PORT}/tcp`, value: "HLS playback" },
+          { key: `${FIXED_WEBRTC_UDP_PORT}/udp`, value: "WebRTC media" },
           {
             key: "internal-only",
-            value: "Ports used only inside the Docker network; do not expose these in the server firewall",
+            value: "Docker network only",
             children: [
               {
                 key: `mediamtx:${FIXED_MEDIAMTX_API_PORT}/tcp`,
-                value: "MediaMTX control API used internally by backend to inspect active paths and service state",
+                value: "MediaMTX control API",
               },
-              { key: `postgres:${FIXED_POSTGRES_PORT}/tcp`, value: "PostgreSQL database, internal stack access only" },
-              { key: `redis:${FIXED_REDIS_PORT}/tcp`, value: "Redis cache and BullMQ backend, internal stack access only" },
+              { key: `postgres:${FIXED_POSTGRES_PORT}/tcp`, value: "PostgreSQL" },
+              { key: `redis:${FIXED_REDIS_PORT}/tcp`, value: "Redis, BullMQ" },
             ],
           },
         ],
