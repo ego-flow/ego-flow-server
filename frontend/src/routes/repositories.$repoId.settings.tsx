@@ -13,8 +13,10 @@ import {
 	RepositoryRole,
 	RepositoryVisibility,
 	requestAddRepositoryMember,
-	requestDeleteRepository,
+	requestDeactivateRepository,
 	requestDeleteRepositoryMember,
+	requestPermanentDeleteRepository,
+	requestRepositoryDeleteReadiness,
 	requestRepositoryDetail,
 	requestRepositoryMembers,
 	requestUpdateRepository,
@@ -44,16 +46,26 @@ function RepositorySettingsPage() {
 	const [memberRole, setMemberRole] = useState<RepositoryRole>(
 		RepositoryRole.Read,
 	);
+	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
 	const repositoryQuery = useQuery({
 		queryKey: ["repository", repoId],
 		queryFn: () => requestRepositoryDetail(repoId),
 	});
 
+	const repository = repositoryQuery.data;
+
 	const membersQuery = useQuery({
 		queryKey: ["repository-members", repoId],
 		queryFn: () => requestRepositoryMembers(repoId),
-		enabled: repositoryQuery.data?.myRole === RepositoryRole.Admin,
+		enabled: repository?.myRole === RepositoryRole.Admin,
+	});
+
+	const deleteReadinessQuery = useQuery({
+		queryKey: ["repository", "delete-readiness", repoId],
+		queryFn: () => requestRepositoryDeleteReadiness(repoId),
+		enabled: isDeleteDialogOpen && repository?.myRole === RepositoryRole.Admin,
+		retry: false,
 	});
 
 	useEffect(() => {
@@ -79,9 +91,18 @@ function RepositorySettingsPage() {
 		},
 	});
 
-	const deleteMutation = useMutation({
-		mutationFn: () => requestDeleteRepository(repoId),
+	const deactivateRepositoryMutation = useMutation({
+		mutationFn: () => requestDeactivateRepository(repoId),
 		onSuccess: async () => {
+			await deleteReadinessQuery.refetch();
+			await queryClient.invalidateQueries({ queryKey: ["repositories"] });
+		},
+	});
+
+	const permanentDeleteRepositoryMutation = useMutation({
+		mutationFn: () => requestPermanentDeleteRepository(repoId),
+		onSuccess: async () => {
+			setIsDeleteDialogOpen(false);
 			await queryClient.invalidateQueries({ queryKey: ["repositories"] });
 			await navigate({
 				to: "/repositories",
@@ -105,7 +126,26 @@ function RepositorySettingsPage() {
 		},
 	});
 
-	const repository = repositoryQuery.data;
+	const openDeleteDialog = () => {
+		deactivateRepositoryMutation.reset();
+		permanentDeleteRepositoryMutation.reset();
+		setIsDeleteDialogOpen(true);
+	};
+
+	const closeDeleteDialog = () => {
+		deactivateRepositoryMutation.reset();
+		permanentDeleteRepositoryMutation.reset();
+		setIsDeleteDialogOpen(false);
+	};
+
+	const deleteReadiness = deleteReadinessQuery.data ?? null;
+	const isRepositoryDeactivatedForDelete =
+		deleteReadiness?.checks.isDeactivated ||
+		deactivateRepositoryMutation.isSuccess;
+	const hasRepositoryDeleteBlockers = deleteReadiness
+		? deleteReadiness.checks.activeStreamingSessionCount > 0 ||
+			deleteReadiness.checks.finalizingSegmentCount > 0
+		: true;
 
 	useEffect(() => {
 		if (!repository || repository.myRole === RepositoryRole.Admin) {
@@ -125,7 +165,8 @@ function RepositorySettingsPage() {
 	}
 
 	return (
-		<main className="page-wrap px-4 py-8 sm:py-10">
+		<>
+			<main className="page-wrap px-4 py-8 sm:py-10">
 			<section className="island-shell mb-6 rounded-2xl p-3 shadow-sm">
 				<Link
 					to="/repositories/$repoId"
@@ -226,18 +267,8 @@ function RepositorySettingsPage() {
 									<Button
 										type="button"
 										variant="destructive"
-										disabled={deleteMutation.isPending}
-										onClick={() => {
-											if (
-												!window.confirm(
-													"Deactivate and permanently delete this repository and all associated files?",
-												)
-											) {
-												return;
-											}
-
-											deleteMutation.mutate();
-										}}
+										disabled={permanentDeleteRepositoryMutation.isPending}
+										onClick={openDeleteDialog}
 									>
 										Delete repository
 									</Button>
@@ -412,6 +443,156 @@ function RepositorySettingsPage() {
 					) : null}
 				</>
 			) : null}
-		</main>
+			</main>
+			{isDeleteDialogOpen ? (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+					<section className="island-shell w-full max-w-2xl rounded-2xl p-6 shadow-xl">
+						<p className="island-kicker mb-2">Repository Delete</p>
+						<h2 className="text-2xl font-semibold text-[var(--sea-ink)]">
+							Delete {repository?.name}
+						</h2>
+						<p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
+							{isRepositoryDeactivatedForDelete
+								? "This repository is deactivated. Complete permanent deletion before leaving this dialog."
+								: "Repository deletion is split into deactivation, readiness check, and permanent deletion."}
+						</p>
+
+						<div className="mt-5 rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-4">
+							{deleteReadinessQuery.isPending ? (
+								<p className="text-sm text-[var(--sea-ink-soft)]">
+									Checking delete readiness...
+								</p>
+							) : deleteReadinessQuery.isError ? (
+								<p className="text-sm text-red-700 dark:text-red-300">
+									{getApiErrorMessage(
+										deleteReadinessQuery.error,
+										"Failed to check repository delete readiness.",
+									)}
+								</p>
+							) : deleteReadiness ? (
+								<dl className="grid gap-3 text-sm">
+									<div className="flex items-center justify-between gap-3">
+										<dt className="font-semibold text-[var(--sea-ink)]">
+											Repository deactivated
+										</dt>
+										<dd className="text-[var(--sea-ink-soft)]">
+											{isRepositoryDeactivatedForDelete ? "Yes" : "No"}
+										</dd>
+									</div>
+									<div className="flex items-center justify-between gap-3">
+										<dt className="font-semibold text-[var(--sea-ink)]">
+											Active streaming sessions
+										</dt>
+										<dd className="text-[var(--sea-ink-soft)]">
+											{deleteReadiness.checks.activeStreamingSessionCount}
+										</dd>
+									</div>
+									<div className="flex items-center justify-between gap-3">
+										<dt className="font-semibold text-[var(--sea-ink)]">
+											Finalizing segments
+										</dt>
+										<dd className="text-[var(--sea-ink-soft)]">
+											{deleteReadiness.checks.finalizingSegmentCount}
+										</dd>
+									</div>
+								</dl>
+							) : null}
+						</div>
+
+						{hasRepositoryDeleteBlockers && deleteReadiness ? (
+							<p className="mt-4 text-sm text-amber-700 dark:text-amber-300">
+								Stop active streams and wait for recording finalization before
+								continuing.
+							</p>
+						) : null}
+
+						{isRepositoryDeactivatedForDelete && !hasRepositoryDeleteBlockers ? (
+							<p className="mt-4 text-sm text-amber-700 dark:text-amber-300">
+								The repository is hidden from normal repository lists. Finish
+								permanent deletion from this dialog.
+							</p>
+						) : null}
+
+						{deactivateRepositoryMutation.isError ? (
+							<p className="mt-4 text-sm text-red-700 dark:text-red-300">
+								{getApiErrorMessage(
+									deactivateRepositoryMutation.error,
+									"Failed to deactivate repository.",
+								)}
+							</p>
+						) : null}
+
+						{permanentDeleteRepositoryMutation.isError ? (
+							<p className="mt-4 text-sm text-red-700 dark:text-red-300">
+								{getApiErrorMessage(
+									permanentDeleteRepositoryMutation.error,
+									"Failed to permanently delete repository.",
+								)}
+							</p>
+						) : null}
+
+						<div className="mt-6 flex flex-wrap justify-end gap-3">
+							<Button
+								type="button"
+								variant="outline"
+								disabled={
+									isRepositoryDeactivatedForDelete ||
+									deleteReadinessQuery.isFetching ||
+									deactivateRepositoryMutation.isPending ||
+									permanentDeleteRepositoryMutation.isPending
+								}
+								onClick={() => {
+									void deleteReadinessQuery.refetch();
+								}}
+							>
+								Refresh
+							</Button>
+							<Button
+								type="button"
+								variant="outline"
+								disabled={
+									isRepositoryDeactivatedForDelete ||
+									deactivateRepositoryMutation.isPending ||
+									permanentDeleteRepositoryMutation.isPending
+								}
+								onClick={closeDeleteDialog}
+							>
+								{isRepositoryDeactivatedForDelete ? "Deletion in progress" : "Cancel"}
+							</Button>
+							{deleteReadiness && !isRepositoryDeactivatedForDelete ? (
+								<Button
+									type="button"
+									variant="destructive"
+									disabled={
+										hasRepositoryDeleteBlockers ||
+										deactivateRepositoryMutation.isPending ||
+										permanentDeleteRepositoryMutation.isPending
+									}
+									onClick={() => {
+										deactivateRepositoryMutation.mutate();
+									}}
+								>
+									Deactivate repository
+								</Button>
+							) : null}
+							<Button
+								type="button"
+								variant="destructive"
+								disabled={
+									!deleteReadiness?.canDelete ||
+									deactivateRepositoryMutation.isPending ||
+									permanentDeleteRepositoryMutation.isPending
+								}
+								onClick={() => {
+									permanentDeleteRepositoryMutation.mutate();
+								}}
+							>
+								Delete permanently
+							</Button>
+						</div>
+					</section>
+				</div>
+			) : null}
+		</>
 	);
 }

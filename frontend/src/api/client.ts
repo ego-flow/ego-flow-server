@@ -7,6 +7,11 @@ import {
 import { HTTP_URL_PATTERN } from "#/constants/api/url-constants";
 
 type ApiErrorResponse = {
+	error?: {
+		code?: string;
+		message?: string;
+		details?: unknown;
+	};
 	message?: string;
 };
 
@@ -62,6 +67,13 @@ export const apiClient = axios.create({
 
 export function getApiErrorMessage(error: unknown, fallbackMessage: string) {
 	if (axios.isAxiosError<ApiErrorResponse>(error)) {
+		if (
+			typeof error.response?.data?.error?.message === "string" &&
+			error.response.data.error.message
+		) {
+			return error.response.data.error.message;
+		}
+
 		if (
 			typeof error.response?.data?.message === "string" &&
 			error.response.data.message

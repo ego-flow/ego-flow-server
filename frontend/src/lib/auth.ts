@@ -57,7 +57,7 @@ export async function requestChangeMyPassword(input: {
 	newPassword: string;
 }) {
 	const response = await apiClient.put<ChangeMyPasswordResponse>(
-		ApiEndpoint.UsersMePassword,
+		ApiEndpoint.AuthDashboardMePassword,
 		input,
 	);
 

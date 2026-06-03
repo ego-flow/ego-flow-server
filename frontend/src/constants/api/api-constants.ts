@@ -8,10 +8,10 @@ export enum ApiEndpoint {
 	AdminUsers = "/admin/users",
 	AuthDashboardLogin = "/auth/dashboard/login",
 	AuthDashboardLogout = "/auth/dashboard/logout",
+	AuthDashboardMePassword = "/auth/dashboard/me/password",
 	AuthDashboardSession = "/auth/dashboard/session",
 	AuthPythonTokens = "/auth/python/tokens",
 	LiveStreams = "/live-streams",
 	Repositories = "/repositories",
 	RepositoriesMaintain = "/repositories/maintain",
-	UsersMePassword = "/users/me/password",
 }

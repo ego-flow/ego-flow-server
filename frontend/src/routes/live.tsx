@@ -4,7 +4,7 @@ import { Activity, RadioTower, RefreshCcw, UploadCloud } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 
 import { getApiErrorMessage } from "#/api/client";
-import { requestLiveStreams } from "#/api/streams";
+import { requestLiveStreamDetail, requestLiveStreams } from "#/api/streams";
 import { Button } from "#/components/ui/button";
 import { UserRole } from "#/constants/auth/auth-constants";
 import { useAuth } from "#/hooks/useAuth";
@@ -37,6 +37,20 @@ function LivePage() {
 		refetchInterval: 2000,
 	});
 
+	const selectedStreamDetailQuery = useQuery({
+		queryKey: ["live-streams", selectedStreamId],
+		queryFn: () => {
+			if (!selectedStreamId) {
+				throw new Error("No stream selected.");
+			}
+
+			return requestLiveStreamDetail(selectedStreamId);
+		},
+		enabled: isReady && isAuthenticated && Boolean(selectedStreamId),
+		refetchInterval: 2000,
+		retry: false,
+	});
+
 	useEffect(() => {
 		const streams = streamsQuery.data ?? [];
 		if (streams.length === 0) {
@@ -63,6 +77,21 @@ function LivePage() {
 	const streams = streamsQuery.data ?? [];
 	const selectedStream =
 		streams.find((stream) => stream.streamId === selectedStreamId) ?? null;
+	const selectedStreamDetail =
+		selectedStreamDetailQuery.data?.streamId === selectedStream?.streamId
+			? selectedStreamDetailQuery.data
+			: null;
+	const selectedDeviceType =
+		selectedStreamDetail?.deviceType ?? selectedStream?.deviceType ?? null;
+	const selectedHlsPath = selectedStreamDetail?.hlsPath ?? selectedStream?.hlsPath;
+	const selectedPlaybackReady = selectedStreamDetail?.playbackReady ?? false;
+	const canPlaySelectedStream = Boolean(
+		selectedStream &&
+			selectedStream.ingestType === "MEDIAMTX" &&
+			selectedStream.playbackAvailable &&
+			selectedPlaybackReady &&
+			selectedHlsPath,
+	);
 	const isAdmin = session?.user?.role === UserRole.Admin;
 
 	return (
@@ -208,13 +237,13 @@ function LivePage() {
 						</div>
 						{selectedStream ? (
 							<span className="rounded-full border border-[var(--line)] bg-[var(--chip-bg)] px-3 py-1 text-xs text-[var(--sea-ink-soft)]">
-								{selectedStream.deviceType || "Unknown device"}
+								{selectedDeviceType || "Unknown device"}
 							</span>
 						) : null}
 					</div>
 
 					{selectedStream ? (
-						selectedStream.playbackAvailable && selectedStream.hlsPath ? (
+						canPlaySelectedStream && selectedHlsPath ? (
 							<>
 								<Suspense
 									fallback={
@@ -223,17 +252,38 @@ function LivePage() {
 										</div>
 									}
 								>
-									<HlsPlayer src={selectedStream.hlsPath} />
+									<HlsPlayer src={selectedHlsPath} />
 								</Suspense>
 								<dl className="mt-5 grid gap-3 text-sm text-[var(--sea-ink-soft)]">
 									<div className="rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-4 py-3">
 										<dt className="font-semibold text-[var(--sea-ink)]">
 											HLS path
 										</dt>
-										<dd className="mt-1 break-all">{selectedStream.hlsPath}</dd>
+										<dd className="mt-1 break-all">{selectedHlsPath}</dd>
 									</div>
 								</dl>
 							</>
+						) : selectedStream.ingestType === "MEDIAMTX" ? (
+							<div className="grid min-h-80 place-items-center rounded-2xl border border-dashed border-[var(--line)] px-6 text-center">
+								<div>
+									<RadioTower
+										size={28}
+										aria-hidden="true"
+										className="mx-auto text-[var(--lagoon-deep)]"
+									/>
+									<h3 className="mt-3 text-base font-semibold text-[var(--sea-ink)]">
+										Playback is not ready
+									</h3>
+									<p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
+										{selectedStreamDetailQuery.isError
+											? getApiErrorMessage(
+													selectedStreamDetailQuery.error,
+													"Failed to load stream playback status.",
+												)
+											: "The stream is active, but MediaMTX has not reported a playable HLS path yet."}
+									</p>
+								</div>
+							</div>
 						) : (
 							<div className="grid min-h-80 place-items-center rounded-2xl border border-dashed border-[var(--line)] px-6 text-center">
 								<div>

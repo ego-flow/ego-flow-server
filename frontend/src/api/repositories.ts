@@ -184,16 +184,6 @@ export async function requestPermanentDeleteRepository(repoId: string) {
 	return response.data;
 }
 
-export async function requestDeleteRepository(repoId: string) {
-	await requestDeactivateRepository(repoId);
-	const readiness = await requestRepositoryDeleteReadiness(repoId);
-	if (!readiness.canDelete) {
-		throw new Error("Repository is not ready for permanent deletion.");
-	}
-
-	return requestPermanentDeleteRepository(repoId);
-}
-
 export async function requestRepositoryMembers(repoId: string) {
 	const response = await apiClient.get<{
 		members: Array<{
