@@ -18,7 +18,7 @@ sequenceDiagram
     Note over Backend,DB: admin은 전체 repository read 가능<br/>일반 사용자는 repo_members와 public repository 기준
 
     Backend->>Redis: active stream cache 조회
-    Note over Backend,Redis: set: stream:active:sessions<br/>MGET: stream:recording:{recordingSessionId}<br/>required cache status: STREAMING
+    Note over Backend,Redis: set: stream:active:sessions<br/>MGET: stream:recording:{recordingSessionId}<br/><br/>active set membership을 live 후보로 본다.<br/>cache status 재검증은 목록 응답 생성 조건으로 쓰지 않는다.
 
     Backend-->>FE: 200 { streams }
     Note over Backend,FE: item fields<br/>recording_session_id<br/>repository_id<br/>repository_name<br/>user_id<br/>device_type<br/>ingest_type<br/>stream_path<br/>status=live<br/>playback_available<br/>bytes_received<br/>last_sequence<br/>last_chunk_at<br/><br/>server-built HLS path는 반환하지 않는다.
@@ -33,7 +33,8 @@ sequenceDiagram
     Backend->>DB: STREAMING session + repository read 권한 확인
     Backend->>MTX: active path 조회
     Note over Backend,MTX: MediaMTX Control API /v3/paths/list<br/>stream_path가 active path인지 확인해 playback_ready 계산
-    Backend-->>FE: playback_ready 포함 detail
+    Backend-->>FE: 200 live stream detail
+    Note over Backend,FE: Response Body<br/>recording_session_id: {recordingSessionId}<br/>repository_id: {repositoryId}<br/>repository_name: {repositoryName}<br/>owner_id: {ownerId}<br/>user_id: {publisherUserId}<br/>device_type: optional_device_type | null<br/>ingest_type: MEDIAMTX | HTTP<br/>stream_path: live/{repo}/{recordingSessionId}<br/>registered_at: ISO datetime<br/>status: live<br/>playback_available: boolean<br/>playback_ready: boolean
   end
 
   alt playback_ready=false
@@ -57,16 +58,16 @@ sequenceDiagram
     end
 
     FE->>FE: direct HLS URL 구성
-    Note over FE: host = URL(getBackendOrigin()).hostname<br/>fallback = window.location.hostname<br/>url = http://{host}:8888/{stream_path}/index.m3u8?ticket={playback_ticket}
+    Note over FE: host = URL(getBackendOrigin()).hostname<br/>fallback = window.location.hostname<br/>viewer user id = dashboard session user.id<br/>url = http://{host}:8888/{stream_path}/index.m3u8?ticket={playback_ticket}&user_id={viewerUserId}
 
-    FE->>MTX: GET /live/{repo}/{recordingSessionId}/index.m3u8?ticket=pt_...
-    Note over FE,MTX: hls.js xhrSetup<br/>Authorization: Bearer pt_...<br/>withCredentials=false
+    FE->>MTX: GET /live/{repo}/{recordingSessionId}/index.m3u8?ticket=pt_...&user_id=viewer
+    Note over FE,MTX: hls.js xhrSetup<br/>withCredentials=false<br/>Authorization header는 사용하지 않는다.<br/>playlist/segment 요청 URL에 source query(ticket, user_id)를 유지한다.
 
     MTX->>Backend: POST /api/v1/auth/mediamtx
-    Note over MTX,Backend: MediaMTX authHTTPAddress payload<br/>action=read 또는 playback<br/>protocol=hls<br/>path=live/{repo}/{recordingSessionId}<br/>token=pt_... 또는 query=ticket=pt_...
+    Note over MTX,Backend: MediaMTX authHTTPAddress payload<br/>action=read 또는 playback<br/>protocol=hls<br/>path=live/{repo}/{recordingSessionId}<br/>query=ticket=pt_...&user_id=viewer
 
     Backend->>Redis: playback ticket + live cache 검증
-    Note over Backend,Redis: DB-free hot path<br/>1. stream:hls-ticket:{ticket} exists<br/>2. ticket.status=active<br/>3. ticket.ingestType=MEDIAMTX<br/>4. ticket.streamPath == path<br/>5. stream:recording:{recordingSessionId} exists<br/>6. live cache status=STREAMING<br/>7. live cache ingestType=MEDIAMTX<br/>8. repositoryId/path match<br/>9. ticket TTL refresh to 600s
+    Note over Backend,Redis: DB-free hot path<br/>1. stream:hls-ticket:{ticket} exists<br/>2. ticket.status=active<br/>3. ticket.userId == query.user_id<br/>4. ticket.ingestType=MEDIAMTX<br/>5. ticket.streamPath == path<br/>6. stream:recording:{recordingSessionId} exists<br/>7. live cache status=STREAMING<br/>8. live cache ingestType=MEDIAMTX<br/>9. repositoryId/path match<br/>10. ticket TTL refresh to 600s
 
     alt ticket invalid or stream inactive
       Backend-->>MTX: 401 Unauthorized
@@ -91,5 +92,6 @@ sequenceDiagram
 %% Live list/detail endpoint는 App JWT도 허용하지만, playback 실행 권한은 ticket 발급 시 dashboard/Python으로 제한한다.
 %% HLS bytes는 Caddy를 거치지 않고 MediaMTX 8888/tcp에서 직접 받는다.
 %% Caddy /hls route와 legacy HLS auth endpoint는 현재 구조에 없다.
-%% browser가 hls.js로 요청하는 모든 playlist/segment XHR에는 Authorization: Bearer playback_ticket을 붙인다.
-%% query ticket은 initial URL 식별자이고, Authorization header는 segment request까지 안정적으로 ticket을 전달하기 위한 경로다.
+%% browser가 hls.js로 요청하는 모든 playlist/segment XHR은 Authorization header를 쓰지 않는다.
+%% 대신 initial HLS URL의 query(ticket, user_id)를 playlist/segment 요청 URL에도 다시 붙인다.
+%% playback auth는 ticket 소유자 userId와 query.user_id가 일치해야 통과한다.
