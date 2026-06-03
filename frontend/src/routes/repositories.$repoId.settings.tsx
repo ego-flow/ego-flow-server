@@ -86,9 +86,9 @@ function RepositorySettingsPage() {
 		mutationFn: () => requestDeactivateRepository(repoId),
 		onSuccess: async () => {
 			setIsDeactivateDialogOpen(false);
-			await queryClient.invalidateQueries({ queryKey: ["repositories"] });
-			await queryClient.invalidateQueries({ queryKey: ["repository", repoId] });
-			await queryClient.invalidateQueries({
+			void queryClient.invalidateQueries({ queryKey: ["repositories"] });
+			void queryClient.invalidateQueries({ queryKey: ["repository", repoId] });
+			void queryClient.invalidateQueries({
 				queryKey: ["repositories", "deactivated"],
 			});
 			await navigate({
