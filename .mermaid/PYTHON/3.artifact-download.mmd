@@ -1,41 +1,66 @@
 sequenceDiagram
   autonumber
-  participant Python as [Python Package]
+  participant Python as [ego-flow Python Package]
+  participant Cache as [Local Cache]
   participant Backend as [Backend]
   participant DB as [DB]
   participant Storage as [Storage]
 
-  Python->>Python: manifest video 선택
-  Note over Python: selected artifact<br/>video_id: video_uuid<br/>repository_id: repository_uuid<br/>artifacts.vlm_video.download_url: /api/v1/repositories/{repoId}/videos/{videoId}/download<br/>artifacts.vlm_video.sha256: expected_sha256<br/>artifacts.thumbnail.download_url: /files/... 또는 null
+  Python->>Cache: CacheManager 생성
+  Note over Python,Cache: root = EGO_FLOW_CACHE 또는 platformdirs user_cache_dir("ego-flow")<br/>server_root = {cache}/servers/{host-hint}-{sha1(api_base_url)[0:12]}<br/>repository_dir = repositories/{owner_id}/{repository_name}
 
-  Python->>Backend: VLM video download 요청
-  Note over Python,Backend: API<br/>GET /api/v1/repositories/{repoId}/videos/{videoId}/download<br/><br/>Headers<br/>Authorization: Bearer ef_raw_python_static_token
+  Python->>Python: manifest video artifact 선택
+  Note over Python: selected fields<br/>video.video_id<br/>artifact.download_url<br/>artifact.size_bytes<br/>artifact.sha256<br/>artifact.content_type<br/>thumbnail.download_url optional
 
-  Backend->>Backend: requireDashboardOrPython
-  Backend->>DB: repository read 권한 + video 조회
-  Note over Backend,DB: videos row<br/>repository_id = repoId<br/>id = videoId<br/>요청자가 read 가능한 repository의 video인지 확인
-  Backend->>Storage: video file 존재 확인
+  Python->>Cache: ensure_video(client, repository, video)
+  Note over Python,Cache: local path<br/>videos/{video_id}-{sha12}.mp4<br/><br/>download_mode != force_redownload이고<br/>파일이 존재하며 sha256이 일치하면 download 생략
 
-  alt video missing or not readable
-    Backend-->>Python: 404 Not Found or 403 Forbidden
-  else video file available
-    Backend-->>Python: 307 Redirect
-    Note over Backend,Python: Location<br/>/files/{owner}/{repo}/{file}?signature=...
-    Python->>Storage: signed URL로 artifact bytes 다운로드
-    Note over Python,Storage: GET /files/{owner}/{repo}/{file}?signature=...<br/><br/>Python transport는 redirect를 따라가거나<br/>manifest의 signed thumbnail URL을 직접 요청한다.
-    Storage-->>Python: video bytes
-    Python->>Python: checksum 검증 및 cache 저장
-    Note over Python: sha256이 manifest 값과 다르면 download error 처리<br/>정상인 경우 destination path로 atomic replace
+  alt cached video valid
+    Cache-->>Python: cached video path
+  else cache missing or invalid
+    Python->>Backend: GET /api/v1/repositories/{repoId}/videos/{videoId}/download
+    Note over Python,Backend: Headers<br/>Authorization: Bearer ef_raw_python_static_token<br/><br/>download_url이 absolute URL, /api/ URL, /files/ URL 중 무엇이든<br/>EgoFlowClient._absolute_any_url()로 절대 URL화한다.
+
+    Backend->>Backend: requireDashboardOrPython
+    Backend->>DB: repository read 권한 + video 조회
+    Note over Backend,DB: video.repository_id = repoId<br/>video.id = videoId<br/>video.status = COMPLETED<br/>vlm_video_path exists
+    Backend->>Storage: video file 존재 확인
+
+    alt not visible or file missing
+      Backend-->>Python: 403 Forbidden or 404 Not Found
+      Python->>Python: EgoFlowPermissionError or EgoFlowNotFoundError
+    else artifact available
+      Backend-->>Python: redirect or file response
+      Note over Backend,Python: 현재 server download endpoint는 file-serving 경로로 연결되는 URL을 반환/redirect한다.
+      Python->>Storage: artifact bytes download
+      Storage-->>Python: video bytes
+      Python->>Cache: tmp file write
+      Python->>Python: sha256 검증
+      alt sha mismatch
+        Python->>Cache: tmp file 삭제
+        Python->>Python: EgoFlowDownloadError
+      else sha ok
+        Python->>Cache: tmp file을 final path로 atomic replace
+        Cache-->>Python: cached video path
+      end
+    end
   end
 
-  opt thumbnail requested
-    Python->>Storage: signed thumbnail URL 요청
-    Note over Python,Storage: GET /files/{owner}/{repo}/.thumbnails/{file}?signature=...
-    Storage-->>Python: thumbnail bytes
-    Python->>Python: thumbnail cache 저장
+  opt with_thumbnails=true and thumbnail artifact exists
+    Python->>Cache: ensure_thumbnail(client, repository, video)
+    Note over Python,Cache: local path<br/>thumbnails/{video_id}.jpg<br/><br/>thumbnail은 sha256 검증 없이 존재 여부 기준으로 cache reuse
+    alt cached thumbnail exists
+      Cache-->>Python: cached thumbnail path
+    else thumbnail missing
+      Python->>Storage: GET signed thumbnail URL
+      Note over Python,Storage: manifest artifacts.thumbnail.download_url<br/>예: /files/{owner}/{repo}/.thumbnails/{file}?signature=...
+      Storage-->>Python: thumbnail bytes
+      Python->>Cache: thumbnail 저장
+    end
   end
 
 %% 참고:
-%% VLM video artifact는 API download endpoint를 통해 signed file URL로 redirect된다.
-%% thumbnail artifact는 manifest에서 이미 signed /files URL로 제공될 수 있다.
-%% Python package는 manifest artifact metadata를 기준으로 cache reuse 또는 redownload를 결정한다.
+%% artifact download는 Python static token 기반 API 호출과 signed file URL download를 조합한다.
+%% video artifact는 manifest sha256을 기준으로 cache 무결성을 검증한다.
+%% thumbnail artifact는 현재 ego-flow-py에서 sha256 metadata가 없으므로 파일 존재 여부만 cache hit로 본다.
+%% download_mode="reuse_dataset_if_exists"는 현재 코드상 cache 재사용 모드와 동일하게 처리된다.
