@@ -45,9 +45,9 @@ moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
   return originalLoad(request, parent, isMain);
 }) as typeof moduleLoader._load;
 
-const jwtLib = require("../src/lib/jwt") as typeof import("../src/lib/jwt");
-const { adminService } =
-  require("../src/services/admin.service") as typeof import("../src/services/admin.service");
+const accessTokenLib = require("../src/lib/auth/access-token") as typeof import("../src/lib/auth/access-token");
+const { userRepository } =
+  require("../src/repositories/user.repository") as typeof import("../src/repositories/user.repository");
 const { apiTokenService } =
   require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
 const { dashboardSessionService } =
@@ -56,19 +56,18 @@ const { verifySignedFileUrlToken } =
   require("../src/lib/signed-file-url") as typeof import("../src/lib/signed-file-url");
 const { getTargetDirectory } =
   require("../src/lib/storage") as typeof import("../src/lib/storage");
-const { repositoryService } =
-  require("../src/services/repository.service") as typeof import("../src/services/repository.service");
+const { repositoryAccessService } =
+  require("../src/services/repository-access.service") as typeof import("../src/services/repository-access.service");
 const { videoService } =
   require("../src/services/video.service") as typeof import("../src/services/video.service");
 const { repositoryVideosRoutes } =
   require("../src/routes/repository-videos.routes") as typeof import("../src/routes/repository-videos.routes");
 
-const originalVerifyAccessToken = jwtLib.verifyAccessToken;
-const originalShouldRefreshToken = jwtLib.shouldRefreshToken;
-const originalGetAuthenticatedUser = adminService.getAuthenticatedUser;
+const originalVerifyAccessToken = accessTokenLib.verifyAccessToken;
+const originalFindActiveAuthenticatedUser = userRepository.findActiveAuthenticatedUser;
 const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
 const originalVerifyDashboardSession = dashboardSessionService.verifySession;
-const originalAssertRepositoryAccess = repositoryService.assertRepositoryAccess;
+const originalAssertRepositoryAccess = repositoryAccessService.assertAccess;
 const originalListRepositoryVideos = videoService.listRepositoryVideos;
 const originalGetRepositoryVideoDownload = videoService.getRepositoryVideoDownload;
 const originalDeleteRepositoryVideo = videoService.deleteRepositoryVideo;
@@ -106,12 +105,11 @@ const startServer = async () => {
 };
 
 beforeEach(() => {
-  (jwtLib as any).verifyAccessToken = (() => ({
+  (accessTokenLib as any).verifyAccessToken = (() => ({
     userId: "alice",
     role: "user",
-  })) as typeof jwtLib.verifyAccessToken;
-  (jwtLib as any).shouldRefreshToken = (() => false) as typeof jwtLib.shouldRefreshToken;
-  adminService.getAuthenticatedUser = async () => ({
+  })) as typeof accessTokenLib.verifyAccessToken;
+  userRepository.findActiveAuthenticatedUser = async () => ({
     userId: "alice",
     role: "user",
     displayName: "Alice Kim",
@@ -132,7 +130,7 @@ beforeEach(() => {
           displayName: "Alice Kim",
         }
       : null;
-  repositoryService.assertRepositoryAccess = (async (
+  repositoryAccessService.assertAccess = (async (
     _userId: string,
     _userRole: "admin" | "user",
     repoId: string,
@@ -156,19 +154,18 @@ beforeEach(() => {
       effectiveRole: "read",
       isSystemAdmin: false,
     };
-  }) as typeof repositoryService.assertRepositoryAccess;
+  }) as typeof repositoryAccessService.assertAccess;
   videoService.listRepositoryVideos = originalListRepositoryVideos;
   videoService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
   videoService.deleteRepositoryVideo = originalDeleteRepositoryVideo;
 });
 
 afterEach(async () => {
-  (jwtLib as any).verifyAccessToken = originalVerifyAccessToken;
-  (jwtLib as any).shouldRefreshToken = originalShouldRefreshToken;
-  adminService.getAuthenticatedUser = originalGetAuthenticatedUser;
+  (accessTokenLib as any).verifyAccessToken = originalVerifyAccessToken;
+  userRepository.findActiveAuthenticatedUser = originalFindActiveAuthenticatedUser;
   apiTokenService.verifyPythonToken = originalVerifyPythonToken;
   dashboardSessionService.verifySession = originalVerifyDashboardSession;
-  repositoryService.assertRepositoryAccess = originalAssertRepositoryAccess;
+  repositoryAccessService.assertAccess = originalAssertRepositoryAccess;
   videoService.listRepositoryVideos = originalListRepositoryVideos;
   videoService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
   videoService.deleteRepositoryVideo = originalDeleteRepositoryVideo;

@@ -1,15 +1,17 @@
 import type { NextFunction, Request, Response } from "express";
-import jwt from "jsonwebtoken";
 
 import { DASHBOARD_SESSION_COOKIE_NAME, PYTHON_TOKEN_PREFIX } from "../constants/auth/auth-constants";
+import {
+  isAccessTokenVerificationError,
+  resolveRefreshedAccessToken,
+  verifyAccessToken,
+} from "../lib/auth/access-token";
+import { extractBearerToken, extractCookie } from "../lib/auth/http-credentials";
 import { Unauthorized } from "../lib/errors";
-import { shouldRefreshToken, signAccessToken, verifyAccessToken } from "../lib/jwt";
 import { apiTokenService } from "../services/api-token.service";
-import { adminService } from "../services/admin.service";
+import { userRepository } from "../repositories/user.repository";
 import { dashboardSessionService } from "../services/dashboard-session.service";
 import { AuthCredentialKind, type AuthContext, type AuthenticatedUser } from "../types/auth";
-import { extractBearerToken } from "../utils/http-auth";
-import { extractCookie } from "../utils/http-cookie";
 
 const setAuthContext = (req: Request, context: AuthContext) => {
   req.auth = context;
@@ -52,7 +54,7 @@ const authenticatePythonToken = async (req: Request): Promise<AuthContext | null
     throw Unauthorized("Invalid token.");
   }
 
-  const authenticatedUser = await adminService.getAuthenticatedUser(payload.userId);
+  const authenticatedUser = await userRepository.findActiveAuthenticatedUser(payload.userId);
   if (!authenticatedUser) {
     throw Unauthorized("Invalid token.");
   }
@@ -72,14 +74,14 @@ const authenticateAppJwt = async (req: Request, res: Response): Promise<AuthCont
 
   try {
     const payload = verifyAccessToken(token);
-    const authenticatedUser = await adminService.getAuthenticatedUser(payload.userId);
+    const authenticatedUser = await userRepository.findActiveAuthenticatedUser(payload.userId);
     if (!authenticatedUser) {
       throw Unauthorized("App access token is invalid or expired.");
     }
 
-    if (shouldRefreshToken(token) || authenticatedUser.role !== payload.role) {
-      const refreshed = signAccessToken(authenticatedUser);
-      res.setHeader("X-Refreshed-Token", refreshed);
+    const refreshedToken = resolveRefreshedAccessToken(payload, authenticatedUser);
+    if (refreshedToken) {
+      res.setHeader("X-Refreshed-Token", refreshedToken);
     }
 
     return {
@@ -88,7 +90,7 @@ const authenticateAppJwt = async (req: Request, res: Response): Promise<AuthCont
       ...authenticatedUser,
     };
   } catch (error) {
-    if (error instanceof jwt.JsonWebTokenError) {
+    if (isAccessTokenVerificationError(error)) {
       throw Unauthorized("App access token is invalid or expired.");
     }
     throw error;

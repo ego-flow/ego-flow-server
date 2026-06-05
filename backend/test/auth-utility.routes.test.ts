@@ -42,9 +42,8 @@ moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
   return originalLoad(request, parent, isMain);
 }) as typeof moduleLoader._load;
 
-const jwtLib = require("../src/lib/jwt") as typeof import("../src/lib/jwt");
-const { adminService } =
-  require("../src/services/admin.service") as typeof import("../src/services/admin.service");
+const { userRepository } =
+  require("../src/repositories/user.repository") as typeof import("../src/repositories/user.repository");
 const { apiTokenService } =
   require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
 const { dashboardSessionService } =
@@ -57,9 +56,7 @@ const { DASHBOARD_SESSION_COOKIE_NAME } =
   require("../src/constants/auth/auth-constants") as typeof import("../src/constants/auth/auth-constants");
 
 const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
-const originalGetAuthenticatedUser = adminService.getAuthenticatedUser;
-const originalVerifyAccessToken = jwtLib.verifyAccessToken;
-const originalShouldRefreshToken = jwtLib.shouldRefreshToken;
+const originalFindActiveAuthenticatedUser = userRepository.findActiveAuthenticatedUser;
 const originalIssuePythonToken = authService.issuePythonToken;
 const originalVerifyDashboardSession = dashboardSessionService.verifySession;
 
@@ -82,9 +79,7 @@ const startServer = async () => {
 beforeEach(() => {
   fakeRedisModule.redis.clear();
   apiTokenService.verifyPythonToken = originalVerifyPythonToken;
-  adminService.getAuthenticatedUser = originalGetAuthenticatedUser;
-  (jwtLib as any).verifyAccessToken = originalVerifyAccessToken;
-  (jwtLib as any).shouldRefreshToken = originalShouldRefreshToken;
+  userRepository.findActiveAuthenticatedUser = originalFindActiveAuthenticatedUser;
   authService.issuePythonToken = originalIssuePythonToken;
   dashboardSessionService.verifySession = originalVerifyDashboardSession;
 });
@@ -180,7 +175,7 @@ test("GET /auth/python/tokens/validate returns the Python token owner", async ()
       role: "user",
     };
   };
-  adminService.getAuthenticatedUser = async (userId: string) => {
+  userRepository.findActiveAuthenticatedUser = async (userId: string) => {
     assert.equal(userId, "alice");
     return {
       userId,

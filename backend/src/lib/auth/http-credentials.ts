@@ -1,3 +1,18 @@
+import { HttpAuthScheme } from "../../constants/auth/auth-constants";
+
+export const extractBearerToken = (authorizationHeader?: string): string | null => {
+  if (!authorizationHeader) {
+    return null;
+  }
+
+  const [scheme, token] = authorizationHeader.split(" ");
+  if (scheme !== HttpAuthScheme.Bearer || !token) {
+    return null;
+  }
+
+  return token;
+};
+
 export const extractCookie = (cookieHeader: string | undefined, name: string): string | null => {
   if (!cookieHeader) {
     return null;

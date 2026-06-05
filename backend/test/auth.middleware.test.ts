@@ -11,9 +11,10 @@ process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 (globalThis as any).__egoflowPrisma = {} as any;
 (globalThis as any).__egoflowRedis = new FakeRedis();
 
-const jwtLib = require("../src/lib/jwt") as typeof import("../src/lib/jwt");
-const { adminService } =
-  require("../src/services/admin.service") as typeof import("../src/services/admin.service");
+const accessTokenLib =
+  require("../src/lib/auth/access-token") as typeof import("../src/lib/auth/access-token");
+const { userRepository } =
+  require("../src/repositories/user.repository") as typeof import("../src/repositories/user.repository");
 const { apiTokenService } =
   require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
 const { requireDashboardOrAppOrPython } =
@@ -22,10 +23,9 @@ const { requireDashboardOrAppOrPython } =
 type HeaderMap = Record<string, string>;
 
 const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
-const originalGetAuthenticatedUser = adminService.getAuthenticatedUser;
-const originalVerifyAccessToken = jwtLib.verifyAccessToken;
-const originalShouldRefreshToken = jwtLib.shouldRefreshToken;
-const originalSignAccessToken = jwtLib.signAccessToken;
+const originalFindActiveAuthenticatedUser = userRepository.findActiveAuthenticatedUser;
+const originalVerifyAccessToken = accessTokenLib.verifyAccessToken;
+const originalResolveRefreshedAccessToken = accessTokenLib.resolveRefreshedAccessToken;
 
 const createResponse = () => {
   const headers: HeaderMap = {};
@@ -40,10 +40,9 @@ const createResponse = () => {
 
 beforeEach(() => {
   apiTokenService.verifyPythonToken = originalVerifyPythonToken;
-  adminService.getAuthenticatedUser = originalGetAuthenticatedUser;
-  (jwtLib as any).verifyAccessToken = originalVerifyAccessToken;
-  (jwtLib as any).shouldRefreshToken = originalShouldRefreshToken;
-  (jwtLib as any).signAccessToken = originalSignAccessToken;
+  userRepository.findActiveAuthenticatedUser = originalFindActiveAuthenticatedUser;
+  (accessTokenLib as any).verifyAccessToken = originalVerifyAccessToken;
+  (accessTokenLib as any).resolveRefreshedAccessToken = originalResolveRefreshedAccessToken;
 });
 
 test("requireDashboardOrAppOrPython accepts ef_ Python tokens without emitting a refreshed header", async () => {
@@ -56,15 +55,15 @@ test("requireDashboardOrAppOrPython accepts ef_ Python tokens without emitting a
       role: "user",
     };
   };
-  adminService.getAuthenticatedUser = async (userId: string) => ({
+  userRepository.findActiveAuthenticatedUser = async (userId: string) => ({
     userId,
     role: "user",
     displayName: "Alice Kim",
   });
-  (jwtLib as any).verifyAccessToken = (() => {
+  (accessTokenLib as any).verifyAccessToken = (() => {
     jwtVerified = true;
     throw new Error("JWT path should not run");
-  }) as typeof jwtLib.verifyAccessToken;
+  }) as typeof accessTokenLib.verifyAccessToken;
 
   const req: any = {
     headers: {
@@ -90,13 +89,13 @@ test("requireDashboardOrAppOrPython accepts ef_ Python tokens without emitting a
 });
 
 test("requireDashboardOrAppOrPython keeps JWT refresh behavior for non-Python bearer tokens", async () => {
-  (jwtLib as any).verifyAccessToken = (() => ({
+  (accessTokenLib as any).verifyAccessToken = (() => ({
     userId: "alice",
     role: "user",
-  })) as typeof jwtLib.verifyAccessToken;
-  (jwtLib as any).shouldRefreshToken = (() => true) as typeof jwtLib.shouldRefreshToken;
-  (jwtLib as any).signAccessToken = (() => "refreshed.jwt") as typeof jwtLib.signAccessToken;
-  adminService.getAuthenticatedUser = async () => ({
+  })) as typeof accessTokenLib.verifyAccessToken;
+  (accessTokenLib as any).resolveRefreshedAccessToken =
+    (() => "refreshed.jwt") as typeof accessTokenLib.resolveRefreshedAccessToken;
+  userRepository.findActiveAuthenticatedUser = async () => ({
     userId: "alice",
     role: "user",
     displayName: "Alice Kim",

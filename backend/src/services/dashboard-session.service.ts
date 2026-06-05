@@ -10,9 +10,9 @@ import {
   DASHBOARD_SESSION_TOKEN_PREFIX,
 } from "../constants/auth/auth-constants";
 import { redis } from "../lib/redis";
+import { userRepository } from "../repositories/user.repository";
 import type { AuthenticatedUser } from "../types/auth";
 import { createPrefixedRandomToken, hashValue } from "../utils/crypto";
-import { adminService } from "./admin.service";
 
 interface DashboardSessionRecord {
   sessionId: string;
@@ -106,7 +106,7 @@ export class DashboardSessionService {
       return null;
     }
 
-    const authenticatedUser = await adminService.getAuthenticatedUser(session.userId);
+    const authenticatedUser = await userRepository.findActiveAuthenticatedUser(session.userId);
     if (!authenticatedUser) {
       return null;
     }

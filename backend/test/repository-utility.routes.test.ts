@@ -43,11 +43,13 @@ moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
   return originalLoad(request, parent, isMain);
 }) as typeof moduleLoader._load;
 
-const jwtLib = require("../src/lib/jwt") as typeof import("../src/lib/jwt");
-const { adminService } =
-  require("../src/services/admin.service") as typeof import("../src/services/admin.service");
+const accessTokenLib = require("../src/lib/auth/access-token") as typeof import("../src/lib/auth/access-token");
+const { userRepository } =
+  require("../src/repositories/user.repository") as typeof import("../src/repositories/user.repository");
 const { apiTokenService } =
   require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
+const { repositoryAccessService } =
+  require("../src/services/repository-access.service") as typeof import("../src/services/repository-access.service");
 const { repositoryService } =
   require("../src/services/repository.service") as typeof import("../src/services/repository.service");
 const { videoService } =
@@ -55,11 +57,10 @@ const { videoService } =
 const { repositoriesRoutes } =
   require("../src/routes/repositories.routes") as typeof import("../src/routes/repositories.routes");
 
-const originalVerifyAccessToken = jwtLib.verifyAccessToken;
-const originalShouldRefreshToken = jwtLib.shouldRefreshToken;
-const originalGetAuthenticatedUser = adminService.getAuthenticatedUser;
+const originalVerifyAccessToken = accessTokenLib.verifyAccessToken;
+const originalFindActiveAuthenticatedUser = userRepository.findActiveAuthenticatedUser;
 const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
-const originalAssertRepositoryAccess = repositoryService.assertRepositoryAccess;
+const originalAssertRepositoryAccess = repositoryAccessService.assertAccess;
 const originalResolveRepository = repositoryService.resolveRepository;
 const originalGetRepositoryManifest = videoService.getRepositoryManifest;
 
@@ -81,11 +82,10 @@ const startServer = async () => {
 };
 
 beforeEach(() => {
-  (jwtLib as any).verifyAccessToken = originalVerifyAccessToken;
-  (jwtLib as any).shouldRefreshToken = originalShouldRefreshToken;
-  adminService.getAuthenticatedUser = originalGetAuthenticatedUser;
+  (accessTokenLib as any).verifyAccessToken = originalVerifyAccessToken;
+  userRepository.findActiveAuthenticatedUser = originalFindActiveAuthenticatedUser;
   apiTokenService.verifyPythonToken = originalVerifyPythonToken;
-  repositoryService.assertRepositoryAccess = originalAssertRepositoryAccess;
+  repositoryAccessService.assertAccess = originalAssertRepositoryAccess;
   repositoryService.resolveRepository = originalResolveRepository;
   videoService.getRepositoryManifest = originalGetRepositoryManifest;
 });
@@ -109,12 +109,11 @@ test("GET /repositories/resolve supports slug and owner_id/name forms", async ()
   const baseUrl = await startServer();
   const calls: Array<{ ownerId: string; repoName: string }> = [];
 
-  (jwtLib as any).verifyAccessToken = (() => ({
+  (accessTokenLib as any).verifyAccessToken = (() => ({
     userId: "alice",
     role: "user",
-  })) as typeof jwtLib.verifyAccessToken;
-  (jwtLib as any).shouldRefreshToken = (() => false) as typeof jwtLib.shouldRefreshToken;
-  adminService.getAuthenticatedUser = async () => ({
+  })) as typeof accessTokenLib.verifyAccessToken;
+  userRepository.findActiveAuthenticatedUser = async () => ({
     userId: "alice",
     role: "user",
     displayName: "Alice Kim",
@@ -169,12 +168,11 @@ test("GET /repositories/resolve supports slug and owner_id/name forms", async ()
 test("GET /repositories/resolve returns 400 for invalid slug and 404 for hidden repositories", async () => {
   const baseUrl = await startServer();
 
-  (jwtLib as any).verifyAccessToken = (() => ({
+  (accessTokenLib as any).verifyAccessToken = (() => ({
     userId: "alice",
     role: "user",
-  })) as typeof jwtLib.verifyAccessToken;
-  (jwtLib as any).shouldRefreshToken = (() => false) as typeof jwtLib.shouldRefreshToken;
-  adminService.getAuthenticatedUser = async () => ({
+  })) as typeof accessTokenLib.verifyAccessToken;
+  userRepository.findActiveAuthenticatedUser = async () => ({
     userId: "alice",
     role: "user",
     displayName: "Alice Kim",
@@ -209,7 +207,7 @@ test("GET /repositories/resolve accepts Python static tokens", async () => {
     userId: "alice",
     role: "user",
   });
-  adminService.getAuthenticatedUser = async () => ({
+  userRepository.findActiveAuthenticatedUser = async () => ({
     userId: "alice",
     role: "user",
     displayName: "Alice Kim",
@@ -246,12 +244,11 @@ test("GET /repositories/:repoId/manifest uses repoAccess context and validated q
   let capturedPage = 0;
   let capturedLimit = 0;
 
-  (jwtLib as any).verifyAccessToken = (() => ({
+  (accessTokenLib as any).verifyAccessToken = (() => ({
     userId: "alice",
     role: "user",
-  })) as typeof jwtLib.verifyAccessToken;
-  (jwtLib as any).shouldRefreshToken = (() => false) as typeof jwtLib.shouldRefreshToken;
-  adminService.getAuthenticatedUser = async () => ({
+  })) as typeof accessTokenLib.verifyAccessToken;
+  userRepository.findActiveAuthenticatedUser = async () => ({
     userId: "alice",
     role: "user",
     displayName: "Alice Kim",
@@ -260,7 +257,7 @@ test("GET /repositories/:repoId/manifest uses repoAccess context and validated q
     userId: "alice",
     role: "user",
   });
-  repositoryService.assertRepositoryAccess = (async () => ({
+  repositoryAccessService.assertAccess = (async () => ({
     repository: {
       id: repoId,
       name: "daily-kitchen",
@@ -273,7 +270,7 @@ test("GET /repositories/:repoId/manifest uses repoAccess context and validated q
     },
     effectiveRole: "read",
     isSystemAdmin: false,
-  })) as typeof repositoryService.assertRepositoryAccess;
+  })) as typeof repositoryAccessService.assertAccess;
   videoService.getRepositoryManifest = (async (requestedRepoId, repository, effectiveRole, query) => {
     capturedRepoId = requestedRepoId;
     capturedRole = effectiveRole;
@@ -336,12 +333,11 @@ test("GET /repositories/:repoId/manifest rejects invalid queries and missing aut
   assert.equal(unauthorizedResponse.status, 401);
   assert.equal((await unauthorizedResponse.json()).error.code, "UNAUTHORIZED");
 
-  (jwtLib as any).verifyAccessToken = (() => ({
+  (accessTokenLib as any).verifyAccessToken = (() => ({
     userId: "alice",
     role: "user",
-  })) as typeof jwtLib.verifyAccessToken;
-  (jwtLib as any).shouldRefreshToken = (() => false) as typeof jwtLib.shouldRefreshToken;
-  adminService.getAuthenticatedUser = async () => ({
+  })) as typeof accessTokenLib.verifyAccessToken;
+  userRepository.findActiveAuthenticatedUser = async () => ({
     userId: "alice",
     role: "user",
     displayName: "Alice Kim",
@@ -350,7 +346,7 @@ test("GET /repositories/:repoId/manifest rejects invalid queries and missing aut
     userId: "alice",
     role: "user",
   });
-  repositoryService.assertRepositoryAccess = (async () => ({
+  repositoryAccessService.assertAccess = (async () => ({
     repository: {
       id: repoId,
       name: "daily-kitchen",
@@ -363,7 +359,7 @@ test("GET /repositories/:repoId/manifest rejects invalid queries and missing aut
     },
     effectiveRole: "read",
     isSystemAdmin: false,
-  })) as typeof repositoryService.assertRepositoryAccess;
+  })) as typeof repositoryAccessService.assertAccess;
 
   const invalidLimitResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/manifest?limit=201`, {
     headers: { Authorization: "Bearer ef_0123456789abcdef0123456789abcdef01234567" },
@@ -377,12 +373,11 @@ test("GET /repositories/:repoId/manifest applies default page and limit", async 
   let capturedPage = 0;
   let capturedLimit = 0;
 
-  (jwtLib as any).verifyAccessToken = (() => ({
+  (accessTokenLib as any).verifyAccessToken = (() => ({
     userId: "alice",
     role: "user",
-  })) as typeof jwtLib.verifyAccessToken;
-  (jwtLib as any).shouldRefreshToken = (() => false) as typeof jwtLib.shouldRefreshToken;
-  adminService.getAuthenticatedUser = async () => ({
+  })) as typeof accessTokenLib.verifyAccessToken;
+  userRepository.findActiveAuthenticatedUser = async () => ({
     userId: "alice",
     role: "user",
     displayName: "Alice Kim",
@@ -391,7 +386,7 @@ test("GET /repositories/:repoId/manifest applies default page and limit", async 
     userId: "alice",
     role: "user",
   });
-  repositoryService.assertRepositoryAccess = (async () => ({
+  repositoryAccessService.assertAccess = (async () => ({
     repository: {
       id: repoId,
       name: "daily-kitchen",
@@ -404,7 +399,7 @@ test("GET /repositories/:repoId/manifest applies default page and limit", async 
     },
     effectiveRole: "read",
     isSystemAdmin: false,
-  })) as typeof repositoryService.assertRepositoryAccess;
+  })) as typeof repositoryAccessService.assertAccess;
   videoService.getRepositoryManifest = (async (_repoId, repository, effectiveRole, query) => {
     capturedPage = query.page;
     capturedLimit = query.limit;

@@ -1,12 +1,12 @@
 import bcrypt from "bcryptjs";
-import { RecordingSessionIngestType, UserRole } from "@prisma/client";
+import { RecordingSessionIngestType } from "@prisma/client";
 
 import { ErrorCode, Unauthorized } from "../lib/errors";
-import { signAccessToken } from "../lib/jwt";
+import { signAccessToken } from "../lib/auth/access-token";
 import { prisma } from "../lib/prisma";
+import { toAppUserRole } from "../mappers/user.mapper";
 import type { IssuePythonTokenInput, LoginInput, MediaMtxAuthInput } from "../schemas/auth.schema";
 import type { ChangeMyPasswordInput } from "../schemas/user.schema";
-import type { AppUserRole } from "../types/auth";
 import { apiTokenService } from "./api-token.service";
 import { streamOwnershipService } from "./stream-ownership.service";
 import { streamService } from "./stream.service";
@@ -71,10 +71,9 @@ export class AuthService {
       throw Unauthorized("Invalid id or password.", ErrorCode.INVALID_CREDENTIALS);
     }
 
-    const role: AppUserRole = user.role === UserRole.admin ? "admin" : "user";
     return {
       id: user.id,
-      role,
+      role: toAppUserRole(user.role),
       displayName: user.displayName,
     };
   }

@@ -48,13 +48,15 @@ const fakePrisma: any = {
 
 const { streamService } =
   require("../src/services/stream.service") as typeof import("../src/services/stream.service");
+const { repositoryAccessService } =
+  require("../src/services/repository-access.service") as typeof import("../src/services/repository-access.service");
 const { repositoryService } =
   require("../src/services/repository.service") as typeof import("../src/services/repository.service");
 const { Forbidden, NotFound } = require("../src/lib/errors") as typeof import("../src/lib/errors");
 
-const originalAssertRepositoryAccess = repositoryService.assertRepositoryAccess;
+const originalAssertAccess = repositoryAccessService.assertAccess;
+const originalGetAccess = repositoryAccessService.getAccess;
 const originalListAccessibleRepositoryIds = repositoryService.listAccessibleRepositoryIds;
-const originalGetRepositoryAccess = repositoryService.getRepositoryAccess;
 
 const repository = {
   id: "566fdab1-771a-42f9-a4eb-2f1c04859874",
@@ -93,13 +95,13 @@ beforeEach(() => {
   fakePrisma.recordingSession.update = async () => null;
   fakePrisma.recordingSession.updateMany = async () => ({ count: 0 });
 
-  repositoryService.assertRepositoryAccess = async () => ({
+  repositoryAccessService.assertAccess = async () => ({
     repository,
     effectiveRole: "maintain",
     isSystemAdmin: false,
   });
+  repositoryAccessService.getAccess = originalGetAccess;
   repositoryService.listAccessibleRepositoryIds = originalListAccessibleRepositoryIds;
-  repositoryService.getRepositoryAccess = originalGetRepositoryAccess;
 });
 
 test("registerSession creates a unique MediaMTX path and caches pending metadata", async () => {
@@ -246,7 +248,7 @@ test("registerSession completes pending sessions when maintain access is forbidd
   const findManyCalls: Array<Record<string, unknown>> = [];
   const updateManyCalls: Array<Record<string, unknown>> = [];
 
-  repositoryService.assertRepositoryAccess = async () => {
+  repositoryAccessService.assertAccess = async () => {
     throw Forbidden("You do not have permission for this repository action.");
   };
   fakePrisma.recordingSession.findMany = async (args: Record<string, unknown>) => {
@@ -310,7 +312,7 @@ test("registerSession completes pending sessions when repository is missing", as
   const findManyCalls: Array<Record<string, unknown>> = [];
   const updateManyCalls: Array<Record<string, unknown>> = [];
 
-  repositoryService.assertRepositoryAccess = async () => {
+  repositoryAccessService.assertAccess = async () => {
     throw NotFound("Repository not found.");
   };
   fakePrisma.recordingSession.findMany = async (args: Record<string, unknown>) => {
@@ -372,7 +374,7 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
   let repositoryAccessChecked = false;
 
   fakePrisma.recordingSession.findUnique = async () => pendingSession;
-  repositoryService.assertRepositoryAccess = async () => {
+  repositoryAccessService.assertAccess = async () => {
     repositoryAccessChecked = true;
     throw Forbidden("Repository access should not be rechecked.");
   };
@@ -527,7 +529,7 @@ test("getLiveStreamDetail exposes HTTP upload progress from Redis cache", async 
     createdAt: new Date("2026-05-29T00:00:00.000Z"),
     updatedAt: new Date("2026-05-29T01:00:00.000Z"),
   });
-  repositoryService.getRepositoryAccess = async () => ({
+  repositoryAccessService.getAccess = async () => ({
     repository,
     effectiveRole: "read",
     isSystemAdmin: false,
@@ -554,7 +556,7 @@ test("getLiveStreamDetail exposes HTTP upload progress from Redis cache", async 
 });
 
 test("issueHlsPlaybackTicket authorizes read access and stores a Redis playback ticket", async () => {
-  repositoryService.getRepositoryAccess = async () => ({
+  repositoryAccessService.getAccess = async () => ({
     repository,
     effectiveRole: "read",
     isSystemAdmin: false,
@@ -584,7 +586,7 @@ test("issueHlsPlaybackTicket authorizes read access and stores a Redis playback 
 });
 
 after(() => {
-  repositoryService.assertRepositoryAccess = originalAssertRepositoryAccess;
+  repositoryAccessService.assertAccess = originalAssertAccess;
+  repositoryAccessService.getAccess = originalGetAccess;
   repositoryService.listAccessibleRepositoryIds = originalListAccessibleRepositoryIds;
-  repositoryService.getRepositoryAccess = originalGetRepositoryAccess;
 });

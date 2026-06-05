@@ -2,7 +2,7 @@ import { Router } from "express";
 
 import { AuthCredentialKind } from "../constants/auth/auth-constants";
 import { asyncHandler } from "../lib/async-handler";
-import { clearDashboardSessionCookie, setDashboardSessionCookie } from "../lib/dashboard-session-cookie";
+import { clearDashboardSessionCookie, setDashboardSessionCookie } from "../lib/auth/dashboard-cookie";
 import { getAuthUser } from "../lib/request-context";
 import { requireDashboardSession, requirePythonToken } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";

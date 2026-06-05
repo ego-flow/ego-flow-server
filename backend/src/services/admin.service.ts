@@ -17,8 +17,8 @@ import {
 import { BadRequest, Conflict, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { getTargetDirectory } from "../lib/storage";
+import { toAppUserRole } from "../mappers/user.mapper";
 import type { CreateAdminUserInput, ResetUserPasswordInput } from "../schemas/admin.schema";
-import type { AuthenticatedUser } from "../types/auth";
 
 type ConfigValue = string | number | boolean | null;
 
@@ -50,8 +50,6 @@ const maskSecretValue = (value: string | undefined): string => {
   return `${value[0]}**${value[value.length - 1]}`;
 };
 
-const toUserRole = (role: UserRole): "admin" | "user" => (role === UserRole.admin ? "admin" : "user");
-
 const resolveDisplayName = (userId: string, displayName: string | undefined) => {
   const normalized = displayName?.trim();
   return normalized || userId;
@@ -65,7 +63,7 @@ const toUserResponse = (user: {
   deactivated: boolean;
 }) => ({
   id: user.id,
-  role: toUserRole(user.role),
+  role: toAppUserRole(user.role),
   displayName: user.displayName,
   createdAt: user.createdAt.toISOString(),
   deactivated: user.deactivated,
@@ -380,27 +378,6 @@ export class AdminService {
     };
   }
 
-  async getAuthenticatedUser(userId: string): Promise<AuthenticatedUser | null> {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        role: true,
-        deactivated: true,
-        displayName: true,
-      },
-    });
-
-    if (!user || user.deactivated) {
-      return null;
-    }
-
-    return {
-      userId: user.id,
-      role: toUserRole(user.role),
-      displayName: user.displayName,
-    };
-  }
 }
 
 export const adminService = new AdminService();

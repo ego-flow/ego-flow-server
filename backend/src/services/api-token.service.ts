@@ -1,5 +1,3 @@
-import { UserRole } from "@prisma/client";
-
 import {
   PYTHON_TOKEN_HASH_ALGORITHM,
   PYTHON_TOKEN_LAST_USED_UPDATE_INTERVAL_MS,
@@ -8,11 +6,10 @@ import {
 } from "../constants/auth/auth-constants";
 import { Forbidden, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
+import { toAppUserRole } from "../mappers/user.mapper";
 import type { CreateApiTokenInput } from "../schemas/api-token.schema";
 import type { AppUserRole } from "../types/auth";
 import { createPrefixedRandomToken, hashValue } from "../utils/crypto";
-
-const toAppUserRole = (role: UserRole): AppUserRole => (role === UserRole.admin ? "admin" : "user");
 
 const toIsoString = (value: Date | null) => value?.toISOString() ?? null;
 

@@ -5,7 +5,9 @@ import { Prisma, RecordingSegmentStatus, RecordingSessionStatus, RepoRole, RepoV
 
 import { BadRequest, Conflict, Forbidden, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
+import { isRepoRoleAtLeast, toAppRepoRole } from "../lib/repository-roles";
 import { getTargetDirectory } from "../lib/storage";
+import { normalizeRepositoryTags, toRepositoryRecord } from "../mappers/repository.mapper";
 import type {
   CreateRepositoryInput,
   CreateRepositoryMemberInput,
@@ -16,6 +18,7 @@ import type { AppUserRole } from "../types/auth";
 import type { AppRepoRole, RepositoryAccessContext, RepositoryRecord } from "../types/repository";
 import { movePath, pathExists } from "../utils/file-system";
 import { remapPathWithinDirectory } from "../utils/path-mapping";
+import { repositoryAccessService } from "./repository-access.service";
 import { refreshRepositoryContributors } from "./repository-contributors.service";
 
 type RepositoryLifecycleRecord = {
@@ -28,59 +31,6 @@ type RepositoryLifecycleRecord = {
   createdAt: Date;
   updatedAt: Date;
 };
-
-const REPO_ROLE_RANK: Record<AppRepoRole, number> = {
-  read: 1,
-  maintain: 2,
-  admin: 3,
-};
-
-const toAppRepoRole = (role: RepoRole): AppRepoRole => role;
-const toVisibility = (visibility: RepoVisibility): "public" | "private" => visibility;
-const normalizeTags = (tags: Prisma.JsonValue | string[] | null | undefined): string[] => {
-  if (!Array.isArray(tags)) {
-    return [];
-  }
-
-  const uniqueTags = new Map<string, string>();
-  for (const tag of tags) {
-    if (typeof tag !== "string") {
-      continue;
-    }
-
-    const normalizedTag = tag.replace(/^#+/, "").trim();
-    if (!normalizedTag) {
-      continue;
-    }
-
-    const key = normalizedTag.toLowerCase();
-    if (!uniqueTags.has(key)) {
-      uniqueTags.set(key, normalizedTag);
-    }
-  }
-
-  return Array.from(uniqueTags.values()).slice(0, 20);
-};
-
-const toRepositoryRecord = (repository: {
-  id: string;
-  name: string;
-  ownerId: string;
-  visibility: RepoVisibility;
-  description: string | null;
-  tags?: Prisma.JsonValue | string[] | null;
-  createdAt: Date;
-  updatedAt: Date;
-}): RepositoryRecord => ({
-  id: repository.id,
-  name: repository.name,
-  ownerId: repository.ownerId,
-  visibility: toVisibility(repository.visibility),
-  description: repository.description,
-  tags: normalizeTags(repository.tags),
-  createdAt: repository.createdAt,
-  updatedAt: repository.updatedAt,
-});
 
 const toRepositoryResponse = (
   repository: RepositoryRecord,
@@ -106,9 +56,6 @@ const toRepositorySummary = (
   video_count: videoCount,
 });
 
-const isRoleAtLeast = (actualRole: AppRepoRole, minimumRole: AppRepoRole): boolean =>
-  REPO_ROLE_RANK[actualRole] >= REPO_ROLE_RANK[minimumRole];
-
 const normalizeDescription = (description: string | null | undefined): string | null => {
   if (description === undefined || description === null) {
     return description ?? null;
@@ -127,62 +74,7 @@ export class RepositoryService {
     userRole: AppUserRole,
     repositoryId: string,
   ): Promise<RepositoryAccessContext | null> {
-    const repository = await prisma.repository.findUnique({
-      where: { id: repositoryId },
-      select: {
-        id: true,
-        name: true,
-        ownerId: true,
-        visibility: true,
-        description: true,
-        tags: true,
-        deactivated: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    if (!repository || repository.deactivated) {
-      return null;
-    }
-
-    if (userRole === "admin") {
-      return {
-        repository: toRepositoryRecord(repository),
-        effectiveRole: "admin",
-        isSystemAdmin: true,
-      };
-    }
-
-    const membership = await prisma.repoMember.findUnique({
-      where: {
-        repositoryId_userId: {
-          repositoryId,
-          userId,
-        },
-      },
-      select: {
-        role: true,
-      },
-    });
-
-    if (membership) {
-      return {
-        repository: toRepositoryRecord(repository),
-        effectiveRole: toAppRepoRole(membership.role),
-        isSystemAdmin: false,
-      };
-    }
-
-    if (repository.visibility === RepoVisibility.public) {
-      return {
-        repository: toRepositoryRecord(repository),
-        effectiveRole: "read",
-        isSystemAdmin: false,
-      };
-    }
-
-    return null;
+    return repositoryAccessService.getAccess(userId, userRole, repositoryId);
   }
 
   async assertRepositoryAccess(
@@ -191,25 +83,7 @@ export class RepositoryService {
     repositoryId: string,
     minRole: AppRepoRole,
   ): Promise<RepositoryAccessContext> {
-    const access = await this.getRepositoryAccess(userId, userRole, repositoryId);
-    if (!access) {
-      const exists = await prisma.repository.findUnique({
-        where: { id: repositoryId },
-        select: { id: true, deactivated: true },
-      });
-
-      if (!exists || exists.deactivated) {
-        throw NotFound("Repository not found.");
-      }
-
-      throw Forbidden("You do not have access to this repository.");
-    }
-
-    if (!isRoleAtLeast(access.effectiveRole, minRole)) {
-      throw Forbidden("You do not have permission for this repository action.");
-    }
-
-    return access;
+    return repositoryAccessService.assertAccess(userId, userRole, repositoryId, minRole);
   }
 
   async listAccessibleRepositories(userId: string, userRole: AppUserRole) {
@@ -339,7 +213,7 @@ export class RepositoryService {
           ownerId: userId,
           visibility: input.visibility,
           description: normalizeDescription(input.description),
-          tags: normalizeTags(input.tags),
+          tags: normalizeRepositoryTags(input.tags),
           contributors: [userId],
         },
         select: {
@@ -386,7 +260,7 @@ export class RepositoryService {
     const nextVisibility = input.visibility ?? previousRepository.visibility;
     const nextDescription =
       input.description === undefined ? previousRepository.description : normalizeDescription(input.description);
-    const nextTags = input.tags === undefined ? previousRepository.tags : normalizeTags(input.tags);
+    const nextTags = input.tags === undefined ? previousRepository.tags : normalizeRepositoryTags(input.tags);
 
     if (
       nextName === previousRepository.name &&
@@ -732,7 +606,7 @@ export class RepositoryService {
     }
 
     const effectiveRole = toAppRepoRole(membership.role);
-    if (!isRoleAtLeast(effectiveRole, minRole)) {
+    if (!isRepoRoleAtLeast(effectiveRole, minRole)) {
       throw Forbidden("You do not have permission for this repository action.");
     }
 
@@ -815,7 +689,7 @@ export class RepositoryService {
 
     const membershipRoleMap = new Map(memberships.map((membership) => [membership.repositoryId, toAppRepoRole(membership.role)]));
     const memberRepoIds = memberships
-      .filter((membership) => isRoleAtLeast(toAppRepoRole(membership.role), minRole))
+      .filter((membership) => isRepoRoleAtLeast(toAppRepoRole(membership.role), minRole))
       .map((membership) => membership.repositoryId);
 
     const accessWhere =
@@ -854,7 +728,7 @@ export class RepositoryService {
       .map((repository) => {
         const repositoryRecord = toRepositoryRecord(repository);
         const effectiveRole = membershipRoleMap.get(repository.id) ?? (repository.visibility === RepoVisibility.public ? "read" : null);
-        if (!effectiveRole || !isRoleAtLeast(effectiveRole, minRole)) {
+        if (!effectiveRole || !isRepoRoleAtLeast(effectiveRole, minRole)) {
           return null;
         }
 

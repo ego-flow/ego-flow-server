@@ -16,6 +16,7 @@ import type { AppUserRole } from "../types/auth";
 import type { StreamRegisterInput } from "../schemas/stream.schema";
 import type { RecordingSessionLiveCache } from "../types/stream";
 import { streamRecordingKey } from "../utils/stream-keys";
+import { repositoryAccessService } from "./repository-access.service";
 import { repositoryService } from "./repository.service";
 import { recordingSessionService } from "./recording-session.service";
 import { streamOwnershipService } from "./stream-ownership.service";
@@ -46,9 +47,9 @@ export class StreamService {
     userRole: AppUserRole,
     input: StreamRegisterInput,
   ) {
-    let access: Awaited<ReturnType<typeof repositoryService.assertRepositoryAccess>>;
+    let access: Awaited<ReturnType<typeof repositoryAccessService.assertAccess>>;
     try {
-      access = await repositoryService.assertRepositoryAccess(userId, userRole, input.repositoryId, "maintain");
+      access = await repositoryAccessService.assertAccess(userId, userRole, input.repositoryId, "maintain");
     } catch (error) {
       if (this.isForbiddenError(error) || this.isNotFoundError(error)) {
         await this.completePendingSessionsAfterAccessFailure(
@@ -347,7 +348,7 @@ export class StreamService {
       throw NotFound("Live stream not found.");
     }
 
-    const access = await repositoryService.getRepositoryAccess(requestUserId, requestUserRole, session.repositoryId);
+    const access = await repositoryAccessService.getAccess(requestUserId, requestUserRole, session.repositoryId);
     if (!access) {
       throw NotFound("Live stream not found.");
     }
@@ -408,7 +409,7 @@ export class StreamService {
       throw Conflict("Live stream playback is not available for this ingest type.");
     }
 
-    const access = await repositoryService.getRepositoryAccess(
+    const access = await repositoryAccessService.getAccess(
       requestUserId,
       requestUserRole,
       liveCache.repositoryId,
