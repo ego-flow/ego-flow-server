@@ -1,5 +1,6 @@
 backend/node_modules/
 backend/dist/
+.run/
 .run/target-directory
 
 data/raw/*

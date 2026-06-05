@@ -264,6 +264,18 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
 											<p className="mt-4 max-w-3xl text-base leading-7 text-[var(--sea-ink-soft)]">
 												{repository.description || "No description provided."}
 											</p>
+											{repository.tags.length > 0 ? (
+												<div className="mt-4 flex flex-wrap gap-2">
+													{repository.tags.map((tag) => (
+														<span
+															key={tag.toLowerCase()}
+															className="rounded-full border border-[var(--line)] bg-[var(--chip-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--lagoon-deep)]"
+														>
+															#{tag}
+														</span>
+													))}
+												</div>
+											) : null}
 										</div>
 
 										<div className="grid max-w-md gap-2 sm:grid-cols-3 lg:max-w-none lg:grid-cols-1">
