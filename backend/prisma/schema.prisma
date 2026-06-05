@@ -58,6 +58,7 @@ model Setting {
 }
 
 enum VideoStatus {
+  PROCESSING
   COMPLETED
   FAILED
 }

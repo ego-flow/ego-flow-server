@@ -4,6 +4,8 @@ import { VideoStatus } from "#/constants/video/video-constants";
 
 export const videoStatusClassName = (status: VideoStatus | string) => {
 	switch (status) {
+		case VideoStatus.Processing:
+			return "bg-sky-500/12 text-sky-700 dark:text-sky-300";
 		case VideoStatus.Completed:
 			return "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300";
 		case VideoStatus.Failed:

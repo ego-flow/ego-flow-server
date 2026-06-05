@@ -528,6 +528,7 @@ export const openApiDocument = {
           "contributor_user_id",
           "contributor_display_name",
           "thumbnail_url",
+          "processing_progress",
           "scene_summary",
           "clip_segments",
           "created_at",
@@ -537,7 +538,7 @@ export const openApiDocument = {
           repository_id: { type: "string", format: "uuid" },
           repository_name: { type: "string" },
           owner_id: { type: "string" },
-          status: { type: "string", enum: ["COMPLETED", "FAILED"] },
+          status: { type: "string", enum: ["PROCESSING", "COMPLETED", "FAILED"] },
           duration_sec: { type: ["number", "null"] },
           resolution_width: { type: ["integer", "null"] },
           resolution_height: { type: ["integer", "null"] },
@@ -548,6 +549,12 @@ export const openApiDocument = {
           contributor_user_id: { type: ["string", "null"], example: "alice" },
           contributor_display_name: { type: ["string", "null"], example: "Alice Kim" },
           thumbnail_url: { type: ["string", "null"] },
+          processing_progress: {
+            oneOf: [
+              { $ref: "#/components/schemas/RecordingFinalizeProgress" },
+              { type: "null" },
+            ],
+          },
           dashboard_video_url: { type: ["string", "null"] },
           scene_summary: { type: ["string", "null"] },
           clip_segments: {},
@@ -580,14 +587,40 @@ export const openApiDocument = {
           },
         },
       },
+      RecordingFinalizeProgress: {
+        type: "object",
+        required: ["current_step", "total_steps", "task", "label"],
+        properties: {
+          current_step: { type: "integer", minimum: 1, example: 3 },
+          total_steps: { type: "integer", minimum: 1, example: 7 },
+          task: {
+            type: "string",
+            enum: [
+              "initialize_video",
+              "stabilize_raw",
+              "probe_metadata",
+              "prepare_outputs",
+              "encode_assets",
+              "verify_artifact",
+              "persist_video",
+            ],
+          },
+          label: { type: "string", example: "Probe metadata" },
+        },
+      },
       VideoStatusResponse: {
         type: "object",
         required: ["id", "repository_id", "status", "progress", "error_message", "processing_started_at", "processing_completed_at"],
         properties: {
           id: { type: "string", format: "uuid" },
           repository_id: { type: "string", format: "uuid" },
-          status: { type: "string", enum: ["COMPLETED", "FAILED"] },
-          progress: { type: "integer", minimum: 0, maximum: 100 },
+          status: { type: "string", enum: ["PROCESSING", "COMPLETED", "FAILED"] },
+          progress: {
+            oneOf: [
+              { $ref: "#/components/schemas/RecordingFinalizeProgress" },
+              { type: "null" },
+            ],
+          },
           error_message: { type: ["string", "null"] },
           processing_started_at: { type: ["string", "null"], format: "date-time" },
           processing_completed_at: { type: ["string", "null"], format: "date-time" },

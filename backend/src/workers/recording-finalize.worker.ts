@@ -21,6 +21,7 @@ import {
   ensureOutputDirectories,
 } from "./encoding";
 import { refreshRepositoryContributors } from "../services/repository-contributors.service";
+import { buildRecordingFinalizeProgress } from "../types/processing";
 
 const hasFinalizeAttemptsRemaining = (job: Job<RecordingFinalizeJobData>) => {
   const maxAttempts = job.opts?.attempts ?? 1;
@@ -40,6 +41,44 @@ const resetRecordingSegmentForRetry = async (segmentId: string, recordingSession
   if (reset.count !== 1) {
     console.warn(`[finalize-worker] segment retry reset missed session=${recordingSessionId}`);
   }
+};
+
+const upsertProcessingVideo = async (
+  data: RecordingFinalizeJobData,
+  session: NonNullable<Awaited<ReturnType<typeof prisma.recordingSession.findUnique>>>,
+  segment: NonNullable<Awaited<ReturnType<typeof prisma.recordingSegment.findUnique>>>,
+) => {
+  const processingStartedAt = new Date();
+  const fallbackRecordedAt = session.readyAt ?? session.createdAt;
+
+  await prisma.video.upsert({
+    where: { recordingSessionId: data.recordingSessionId },
+    create: {
+      id: data.videoId,
+      repositoryId: data.repositoryId,
+      recordingSessionId: data.recordingSessionId,
+      rawRecordingPath: segment.rawPath,
+      streamPath: session.streamPath,
+      deviceType: session.deviceType,
+      recordedAt: fallbackRecordedAt,
+      recorder: session.userId,
+      status: VideoStatus.PROCESSING,
+      errorMessage: null,
+      processingStartedAt,
+      processingCompletedAt: null,
+    },
+    update: {
+      repositoryId: data.repositoryId,
+      rawRecordingPath: segment.rawPath,
+      streamPath: session.streamPath,
+      deviceType: session.deviceType,
+      recordedAt: fallbackRecordedAt,
+      recorder: session.userId,
+      status: VideoStatus.PROCESSING,
+      errorMessage: null,
+      processingCompletedAt: null,
+    },
+  });
 };
 
 /**
@@ -89,31 +128,35 @@ const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
   }
 
   try {
-    await job.updateProgress(5);
+    await job.updateProgress(buildRecordingFinalizeProgress("initialize_video"));
+    await upsertProcessingVideo(job.data, session, segment);
 
     const rawInputPath = segment.rawPath;
+    await job.updateProgress(buildRecordingFinalizeProgress("stabilize_raw"));
     await waitForStableFile(rawInputPath);
-    await job.updateProgress(15);
 
+    await job.updateProgress(buildRecordingFinalizeProgress("probe_metadata"));
     const metadata = await probeVideoMetadata(rawInputPath);
     const recordedAt = metadata.recordedAt ?? session.readyAt ?? session.createdAt;
-    await job.updateProgress(35);
 
+    await job.updateProgress(buildRecordingFinalizeProgress("prepare_outputs"));
     const outputs = buildOutputPaths(targetDirectory, ownerId, repoName, videoId);
     await ensureOutputDirectories(outputs);
 
     const durationSec = metadata.durationSec ?? 0;
     const thumbnailSeekSec = durationSec > 2 ? durationSec / 2 : 1;
 
+    await job.updateProgress(buildRecordingFinalizeProgress("encode_assets"));
     await Promise.all([
       encodeVlmVideo(rawInputPath, outputs.vlmVideoPath),
       encodeDashboardVideo(rawInputPath, outputs.dashboardVideoPath),
       encodeThumbnail(rawInputPath, outputs.thumbnailPath, thumbnailSeekSec),
     ]);
 
+    await job.updateProgress(buildRecordingFinalizeProgress("verify_artifact"));
     const { sizeBytes, sha256 } = await computeFileDigestAndSize(outputs.vlmVideoPath);
-    await job.updateProgress(90);
 
+    await job.updateProgress(buildRecordingFinalizeProgress("persist_video"));
     await prisma.$transaction(async (tx) => {
       const processedAt = new Date();
       const video = await tx.video.upsert({
@@ -161,7 +204,6 @@ const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
           recorder: session.userId,
           status: VideoStatus.COMPLETED,
           errorMessage: null,
-          processingStartedAt: processedAt,
           processingCompletedAt: processedAt,
         },
       });
@@ -186,8 +228,6 @@ const processRecordingFinalize = async (job: Job<RecordingFinalizeJobData>) => {
     if (env.DELETE_RAW_AFTER_PROCESSING) {
       await fs.rm(segment.rawPath, { force: true }).catch(() => {});
     }
-
-    await job.updateProgress(100);
   } catch (error) {
     if (hasFinalizeAttemptsRemaining(job)) {
       await resetRecordingSegmentForRetry(segment.id, recordingSessionId);

@@ -112,25 +112,27 @@ sequenceDiagram
       Worker->>DB: WRITE_DONE -> PROCESSING
       Note over Worker,DB: claim count = 1인 worker만 processing 진행
 
+      Worker->>DB: Video row upsert
+      Note over Worker,DB: recording_session_id unique<br/>status = PROCESSING<br/>processingStartedAt 기록<br/>repository detail에서 processing item으로 노출
+
       Worker->>Worker: process recording finalize
-      Note over Worker: progress 5<br/>raw segment file 안정화 대기<br/><br/>progress 15<br/>ffprobe technical metadata 추출<br/>durationSec, resolutionWidth, resolutionHeight, fps, codec, recordedAt<br/><br/>progress 35<br/>출력 경로 생성 및 directory 생성<br/><br/>parallel encoding<br/>VLM dataset mp4<br/>dashboard mp4<br/>thumbnail jpg<br/><br/>progress 90<br/>VLM mp4 size, sha256 계산<br/><br/>상세 processing 상태는 .mermaid/STREAMING/5.video-processing.mmd 참고
+      Note over Worker: task progress는 BullMQ job.progress에 저장한다.<br/>shape: current_step, total_steps, task, label<br/><br/>1/7 initialize_video<br/>2/7 stabilize_raw<br/>3/7 probe_metadata<br/>4/7 prepare_outputs<br/>5/7 encode_assets<br/>6/7 verify_artifact<br/>7/7 persist_video<br/><br/>상세 processing 상태는 .mermaid/WEBRTC/5.video-processing.mmd 참고
 
       alt processing success
         Worker->>DB: finalize transaction
-        Note over Worker,DB: videos row upsert<br/>status = COMPLETED<br/>recording_session_id unique<br/>technical metadata, output paths, size, sha256 저장<br/><br/>video_semantic_metadata row upsert<br/>status = PENDING<br/>semantic metadata 값은 아직 생성하지 않음<br/><br/>recording_segments row 갱신<br/>status = COMPLETED<br/><br/>repository row lock 후 contributors refresh
+        Note over Worker,DB: same videos row upsert<br/>status = COMPLETED<br/>technical metadata, output paths, size, sha256 저장<br/><br/>video_semantic_metadata row upsert<br/>status = PENDING<br/>semantic metadata 값은 아직 생성하지 않음<br/><br/>recording_segments row 갱신<br/>status = COMPLETED<br/><br/>repository row lock 후 contributors refresh
         Worker->>Storage: optional raw cleanup
         Note over Worker,Storage: DELETE_RAW_AFTER_PROCESSING=true이면<br/>raw segment file 삭제
-        Worker->>Worker: progress 100
       else processing failure and attempts remain
         Worker->>DB: PROCESSING -> WRITE_DONE
-        Note over Worker,DB: retry 전에 segment 상태를 되돌린다.<br/>다음 attempt도 WRITE_DONE -> PROCESSING atomic claim부터 다시 시작한다.
+        Note over Worker,DB: retry 전에 segment 상태를 되돌린다.<br/>Video row는 같은 recording_session_id로 PROCESSING 재사용<br/>다음 attempt도 WRITE_DONE -> PROCESSING atomic claim부터 다시 시작한다.
         Worker->>Queue: retry scheduled
         Note over Worker,Queue: attempts = 3<br/>backoff = exponential<br/>initial delay = 5000ms
       else final processing failure
         Worker->>Worker: failed event
         Note over Worker: attemptsMade >= attempts 일 때만<br/>실패 상태를 DB에 기록한다.
         Worker->>DB: mark finalize failed transaction
-        Note over Worker,DB: recording_segments row 갱신<br/>status = FAILED<br/><br/>videos row upsert<br/>status = FAILED<br/>error_message = worker error
+        Note over Worker,DB: recording_segments row 갱신<br/>status = FAILED<br/><br/>same videos row upsert<br/>status = FAILED<br/>error_message = worker error
       end
     end
   end
@@ -162,6 +164,6 @@ sequenceDiagram
 %% segment-complete hook 누락 복구는 현재 하지 않는다. segment-complete가 오지 않으면 WRITING segment는 finalize 대상이 아니다.
 %% pain point: worker process crash, OOM, host kill처럼 catch/failed handler가 실행되지 않는 장애에서는 PROCESSING -> WRITE_DONE reset이 누락될 수 있다.
 %% 현재 단계에서는 stale PROCESSING 복구를 구현하지 않는다. 필요해지면 reconcile 또는 processing lease 기반 복구를 추가해야 한다.
-%% worker processing의 상세 구현 상태와 VLM semantic metadata 확장 지점은 .mermaid/STREAMING/5.video-processing.mmd에서 다룬다.
+%% worker processing의 상세 구현 상태와 VLM semantic metadata 확장 지점은 .mermaid/WEBRTC/5.video-processing.mmd에서 다룬다.
 %% WHIP/WebRTC publisher session 종료와 CLOSED 기록 정책은 .mermaid/WEBRTC/whip-connection-closure.mmd에서 따로 다룬다.
 %% RTMP media 전송 흐름은 .mermaid/RTMP/4.rtmp-stream.mmd에서 따로 다룬다.

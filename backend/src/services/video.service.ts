@@ -8,6 +8,10 @@ import { toSignedFileUrl } from "../lib/signed-file-url";
 import { getTargetDirectory, toStorageRelativePath } from "../lib/storage";
 import type { RepoVideoListQueryInput } from "../schemas/repository-video.schema";
 import type { AppRepoRole, RepositoryRecord } from "../types/repository";
+import {
+  RECORDING_FINALIZE_COMPLETED_PROGRESS,
+  type RecordingFinalizeProgress,
+} from "../types/processing";
 import { processingService } from "./processing.service";
 import { normalizeContributorUserIds, refreshRepositoryContributors } from "./repository-contributors.service";
 
@@ -19,6 +23,7 @@ type VideoOrderQuery = {
 type RepositoryVideoRecord = {
   id: string;
   repositoryId: string;
+  recordingSessionId: string | null;
   status: VideoStatus;
   durationSec: number | null;
   resolutionWidth: number | null;
@@ -60,18 +65,15 @@ const buildOrderBy = (query: VideoOrderQuery): Prisma.VideoOrderByWithRelationIn
   }
 };
 
-const normalizeProgress = (status: VideoStatus, progress: number | null): number => {
-  if (typeof progress === "number") {
-    return Math.max(0, Math.min(100, Math.round(progress)));
+const normalizeProgress = (
+  status: VideoStatus,
+  progress: RecordingFinalizeProgress | null,
+): RecordingFinalizeProgress | null => {
+  if (progress) {
+    return progress;
   }
 
-  switch (status) {
-    case "COMPLETED":
-      return 100;
-    case "FAILED":
-    default:
-      return 0;
-  }
+  return status === VideoStatus.COMPLETED ? RECORDING_FINALIZE_COMPLETED_PROGRESS : null;
 };
 
 const toRepositoryThumbnailUrl = (
@@ -110,7 +112,7 @@ const toRepoVideoResponse = (
   video: RepositoryVideoRecord,
   repository: VideoRepositoryContext,
   displayNamesByUserId: Map<string, string>,
-  options?: { includeDashboardVideoUrl?: boolean },
+  options?: { includeDashboardVideoUrl?: boolean; processingProgress?: RecordingFinalizeProgress | null },
 ) => {
   return {
     id: video.id,
@@ -128,6 +130,8 @@ const toRepoVideoResponse = (
     contributor_user_id: video.recorder,
     contributor_display_name: video.recorder ? displayNamesByUserId.get(video.recorder) ?? video.recorder : null,
     thumbnail_url: video.thumbnailPath ? toRepositoryThumbnailUrl(targetDirectory, video) : null,
+    processing_progress:
+      video.status === VideoStatus.PROCESSING ? normalizeProgress(video.status, options?.processingProgress ?? null) : null,
     ...(options?.includeDashboardVideoUrl
       ? { dashboard_video_url: toSignedFileUrl(targetDirectory, video.dashboardVideoPath) }
       : {}),
@@ -151,6 +155,7 @@ export class VideoService {
       select: {
         id: true,
         repositoryId: true,
+        recordingSessionId: true,
         status: true,
         durationSec: true,
         resolutionWidth: true,
@@ -318,6 +323,23 @@ export class VideoService {
       .sort((left, right) => right.videoCount - left.videoCount || left.userId.localeCompare(right.userId));
   }
 
+  private async getProcessingProgressByVideoId(
+    videos: Array<Pick<RepositoryVideoRecord, "id" | "recordingSessionId" | "status">>,
+  ): Promise<Map<string, RecordingFinalizeProgress | null>> {
+    const entries = await Promise.all(
+      videos.map(async (video) => {
+        const progress =
+          video.status === VideoStatus.PROCESSING
+            ? await processingService.getRecordingFinalizeProgress(video.recordingSessionId)
+            : null;
+
+        return [video.id, progress] as const;
+      }),
+    );
+
+    return new Map(entries);
+  }
+
   async listRepositoryVideos(repository: VideoRepositoryContext, query: RepoVideoListQueryInput) {
     const targetDirectory = getTargetDirectory();
     const where: Prisma.VideoWhereInput = {
@@ -336,6 +358,7 @@ export class VideoService {
         select: {
           id: true,
           repositoryId: true,
+          recordingSessionId: true,
           status: true,
           durationSec: true,
           resolutionWidth: true,
@@ -362,13 +385,18 @@ export class VideoService {
     const displayNamesByUserId = new Map(
       contributors.map((contributor) => [contributor.userId, contributor.displayName] as const),
     );
+    const progressByVideoId = await this.getProcessingProgressByVideoId(videos);
 
     return {
       total,
       page: query.page,
       limit: query.limit,
       contributors: contributors.map(toContributorResponse),
-      data: videos.map((video) => toRepoVideoResponse(targetDirectory, video, repository, displayNamesByUserId)),
+      data: videos.map((video) =>
+        toRepoVideoResponse(targetDirectory, video, repository, displayNamesByUserId, {
+          processingProgress: progressByVideoId.get(video.id) ?? null,
+        }),
+      ),
     };
   }
 
@@ -377,9 +405,14 @@ export class VideoService {
     const video = await this.getRepositoryVideoForResponse(repoId, videoId);
     const contributorUserId = video.recorder;
     const displayNamesByUserId = await this.getUserDisplayNames(contributorUserId ? [contributorUserId] : []);
+    const processingProgress =
+      video.status === VideoStatus.PROCESSING
+        ? await processingService.getRecordingFinalizeProgress(video.recordingSessionId)
+        : null;
 
     return toRepoVideoResponse(targetDirectory, video, repository, displayNamesByUserId, {
       includeDashboardVideoUrl: true,
+      processingProgress,
     });
   }
 

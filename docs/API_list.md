@@ -63,9 +63,9 @@ Current API list based on the server codebase.
 
 | Endpoint | Input | Response | Purpose |
 |---|---|---|---|
-| `GET /api/v1/repositories/:repoId/videos` | `page`, `limit`, `status?`, `sort_by`, `sort_order`, `contributor_user_id?` | `{ total, page, limit, contributors, data }` | List/filter repository videos |
-| `GET /api/v1/repositories/:repoId/videos/:videoId` | path params | video metadata plus `dashboard_video_url` | Read video detail |
-| `GET /api/v1/repositories/:repoId/videos/:videoId/status` | path params | `{ id, repository_id, status, progress, error_message, processing_* }` | Read video processing status |
+| `GET /api/v1/repositories/:repoId/videos` | `page`, `limit`, `status?`, `sort_by`, `sort_order`, `contributor_user_id?` | `{ total, page, limit, contributors, data }`; each video includes nullable `processing_progress` | List/filter repository videos, including `PROCESSING` videos |
+| `GET /api/v1/repositories/:repoId/videos/:videoId` | path params | video metadata plus `dashboard_video_url` and nullable `processing_progress` | Read video detail |
+| `GET /api/v1/repositories/:repoId/videos/:videoId/status` | path params | `{ id, repository_id, status, progress, error_message, processing_* }`; `progress` is `{ current_step, total_steps, task, label }` when available | Read video processing status |
 | `DELETE /api/v1/repositories/:repoId/videos/:videoId` | path params | `{ id, deleted: true }` | Delete video and generated artifacts |
 | `GET /api/v1/repositories/:repoId/videos/:videoId/download` | path params | `307` signed file URL redirect | Download VLM video artifact |
 | `GET /api/v1/repositories/:repoId/manifest?page&limit` | Python token | dataset manifest | Completed video manifest for Python/VLM usage |

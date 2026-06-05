@@ -98,6 +98,8 @@ stateDiagram-v2
       Entry action:
       worker owns post-processing for the single raw segment.
       Generated VLM, dashboard, and thumbnail files are produced from rawPath.
+      The worker also upserts the Video row to PROCESSING by recordingSessionId
+      before expensive processing starts so dashboard can show the pending item.
     end note
 
     SEG_COMPLETED --> [*]
@@ -105,12 +107,23 @@ stateDiagram-v2
   }
 
   state "Video" as Video {
-    [*] --> VIDEO_COMPLETED: finalize success<br/>upsert videos row
-    [*] --> VIDEO_FAILED: finalize final failure<br/>upsert failed videos row
+    [*] --> VIDEO_PROCESSING: finalize worker claim success<br/>upsert videos row
+    VIDEO_PROCESSING --> VIDEO_COMPLETED: finalize success<br/>upsert same videos row
+    VIDEO_PROCESSING --> VIDEO_FAILED: finalize final failure<br/>upsert same videos row
     [*] --> VIDEO_FAILED: HTTP timeout failure<br/>upsert failed videos row without finalize
 
+    state "PROCESSING" as VIDEO_PROCESSING
     state "COMPLETED" as VIDEO_COMPLETED
     state "FAILED" as VIDEO_FAILED
+
+    note right of VIDEO_PROCESSING
+      Entry action:
+      row is keyed by recordingSessionId.
+      status=PROCESSING, raw/context metadata, recorder,
+      and processingStartedAt are persisted early.
+      processing_progress is read from BullMQ job progress,
+      not persisted on the videos row.
+    end note
 
     note right of VIDEO_COMPLETED
       Entry action:
@@ -154,4 +167,5 @@ stateDiagram-v2
 %% segment-complete는 누락된 segment를 복구 생성하지 않고, 기존 단일 RecordingSegment만 WRITE_DONE으로 확정한 뒤 enqueue를 시도한다.
 %% segment-complete hook이 누락되면 WRITING segment는 자동으로 WRITE_DONE/FAILED로 보정하지 않는다.
 %% RecordingSegment.status가 raw segment write와 후처리 상태를 표현한다.
-%% Video row는 finalize가 성공하거나 최종 실패했을 때 recording_session_id unique key 기준으로 upsert된다.
+%% Video row는 finalize worker가 PROCESSING을 시작할 때 먼저 생성/갱신된다.
+%% 같은 recording_session_id unique key row가 성공 시 COMPLETED, 최종 실패 시 FAILED로 upsert된다.

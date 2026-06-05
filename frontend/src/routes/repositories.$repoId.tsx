@@ -20,7 +20,7 @@ import type { ReactNode } from "react";
 
 import { getApiErrorMessage } from "#/api/client";
 import { requestRepositoryDetail } from "#/api/repositories";
-import { requestVideos } from "#/api/videos";
+import { requestVideos, type VideoProcessingProgress } from "#/api/videos";
 import ProtectedImage from "#/components/ProtectedImage";
 import { Button } from "#/components/ui/button";
 import {
@@ -151,6 +151,41 @@ function MetaCard({
 			</div>
 			<div className="mt-1.5 truncate text-sm font-semibold text-[var(--sea-ink)]">
 				{value}
+			</div>
+		</div>
+	);
+}
+
+function ProcessingProgressIndicator({
+	progress,
+}: {
+	progress: VideoProcessingProgress | null;
+}) {
+	const currentStep = progress?.currentStep ?? 0;
+	const totalSteps = progress?.totalSteps ?? 0;
+	const ratio = totalSteps > 0 ? Math.min(1, Math.max(0, currentStep / totalSteps)) : 0;
+	const degrees = Math.round(ratio * 360);
+
+	return (
+		<div className="mt-3 flex min-w-0 items-center gap-2 text-sm text-[var(--sea-ink-soft)]">
+			<div
+				className="grid size-10 shrink-0 place-items-center rounded-full"
+				style={{
+					background: `conic-gradient(var(--lagoon-deep) ${degrees}deg, var(--line) ${degrees}deg)`,
+				}}
+				aria-hidden="true"
+			>
+				<div className="grid size-7 place-items-center rounded-full bg-[var(--card)] text-[10px] font-semibold text-[var(--sea-ink)]">
+					{totalSteps > 0 ? `${currentStep}/${totalSteps}` : "..."}
+				</div>
+			</div>
+			<div className="min-w-0">
+				<div className="truncate font-semibold text-[var(--sea-ink)]">
+					{progress?.label ?? "Processing"}
+				</div>
+				<div className="text-xs text-[var(--sea-ink-soft)]">
+					Video processing
+				</div>
 			</div>
 		</div>
 	);
@@ -348,6 +383,9 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
 												className="theme-select h-9 w-full rounded-md border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 											>
 												<option value={VideoStatusFilter.All}>All</option>
+												<option value={VideoStatus.Processing}>
+													Processing
+												</option>
 												<option value={VideoStatus.Completed}>Completed</option>
 												<option value={VideoStatus.Failed}>Failed</option>
 											</select>
@@ -523,6 +561,11 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
 																	{video.status}
 																</span>
 															</div>
+															{video.status === VideoStatus.Processing ? (
+																<ProcessingProgressIndicator
+																	progress={video.processingProgress}
+																/>
+															) : null}
 
 															<h3 className="mt-3 truncate text-xl font-semibold text-[var(--sea-ink)] transition-colors group-hover:text-[var(--lagoon-deep)]">
 																{video.id}

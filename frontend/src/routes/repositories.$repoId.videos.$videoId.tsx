@@ -13,6 +13,7 @@ import {
 	requestVideoDetail,
 	requestVideoDownload,
 	requestVideoStatus,
+	type VideoProcessingProgress,
 } from "#/api/videos";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { Button } from "#/components/ui/button";
@@ -41,6 +42,41 @@ function formatClipSegments(value: unknown) {
 	} catch {
 		return "Unavailable";
 	}
+}
+
+function ProcessingProgressIndicator({
+	progress,
+}: {
+	progress: VideoProcessingProgress | null;
+}) {
+	const currentStep = progress?.currentStep ?? 0;
+	const totalSteps = progress?.totalSteps ?? 0;
+	const ratio = totalSteps > 0 ? Math.min(1, Math.max(0, currentStep / totalSteps)) : 0;
+	const degrees = Math.round(ratio * 360);
+
+	return (
+		<div className="mt-4 flex min-w-0 items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] px-3 py-3 text-sm">
+			<div
+				className="grid size-11 shrink-0 place-items-center rounded-full"
+				style={{
+					background: `conic-gradient(var(--lagoon-deep) ${degrees}deg, var(--line) ${degrees}deg)`,
+				}}
+				aria-hidden="true"
+			>
+				<div className="grid size-8 place-items-center rounded-full bg-[var(--card)] text-[11px] font-semibold text-[var(--sea-ink)]">
+					{totalSteps > 0 ? `${currentStep}/${totalSteps}` : "..."}
+				</div>
+			</div>
+			<div className="min-w-0">
+				<div className="truncate font-semibold text-[var(--sea-ink)]">
+					{progress?.label ?? "Processing"}
+				</div>
+				<div className="text-xs text-[var(--sea-ink-soft)]">
+					Video processing
+				</div>
+			</div>
+		</div>
+	);
 }
 
 function RepositoryVideoDetailPage() {
@@ -160,6 +196,15 @@ function RepositoryVideoDetailPage() {
 							</span>
 						) : null}
 					</div>
+					{currentStatus === VideoStatus.Processing ? (
+						<ProcessingProgressIndicator
+							progress={
+								statusQuery.data?.progress ??
+								detailQuery.data?.processingProgress ??
+								null
+							}
+						/>
+					) : null}
 
 					<h1 className="display-title text-3xl font-bold text-[var(--sea-ink)]">
 						{video?.repositoryName || "Video detail"}

@@ -232,7 +232,7 @@ test("recording finalize stores VLM SHA-256 and size metadata after encoding", a
   createRecordingFinalizeWorker();
   assert.ok(capturedProcessor);
 
-  const progressUpdates: number[] = [];
+  const progressUpdates: unknown[] = [];
   await capturedProcessor?.({
     data: {
       recordingSessionId: "session-1",
@@ -242,7 +242,7 @@ test("recording finalize stores VLM SHA-256 and size metadata after encoding", a
       repoName: "repo-name",
       targetDirectory: outputRoot,
     },
-    updateProgress: async (value: number) => {
+    updateProgress: async (value: unknown) => {
       progressUpdates.push(value);
     },
   });
@@ -252,6 +252,11 @@ test("recording finalize stores VLM SHA-256 and size metadata after encoding", a
     outputs.dashboardVideoPath,
     outputs.thumbnailPath,
   ]);
+
+  const processingUpdate = videoUpdateCalls[0];
+  assert.ok(processingUpdate);
+  assert.equal(processingUpdate?.data.status, VideoStatus.PROCESSING);
+  assert.equal(processingUpdate?.data.processingCompletedAt, null);
 
   const completedUpdate = videoUpdateCalls.at(-1);
   assert.ok(completedUpdate);
@@ -270,7 +275,50 @@ test("recording finalize stores VLM SHA-256 and size metadata after encoding", a
     },
   ]);
   assert.equal(recordingSessionUpdateCalls.length, 0);
-  assert.deepEqual(progressUpdates, [5, 15, 35, 90, 100]);
+  assert.deepEqual(progressUpdates, [
+    {
+      current_step: 1,
+      total_steps: 7,
+      task: "initialize_video",
+      label: "Initialize video",
+    },
+    {
+      current_step: 2,
+      total_steps: 7,
+      task: "stabilize_raw",
+      label: "Stabilize raw",
+    },
+    {
+      current_step: 3,
+      total_steps: 7,
+      task: "probe_metadata",
+      label: "Probe metadata",
+    },
+    {
+      current_step: 4,
+      total_steps: 7,
+      task: "prepare_outputs",
+      label: "Prepare outputs",
+    },
+    {
+      current_step: 5,
+      total_steps: 7,
+      task: "encode_assets",
+      label: "Encode assets",
+    },
+    {
+      current_step: 6,
+      total_steps: 7,
+      task: "verify_artifact",
+      label: "Verify artifact",
+    },
+    {
+      current_step: 7,
+      total_steps: 7,
+      task: "persist_video",
+      label: "Persist video",
+    },
+  ]);
   assert.deepEqual(
     recordingSegmentUpdateManyCalls.map((call) => call.data.status),
     [RecordingSegmentStatus.PROCESSING, RecordingSegmentStatus.COMPLETED],
@@ -394,6 +442,8 @@ test("recording finalize resets PROCESSING segment to WRITE_DONE before BullMQ r
     [RecordingSegmentStatus.PROCESSING, RecordingSegmentStatus.WRITE_DONE],
   );
   assert.equal(segmentStatus, RecordingSegmentStatus.WRITE_DONE);
+  assert.equal(videoUpdateCalls.length, 1);
+  assert.equal(videoUpdateCalls[0]?.data.status, VideoStatus.PROCESSING);
 });
 
 test("recording finalize final failure marks segment failed and creates failed video", async () => {

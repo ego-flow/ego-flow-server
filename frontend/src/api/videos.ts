@@ -40,6 +40,20 @@ export interface VideoListFilters {
 	contributorUserId?: string;
 }
 
+export interface VideoProcessingProgress {
+	currentStep: number;
+	totalSteps: number;
+	task: string;
+	label: string;
+}
+
+interface VideoProcessingProgressApiRecord {
+	current_step: number;
+	total_steps: number;
+	task: string;
+	label: string;
+}
+
 interface RepositoryVideoApiRecord {
 	id: string;
 	repository_id: string;
@@ -56,6 +70,7 @@ interface RepositoryVideoApiRecord {
 	contributor_user_id: string | null;
 	contributor_display_name: string | null;
 	thumbnail_url: string | null;
+	processing_progress: VideoProcessingProgressApiRecord | null;
 	dashboard_video_url?: string | null;
 	scene_summary: string | null;
 	clip_segments: unknown;
@@ -98,6 +113,7 @@ export interface VideoRecord {
 	contributorUserId: string | null;
 	contributorDisplayName: string | null;
 	thumbnailUrl: string | null;
+	processingProgress: VideoProcessingProgress | null;
 	dashboardVideoUrl: string | null;
 	sceneSummary: string | null;
 	clipSegments: unknown;
@@ -116,7 +132,7 @@ export interface VideoStatusResponse {
 	id: string;
 	repositoryId: string;
 	status: VideoStatus;
-	progress: number;
+	progress: VideoProcessingProgress | null;
 	errorMessage: string | null;
 	processingStartedAt: string | null;
 	processingCompletedAt: string | null;
@@ -186,6 +202,21 @@ function getFilenameFromResponseUrl(request: unknown) {
 	}
 }
 
+function normalizeProcessingProgress(
+	progress: VideoProcessingProgressApiRecord | null,
+): VideoProcessingProgress | null {
+	if (!progress) {
+		return null;
+	}
+
+	return {
+		currentStep: progress.current_step,
+		totalSteps: progress.total_steps,
+		task: progress.task,
+		label: progress.label,
+	};
+}
+
 function normalizeVideo(video: RepositoryVideoApiRecord): VideoRecord {
 	return {
 		id: video.id,
@@ -203,6 +234,7 @@ function normalizeVideo(video: RepositoryVideoApiRecord): VideoRecord {
 		contributorUserId: video.contributor_user_id,
 		contributorDisplayName: video.contributor_display_name,
 		thumbnailUrl: resolveBackendUrl(video.thumbnail_url),
+		processingProgress: normalizeProcessingProgress(video.processing_progress),
 		dashboardVideoUrl: resolveBackendUrl(video.dashboard_video_url ?? null),
 		sceneSummary: video.scene_summary,
 		clipSegments: video.clip_segments,
@@ -253,7 +285,7 @@ export async function requestVideoStatus(
 		id: string;
 		repository_id: string;
 		status: VideoStatus;
-		progress: number;
+		progress: VideoProcessingProgressApiRecord | null;
 		error_message: string | null;
 		processing_started_at: string | null;
 		processing_completed_at: string | null;
@@ -263,7 +295,7 @@ export async function requestVideoStatus(
 		id: response.data.id,
 		repositoryId: response.data.repository_id,
 		status: response.data.status,
-		progress: response.data.progress,
+		progress: normalizeProcessingProgress(response.data.progress),
 		errorMessage: response.data.error_message,
 		processingStartedAt: response.data.processing_started_at,
 		processingCompletedAt: response.data.processing_completed_at,

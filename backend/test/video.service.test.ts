@@ -14,6 +14,7 @@ const moduleLoader = require("node:module") as typeof import("node:module") & {
   _load: (request: string, parent: unknown, isMain: boolean) => unknown;
 };
 const originalLoad = moduleLoader._load;
+const fakeBullJobProgress = new Map<string, unknown>();
 
 moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
   if (request === "../lib/redis" || request.endsWith("/lib/redis")) {
@@ -34,7 +35,7 @@ moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
         }
 
         async getJob() {
-          return null;
+          return { progress: fakeBullJobProgress.get("finalize-session-processing") ?? null };
         }
       },
     };
@@ -224,6 +225,7 @@ const repository: RepositoryRecord = {
 beforeEach(() => {
   videos.clear();
   users.clear();
+  fakeBullJobProgress.clear();
   users.set("alice", { id: "alice", displayName: "Alice Kim" });
   users.set("bob", { id: "bob", displayName: "Bob Lee" });
 
@@ -343,6 +345,7 @@ test("listRepositoryVideos returns repo-scoped responses without internal file p
     contributor_user_id: "alice",
     contributor_display_name: "Alice Kim",
     thumbnail_url: response.data[0]!.thumbnail_url,
+    processing_progress: null,
     scene_summary: null,
     clip_segments: null,
     created_at: "2026-04-12T01:05:00.000Z",
@@ -378,6 +381,61 @@ test("repo-scoped detail returns a signed dashboard playback URL", async () => {
   assert.equal(response.contributor_display_name, "Alice Kim");
 
   assertSignedFileUrl(response.dashboard_video_url, "alice/daily-kitchen/.dashboard/video-1.mp4");
+});
+
+test("repo-scoped responses expose task progress for processing videos", async () => {
+  const progress = {
+    current_step: 4,
+    total_steps: 7,
+    task: "prepare_outputs",
+    label: "Prepare outputs",
+  };
+  fakeBullJobProgress.set("finalize-session-processing", progress);
+  videos.set("video-processing", {
+    id: "video-processing",
+    repositoryId: "repo-1",
+    status: VideoStatus.PROCESSING,
+    durationSec: null,
+    resolutionWidth: null,
+    resolutionHeight: null,
+    fps: null,
+    codec: null,
+    recordedAt: new Date("2026-04-13T01:02:03.000Z"),
+    thumbnailPath: null,
+    dashboardVideoPath: null,
+    vlmVideoPath: null,
+    sizeBytes: null,
+    vlmSha256: null,
+    recorder: "alice",
+    semanticMetadata: null,
+    createdAt: new Date("2026-04-13T01:05:00.000Z"),
+    recordingSessionId: "session-processing",
+    errorMessage: null,
+    processingStartedAt: new Date("2026-04-13T01:03:00.000Z"),
+    processingCompletedAt: null,
+  });
+
+  const listResponse = await service.listRepositoryVideos(repository, {
+    page: 1,
+    limit: 20,
+    status: VideoStatus.PROCESSING,
+    sort_by: "recorded_at",
+    sort_order: "desc",
+  });
+  assert.equal(listResponse.total, 1);
+  assert.deepEqual(listResponse.data[0]!.processing_progress, progress);
+
+  const detailResponse = await service.getRepositoryVideoDetail(
+    "repo-1",
+    repository,
+    "video-processing",
+  );
+  assert.deepEqual(detailResponse.processing_progress, progress);
+
+  const statusResponse = await service.getRepositoryVideoStatus("repo-1", "video-processing");
+  assert.deepEqual(statusResponse.progress, progress);
+  assert.equal(statusResponse.processing_started_at, "2026-04-13T01:03:00.000Z");
+  assert.equal(statusResponse.processing_completed_at, null);
 });
 
 test("repo-scoped detail returns 404 when the video belongs to another repository", async () => {

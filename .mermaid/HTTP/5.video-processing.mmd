@@ -11,7 +11,8 @@ flowchart TD
 
   Claim --> ClaimOk{"claim count == 1?"}
   ClaimOk -- "no" --> NoopClaim["no-op<br/>not WRITE_DONE or 다른 worker가 처리 중"]
-  ClaimOk -- "yes" --> RawStable["raw segment file 안정화 대기<br/>size > 0 and unchanged twice"]
+  ClaimOk -- "yes" --> ProcessingVideo["Video row upsert<br/>status = PROCESSING<br/>recording_session_id unique"]
+  ProcessingVideo --> RawStable["raw segment file 안정화 대기<br/>size > 0 and unchanged twice"]
 
   RawStable --> TechnicalProbe["ffprobe technical metadata 추출<br/>durationSec, resolutionWidth, resolutionHeight, fps, codec, recordedAt<br/>recordedAt fallback: readyAt -> createdAt"]
   TechnicalProbe --> OutputPaths["output path 계산 및 directory 생성"]
@@ -27,7 +28,7 @@ flowchart TD
   EncodingDone --> Digest["VLM mp4 sizeBytes + sha256 계산"]
   Digest --> Persist["DB transaction"]
 
-  Persist --> VideoCreate["Video row upsert<br/>status = COMPLETED"]
+  Persist --> VideoCreate["Video row upsert<br/>same recording_session_id<br/>status = COMPLETED"]
   Persist --> SemanticPending["VideoSemanticMetadata row upsert<br/>status = PENDING"]
   Persist --> SegmentComplete["RecordingSegment<br/>PROCESSING -> COMPLETED"]
   Persist --> Contributors["Repository contributors refresh"]
@@ -49,8 +50,26 @@ flowchart TD
   Reset --> QueueRetry["BullMQ retry<br/>same atomic claim path"]
   RetryDecision -- "no" --> FinalFailure["final failure handler"]
   FinalFailure --> SegmentFailed["RecordingSegment status = FAILED"]
-  FinalFailure --> FailedVideo["Video row upsert<br/>status = FAILED<br/>errorMessage 기록"]
+  FinalFailure --> FailedVideo["Video row upsert<br/>same recording_session_id<br/>status = FAILED<br/>errorMessage 기록"]
   FinalFailure --> SemanticUntouched["VideoSemanticMetadata 변경 없음"]
+
+  subgraph TaskProgress["BullMQ task progress"]
+    P1["1/7 initialize_video<br/>Initialize video"]
+    P2["2/7 stabilize_raw<br/>Stabilize raw"]
+    P3["3/7 probe_metadata<br/>Probe metadata"]
+    P4["4/7 prepare_outputs<br/>Prepare outputs"]
+    P5["5/7 encode_assets<br/>Encode assets"]
+    P6["6/7 verify_artifact<br/>Verify artifact"]
+    P7["7/7 persist_video<br/>Persist video"]
+  end
+
+  ProcessingVideo -. "job progress" .-> P1
+  RawStable -. "job progress" .-> P2
+  TechnicalProbe -. "job progress" .-> P3
+  OutputPaths -. "job progress" .-> P4
+  ParallelEncode -. "job progress" .-> P5
+  Digest -. "job progress" .-> P6
+  Persist -. "job progress" .-> P7
 
   subgraph CurrentMetadata["현재 저장되는 Video metadata"]
     M1["technical metadata<br/>durationSec, resolutionWidth, resolutionHeight, fps, codec, recordedAt"]
@@ -84,9 +103,15 @@ flowchart TD
 %% finalize queue option은 attempts=3, exponential backoff delay=5000ms,
 %% removeOnComplete=1000, removeOnFail=2000이다.
 %% worker는 session row 존재만 확인하고 status는 재검증하지 않는다.
+%% worker가 WRITE_DONE -> PROCESSING claim에 성공하면 expensive processing 전에
+%% Video row를 PROCESSING으로 upsert한다. 이 row가 repository detail의 processing item으로 노출된다.
+%% processing_progress는 DB column이 아니라 BullMQ job.progress 값이다.
+%% API shape: { current_step, total_steps, task, label }.
+%% retry가 발생해도 같은 recording_session_id unique key를 사용하므로 같은 Video row가 PROCESSING으로 재사용된다.
 %% 현재 recording-finalize worker는 VLM 연구용 mp4 파일은 생성하지만,
 %% VLM/semantic metadata를 생성하거나 모델을 호출하지 않는다.
-%% 현재 Video.status=COMPLETED는 playable/generated artifacts 생성 완료를 의미한다.
+%% 현재 Video.status=PROCESSING은 generated artifacts 생성 중,
+%% COMPLETED는 playable/generated artifacts 생성 완료를 의미한다.
 %% semantic metadata 완성 여부를 의미하지 않는다.
 %% 현재 worker가 채우는 metadata는 ffprobe 기반 technical metadata,
 %% artifact path, VLM mp4 size/checksum, recorder/context, processing timestamps다.

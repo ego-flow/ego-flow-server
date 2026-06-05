@@ -1,6 +1,10 @@
 import { Queue } from "bullmq";
 
 import { buildBullConnection } from "../lib/bullmq";
+import {
+  parseRecordingFinalizeProgress,
+  type RecordingFinalizeProgress,
+} from "../types/processing";
 import type { RecordingFinalizeJobData } from "../types/stream";
 
 const recordingFinalizeQueue = new Queue<RecordingFinalizeJobData, void, "recording-finalize">(
@@ -35,17 +39,17 @@ export class ProcessingService {
     });
   }
 
-  async getRecordingFinalizeProgress(recordingSessionId: string | null): Promise<number | null> {
+  async getRecordingFinalizeProgress(recordingSessionId: string | null): Promise<RecordingFinalizeProgress | null> {
     if (!recordingSessionId) {
       return null;
     }
 
     const job = await recordingFinalizeQueue.getJob(buildRecordingFinalizeJobId(recordingSessionId));
-    if (!job || typeof job.progress !== "number") {
+    if (!job) {
       return null;
     }
 
-    return Math.max(0, Math.min(100, Math.round(job.progress)));
+    return parseRecordingFinalizeProgress(job.progress);
   }
 }
 
