@@ -149,6 +149,7 @@ beforeEach(() => {
         ownerId: "alice",
         visibility: "private",
         description: "Daily kitchen recordings",
+        tags: [],
         createdAt: new Date("2026-04-01T00:00:00.000Z"),
         updatedAt: new Date("2026-04-12T00:00:00.000Z"),
       },

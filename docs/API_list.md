@@ -44,13 +44,13 @@ Current API list based on the server codebase.
 
 | Endpoint | Input | Response | Purpose |
 |---|---|---|---|
-| `POST /api/v1/repositories` | `{ name, visibility?, description? }` | `{ repository }` | Create repository |
+| `POST /api/v1/repositories` | `{ name, visibility?, description?, tags? }` | `{ repository }` | Create repository |
 | `GET /api/v1/repositories` | none | `{ repositories }` | List accessible repositories |
 | `GET /api/v1/repositories/maintain` | none | `{ repositories }` | List repositories the current user can maintain |
 | `GET /api/v1/repositories/deactivated` | dashboard cookie | `{ repositories }` | List deactivated repositories where the current user has repository admin permission |
 | `GET /api/v1/repositories/resolve?slug=owner/name` | `slug` or `owner_id` plus `name` | `{ repository }` | Resolve repository by owner/name |
 | `GET /api/v1/repositories/:repoId` | `repoId` | `{ repository }` | Read repository detail |
-| `PATCH /api/v1/repositories/:repoId` | `{ name?, visibility?, description? }` | `{ repository }` | Update repository settings |
+| `PATCH /api/v1/repositories/:repoId` | `{ name?, visibility?, description?, tags? }` | `{ repository }` | Update repository settings |
 | `DELETE /api/v1/repositories/:repoId/deactivate` | `repoId` | `{ id, deactivated: true }` | Deactivate repository, hide it from normal lists, and block new work without stopping active work |
 | `GET /api/v1/repositories/:repoId/delete-readiness` | `repoId` | `{ repository_id, can_delete, checks }` | Check whether a repository can be permanently deleted |
 | `DELETE /api/v1/repositories/:repoId` | `repoId` | `{ id, deleted: true }` | Permanently delete a deactivated repository |

@@ -48,6 +48,7 @@ erDiagram
     varchar owner_id "varchar(64), logical users.id, unique(owner_id,name)"
     RepoVisibility visibility "default public"
     varchar description "varchar(500), nullable"
+    json tags "default []"
     json contributors "default []"
     boolean deactivated "default false"
     timestamp created_at "default now"

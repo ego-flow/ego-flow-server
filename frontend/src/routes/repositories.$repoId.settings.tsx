@@ -26,6 +26,10 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { formatDateTime } from "#/lib/format";
 import { defaultRepositoriesSearch } from "#/lib/route-search";
+import {
+	formatRepositoryTags,
+	parseRepositoryTags,
+} from "#/utils/repository-tags";
 
 export const Route = createFileRoute("/repositories/$repoId/settings")({
 	component: RepositorySettingsPage,
@@ -41,6 +45,7 @@ function RepositorySettingsPage() {
 		RepositoryVisibility.Private,
 	);
 	const [description, setDescription] = useState("");
+	const [tagsInput, setTagsInput] = useState("");
 	const [memberUserId, setMemberUserId] = useState("");
 	const [memberRole, setMemberRole] = useState<RepositoryRole>(
 		RepositoryRole.Read,
@@ -72,7 +77,10 @@ function RepositorySettingsPage() {
 		setName(repositoryQuery.data.name);
 		setVisibility(repositoryQuery.data.visibility);
 		setDescription(repositoryQuery.data.description ?? "");
+		setTagsInput(formatRepositoryTags(repositoryQuery.data.tags));
 	}, [repositoryQuery.data]);
+
+	const tags = parseRepositoryTags(tagsInput);
 
 	const updateMutation = useMutation({
 		mutationFn: () =>
@@ -80,6 +88,7 @@ function RepositorySettingsPage() {
 				name,
 				visibility,
 				description,
+				tags,
 			}),
 		onSuccess: async () => {
 			await queryClient.invalidateQueries({ queryKey: ["repositories"] });
@@ -242,6 +251,28 @@ function RepositorySettingsPage() {
 											rows={4}
 											className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 										/>
+									</div>
+
+									<div className="space-y-2">
+										<Label htmlFor="repo-tags">Tags</Label>
+										<Input
+											id="repo-tags"
+											value={tagsInput}
+											onChange={(event) => setTagsInput(event.target.value)}
+											placeholder="#kitchen, egocentric, daily task"
+										/>
+										{tags.length > 0 ? (
+											<div className="flex flex-wrap gap-2">
+												{tags.map((tag) => (
+													<span
+														key={tag.toLowerCase()}
+														className="rounded-full border border-[var(--line)] bg-[var(--chip-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--lagoon-deep)]"
+													>
+														#{tag}
+													</span>
+												))}
+											</div>
+										) : null}
 									</div>
 
 									{updateMutation.isError ? (

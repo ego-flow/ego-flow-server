@@ -24,6 +24,7 @@ export interface RepositoryRecord {
 	ownerId: string;
 	visibility: RepositoryVisibility;
 	description: string | null;
+	tags: string[];
 	myRole: RepositoryRole;
 	createdAt: string;
 	updatedAt: string;
@@ -55,6 +56,7 @@ interface RepositoryApiRecord {
 	owner_id: string;
 	visibility: RepositoryVisibility;
 	description: string | null;
+	tags?: unknown;
 	my_role: RepositoryRole;
 	created_at: string;
 	updated_at: string;
@@ -70,6 +72,9 @@ function normalizeRepository(
 		ownerId: repository.owner_id,
 		visibility: repository.visibility,
 		description: repository.description,
+		tags: Array.isArray(repository.tags)
+			? repository.tags.filter((tag): tag is string => typeof tag === "string")
+			: [],
 		myRole: repository.my_role,
 		createdAt: repository.created_at,
 		updatedAt: repository.updated_at,
@@ -122,6 +127,7 @@ export async function requestCreateRepository(input: {
 	name: string;
 	visibility: RepositoryVisibility;
 	description: string;
+	tags: string[];
 }) {
 	const response = await apiClient.post<{
 		repository: RepositoryApiRecord;
@@ -129,6 +135,7 @@ export async function requestCreateRepository(input: {
 		name: input.name.trim(),
 		visibility: input.visibility,
 		description: input.description.trim() || undefined,
+		tags: input.tags,
 	});
 
 	return normalizeRepository(response.data.repository);
@@ -140,6 +147,7 @@ export async function requestUpdateRepository(
 		name: string;
 		visibility: RepositoryVisibility;
 		description: string;
+		tags: string[];
 	},
 ) {
 	const response = await apiClient.patch<{
@@ -148,6 +156,7 @@ export async function requestUpdateRepository(
 		name: input.name.trim(),
 		visibility: input.visibility,
 		description: input.description.trim() || null,
+		tags: input.tags,
 	});
 
 	return normalizeRepository(response.data.repository);

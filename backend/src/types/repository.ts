@@ -6,6 +6,7 @@ export interface RepositoryRecord {
   ownerId: string;
   visibility: "public" | "private";
   description: string | null;
+  tags: string[];
   createdAt: Date;
   updatedAt: Date;
 }

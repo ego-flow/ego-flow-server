@@ -62,6 +62,7 @@ const repository = {
   ownerId: "admin",
   visibility: "public" as const,
   description: null,
+  tags: [],
   createdAt: new Date("2026-05-29T00:00:00.000Z"),
   updatedAt: new Date("2026-05-29T00:00:00.000Z"),
 };

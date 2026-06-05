@@ -157,13 +157,18 @@ export const openApiDocument = {
       },
       Repository: {
         type: "object",
-        required: ["id", "name", "owner_id", "visibility", "description", "my_role", "created_at", "updated_at"],
+        required: ["id", "name", "owner_id", "visibility", "description", "tags", "my_role", "created_at", "updated_at"],
         properties: {
           id: { type: "string", format: "uuid" },
           name: { type: "string", pattern: "^[a-z0-9_-]+$", maxLength: 64 },
           owner_id: { type: "string", example: "alice" },
           visibility: { type: "string", enum: ["public", "private"] },
           description: { type: ["string", "null"] },
+          tags: {
+            type: "array",
+            items: { type: "string", maxLength: 40 },
+            maxItems: 20,
+          },
           my_role: { type: "string", enum: ["read", "maintain", "admin"] },
           created_at: { type: "string", format: "date-time" },
           updated_at: { type: "string", format: "date-time" },
@@ -198,6 +203,12 @@ export const openApiDocument = {
           name: { type: "string", pattern: "^[a-z0-9_-]+$", maxLength: 64, example: "daily_kitchen" },
           visibility: { type: "string", enum: ["public", "private"], default: "private" },
           description: { type: "string", maxLength: 500, example: "Dataset for kitchen tasks." },
+          tags: {
+            type: "array",
+            items: { type: "string", maxLength: 40 },
+            maxItems: 20,
+            example: ["kitchen", "egocentric"],
+          },
         },
       },
       UpdateRepositoryRequest: {
@@ -207,6 +218,11 @@ export const openApiDocument = {
           visibility: { type: "string", enum: ["public", "private"] },
           description: {
             oneOf: [{ type: "string", maxLength: 500 }, { type: "null" }],
+          },
+          tags: {
+            type: "array",
+            items: { type: "string", maxLength: 40 },
+            maxItems: 20,
           },
         },
         additionalProperties: false,

@@ -37,7 +37,7 @@ function isPathActive(pathname: string, path: string) {
 
 function navLinkClassName(isActive: boolean) {
 	const base =
-		"inline-flex items-center gap-2 rounded-xl border px-3 py-2 no-underline transition-colors";
+		"inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 no-underline transition-colors";
 
 	return isActive
 		? `${base} border-[color-mix(in_oklab,var(--lagoon-deep)_42%,var(--line))] bg-[color-mix(in_oklab,var(--lagoon-deep)_12%,var(--card))] text-[var(--lagoon-deep)] shadow-sm`
@@ -74,8 +74,8 @@ export default function Header() {
 
 	return (
 		<header className="sticky top-0 z-50 border-b border-[var(--line)] bg-[var(--header-bg)] backdrop-blur-lg">
-			<nav className="page-full flex items-center justify-between px-10 py-4">
-				<div className="flex min-w-0 items-center gap-3">
+			<nav className="page-full flex flex-col gap-3 px-4 py-3 sm:px-6 xl:flex-row xl:items-center xl:justify-between xl:px-10 xl:py-4">
+				<div className="flex min-w-0 items-center gap-3 xl:max-w-[38rem]">
 					<Link
 						to={isAuthenticated ? "/repositories" : "/login"}
 						className="inline-flex min-w-0 items-center gap-2 text-lg font-bold text-[var(--sea-ink)] no-underline"
@@ -88,8 +88,8 @@ export default function Header() {
 						<span className="shrink-0">Ego Flow</span>
 						{repositoryTitle ? (
 							<>
-								<span className="text-[var(--sea-ink-soft)]">/</span>
-								<span className="max-w-[14rem] truncate text-lg font-bold text-[var(--sea-ink)] sm:max-w-[20rem]">
+								<span className="shrink-0 text-[var(--sea-ink-soft)]">/</span>
+								<span className="min-w-0 max-w-[calc(100vw-9rem)] truncate text-lg font-bold text-[var(--sea-ink)] sm:max-w-[24rem] xl:max-w-[28rem]">
 									{repositoryTitle}
 								</span>
 							</>
@@ -98,7 +98,7 @@ export default function Header() {
 				</div>
 
 				{isAuthenticated ? (
-					<div className="ml-auto flex flex-wrap items-center justify-end gap-2 text-sm font-semibold sm:gap-3">
+					<div className="-mx-1 flex min-w-0 items-center gap-2 overflow-x-auto px-1 pb-1 text-sm font-semibold sm:gap-3 xl:mx-0 xl:ml-auto xl:flex-wrap xl:justify-end xl:overflow-visible xl:px-0 xl:pb-0">
 						<Link
 							to="/repositories"
 							search={defaultRepositoriesSearch}
@@ -144,7 +144,7 @@ export default function Header() {
 							<UserRound size={15} aria-hidden="true" />
 							Profile
 						</Link>
-						<div className="flex items-center gap-3">
+						<div className="flex shrink-0 items-center gap-2 sm:gap-3">
 							<span className="rounded-full border border-[var(--line)] bg-[var(--chip-bg)] px-3 py-1 text-xs text-[var(--sea-ink-soft)] sm:text-sm">
 								{identityLabel ?? "Signed in"}
 							</span>

@@ -15,6 +15,7 @@ import {
 	defaultRepositoriesSearch,
 	defaultRepositoryVideosSearch,
 } from "#/lib/route-search";
+import { parseRepositoryTags } from "#/utils/repository-tags";
 
 export const Route = createFileRoute("/repositories/new")({
 	component: NewRepositoryPage,
@@ -28,6 +29,8 @@ function NewRepositoryPage() {
 		RepositoryVisibility.Private,
 	);
 	const [description, setDescription] = useState("");
+	const [tagsInput, setTagsInput] = useState("");
+	const tags = parseRepositoryTags(tagsInput);
 
 	const createMutation = useMutation({
 		mutationFn: () =>
@@ -35,6 +38,7 @@ function NewRepositoryPage() {
 				name,
 				visibility,
 				description,
+				tags,
 			}),
 		onSuccess: async (repository) => {
 			await queryClient.invalidateQueries({ queryKey: ["repositories"] });
@@ -110,6 +114,28 @@ function NewRepositoryPage() {
 							className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 							placeholder="Short description of what this repository is for."
 						/>
+					</div>
+
+					<div className="space-y-2">
+						<Label htmlFor="repository-tags">Tags</Label>
+						<Input
+							id="repository-tags"
+							value={tagsInput}
+							onChange={(event) => setTagsInput(event.target.value)}
+							placeholder="#kitchen, egocentric, daily task"
+						/>
+						{tags.length > 0 ? (
+							<div className="flex flex-wrap gap-2">
+								{tags.map((tag) => (
+									<span
+										key={tag.toLowerCase()}
+										className="rounded-full border border-[var(--line)] bg-[var(--chip-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--lagoon-deep)]"
+									>
+										#{tag}
+									</span>
+								))}
+							</div>
+						) : null}
 					</div>
 
 					{createMutation.isError ? (

@@ -37,6 +37,30 @@ const REPO_ROLE_RANK: Record<AppRepoRole, number> = {
 
 const toAppRepoRole = (role: RepoRole): AppRepoRole => role;
 const toVisibility = (visibility: RepoVisibility): "public" | "private" => visibility;
+const normalizeTags = (tags: Prisma.JsonValue | string[] | null | undefined): string[] => {
+  if (!Array.isArray(tags)) {
+    return [];
+  }
+
+  const uniqueTags = new Map<string, string>();
+  for (const tag of tags) {
+    if (typeof tag !== "string") {
+      continue;
+    }
+
+    const normalizedTag = tag.replace(/^#+/, "").trim();
+    if (!normalizedTag) {
+      continue;
+    }
+
+    const key = normalizedTag.toLowerCase();
+    if (!uniqueTags.has(key)) {
+      uniqueTags.set(key, normalizedTag);
+    }
+  }
+
+  return Array.from(uniqueTags.values()).slice(0, 20);
+};
 
 const toRepositoryRecord = (repository: {
   id: string;
@@ -44,6 +68,7 @@ const toRepositoryRecord = (repository: {
   ownerId: string;
   visibility: RepoVisibility;
   description: string | null;
+  tags?: Prisma.JsonValue | string[] | null;
   createdAt: Date;
   updatedAt: Date;
 }): RepositoryRecord => ({
@@ -52,6 +77,7 @@ const toRepositoryRecord = (repository: {
   ownerId: repository.ownerId,
   visibility: toVisibility(repository.visibility),
   description: repository.description,
+  tags: normalizeTags(repository.tags),
   createdAt: repository.createdAt,
   updatedAt: repository.updatedAt,
 });
@@ -65,6 +91,7 @@ const toRepositoryResponse = (
   owner_id: repository.ownerId,
   visibility: repository.visibility,
   description: repository.description,
+  tags: repository.tags,
   my_role: effectiveRole,
   created_at: repository.createdAt.toISOString(),
   updated_at: repository.updatedAt.toISOString(),
@@ -108,6 +135,7 @@ export class RepositoryService {
         ownerId: true,
         visibility: true,
         description: true,
+        tags: true,
         deactivated: true,
         createdAt: true,
         updatedAt: true,
@@ -282,6 +310,7 @@ export class RepositoryService {
         ownerId: true,
         visibility: true,
         description: true,
+        tags: true,
         deactivated: true,
         createdAt: true,
         updatedAt: true,
@@ -310,6 +339,7 @@ export class RepositoryService {
           ownerId: userId,
           visibility: input.visibility,
           description: normalizeDescription(input.description),
+          tags: normalizeTags(input.tags),
           contributors: [userId],
         },
         select: {
@@ -318,6 +348,7 @@ export class RepositoryService {
           ownerId: true,
           visibility: true,
           description: true,
+          tags: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -355,11 +386,13 @@ export class RepositoryService {
     const nextVisibility = input.visibility ?? previousRepository.visibility;
     const nextDescription =
       input.description === undefined ? previousRepository.description : normalizeDescription(input.description);
+    const nextTags = input.tags === undefined ? previousRepository.tags : normalizeTags(input.tags);
 
     if (
       nextName === previousRepository.name &&
       nextVisibility === previousRepository.visibility &&
-      nextDescription === previousRepository.description
+      nextDescription === previousRepository.description &&
+      JSON.stringify(nextTags) === JSON.stringify(previousRepository.tags)
     ) {
       return {
         repository: toRepositoryResponse(previousRepository, access.effectiveRole),
@@ -378,6 +411,7 @@ export class RepositoryService {
           name: nextName,
           visibility: nextVisibility === "public" ? RepoVisibility.public : RepoVisibility.private,
           description: nextDescription,
+          tags: nextTags,
         },
         select: {
           id: true,
@@ -385,6 +419,7 @@ export class RepositoryService {
           ownerId: true,
           visibility: true,
           description: true,
+          tags: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -758,6 +793,7 @@ export class RepositoryService {
           ownerId: true,
           visibility: true,
           description: true,
+          tags: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -808,6 +844,7 @@ export class RepositoryService {
         ownerId: true,
         visibility: true,
         description: true,
+        tags: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -842,6 +879,7 @@ export class RepositoryService {
           ownerId: true,
           visibility: true,
           description: true,
+          tags: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -872,6 +910,7 @@ export class RepositoryService {
         ownerId: true,
         visibility: true,
         description: true,
+        tags: true,
         createdAt: true,
         updatedAt: true,
       },

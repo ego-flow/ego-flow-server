@@ -102,6 +102,7 @@ model Repository {
   ownerId            String         @map("owner_id") @db.VarChar(64)
   visibility         RepoVisibility @default(public)
   description        String?        @db.VarChar(500)
+  tags               Json           @default("[]")
   contributors       Json           @default("[]")
   deactivated        Boolean        @default(false)
   createdAt          DateTime       @default(now()) @map("created_at")

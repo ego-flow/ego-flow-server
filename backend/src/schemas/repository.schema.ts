@@ -3,6 +3,25 @@ import { z } from "zod";
 
 const repositoryNameSchema = z.string().trim().min(1).max(64).regex(/^[a-z0-9_-]+$/);
 const userIdSchema = z.string().trim().min(1).max(64).regex(/^[a-z0-9_]+$/);
+const repositoryTagSchema = z
+  .string()
+  .trim()
+  .transform((tag) => tag.replace(/^#+/, "").trim())
+  .refine((tag) => tag.length > 0, { message: "Repository tags cannot be empty." })
+  .refine((tag) => tag.length <= 40, { message: "Repository tags must be at most 40 characters." });
+const repositoryTagsSchema = z
+  .array(repositoryTagSchema)
+  .max(20)
+  .transform((tags) => {
+    const uniqueTags = new Map<string, string>();
+    for (const tag of tags) {
+      const key = tag.toLowerCase();
+      if (!uniqueTags.has(key)) {
+        uniqueTags.set(key, tag);
+      }
+    }
+    return Array.from(uniqueTags.values());
+  });
 
 export const repositoryIdParamSchema = z.object({
   repoId: z.uuid(),
@@ -27,6 +46,7 @@ export const createRepositorySchema = z.object({
   name: repositoryNameSchema,
   visibility: z.nativeEnum(RepoVisibility).default(RepoVisibility.private),
   description: z.string().trim().max(500).optional(),
+  tags: repositoryTagsSchema.optional(),
 });
 
 export const updateRepositorySchema = z
@@ -34,8 +54,9 @@ export const updateRepositorySchema = z
     name: repositoryNameSchema.optional(),
     visibility: z.nativeEnum(RepoVisibility).optional(),
     description: z.string().trim().max(500).nullable().optional(),
+    tags: repositoryTagsSchema.optional(),
   })
-  .refine((value) => value.name !== undefined || value.visibility !== undefined || value.description !== undefined, {
+  .refine((value) => value.name !== undefined || value.visibility !== undefined || value.description !== undefined || value.tags !== undefined, {
     message: "At least one field must be provided.",
   });
 
