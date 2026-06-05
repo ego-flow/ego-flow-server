@@ -60,7 +60,8 @@ const { repositoriesRoutes } =
 const originalVerifyAccessToken = accessTokenLib.verifyAccessToken;
 const originalFindActiveAuthenticatedUser = userRepository.findActiveAuthenticatedUser;
 const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
-const originalAssertRepositoryAccess = repositoryAccessService.assertAccess;
+const originalAssertRepositoryAccess = repositoryAccessService.assertAction;
+const originalAssertRepositoryStatus = repositoryAccessService.assertRepositoryStatus;
 const originalResolveRepository = repositoryService.resolveRepository;
 const originalGetRepositoryManifest = videoService.getRepositoryManifest;
 
@@ -85,7 +86,11 @@ beforeEach(() => {
   (accessTokenLib as any).verifyAccessToken = originalVerifyAccessToken;
   userRepository.findActiveAuthenticatedUser = originalFindActiveAuthenticatedUser;
   apiTokenService.verifyPythonToken = originalVerifyPythonToken;
-  repositoryAccessService.assertAccess = originalAssertRepositoryAccess;
+  repositoryAccessService.assertAction = originalAssertRepositoryAccess;
+  repositoryAccessService.assertRepositoryStatus = async (repositoryId: string, required: "active" | "deactivated") => ({
+    id: repositoryId,
+    deactivated: required === "deactivated",
+  });
   repositoryService.resolveRepository = originalResolveRepository;
   videoService.getRepositoryManifest = originalGetRepositoryManifest;
 });
@@ -103,6 +108,7 @@ afterEach(async () => {
     });
     server = null;
   }
+  repositoryAccessService.assertRepositoryStatus = originalAssertRepositoryStatus;
 });
 
 test("GET /repositories/resolve supports slug and owner_id/name forms", async () => {
@@ -257,7 +263,7 @@ test("GET /repositories/:repoId/manifest uses repoAccess context and validated q
     userId: "alice",
     role: "user",
   });
-  repositoryAccessService.assertAccess = (async () => ({
+  repositoryAccessService.assertAction = (async () => ({
     repository: {
       id: repoId,
       name: "daily-kitchen",
@@ -270,7 +276,7 @@ test("GET /repositories/:repoId/manifest uses repoAccess context and validated q
     },
     effectiveRole: "read",
     isSystemAdmin: false,
-  })) as typeof repositoryAccessService.assertAccess;
+  })) as typeof repositoryAccessService.assertAction;
   videoService.getRepositoryManifest = (async (requestedRepoId, repository, effectiveRole, query) => {
     capturedRepoId = requestedRepoId;
     capturedRole = effectiveRole;
@@ -346,7 +352,7 @@ test("GET /repositories/:repoId/manifest rejects invalid queries and missing aut
     userId: "alice",
     role: "user",
   });
-  repositoryAccessService.assertAccess = (async () => ({
+  repositoryAccessService.assertAction = (async () => ({
     repository: {
       id: repoId,
       name: "daily-kitchen",
@@ -359,7 +365,7 @@ test("GET /repositories/:repoId/manifest rejects invalid queries and missing aut
     },
     effectiveRole: "read",
     isSystemAdmin: false,
-  })) as typeof repositoryAccessService.assertAccess;
+  })) as typeof repositoryAccessService.assertAction;
 
   const invalidLimitResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/manifest?limit=201`, {
     headers: { Authorization: "Bearer ef_0123456789abcdef0123456789abcdef01234567" },
@@ -386,7 +392,7 @@ test("GET /repositories/:repoId/manifest applies default page and limit", async 
     userId: "alice",
     role: "user",
   });
-  repositoryAccessService.assertAccess = (async () => ({
+  repositoryAccessService.assertAction = (async () => ({
     repository: {
       id: repoId,
       name: "daily-kitchen",
@@ -399,7 +405,7 @@ test("GET /repositories/:repoId/manifest applies default page and limit", async 
     },
     effectiveRole: "read",
     isSystemAdmin: false,
-  })) as typeof repositoryAccessService.assertAccess;
+  })) as typeof repositoryAccessService.assertAction;
   videoService.getRepositoryManifest = (async (_repoId, repository, effectiveRole, query) => {
     capturedPage = query.page;
     capturedLimit = query.limit;

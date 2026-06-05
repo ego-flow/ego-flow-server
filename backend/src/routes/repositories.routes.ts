@@ -4,6 +4,7 @@ import { asyncHandler } from "../lib/async-handler";
 import { BadRequest, ErrorCode } from "../lib/errors";
 import { getAuthUser, getRepositoryAccess } from "../lib/request-context";
 import { repoAccess } from "../middleware/repo-access.middleware";
+import { repoStatus } from "../middleware/repo-status.middleware";
 import {
   requireDashboardOrApp,
   requireDashboardOrAppOrPython,
@@ -115,13 +116,10 @@ router.delete(
   "/:repoId/deactivate",
   requireDashboardSession,
   validate(repositoryIdParamSchema, "params"),
+  repoAccess({ action: "repository.deactivate" }),
+  repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthUser(req);
-    const response = await repositoryService.deactivateRepository(
-      user.userId,
-      user.role,
-      (req.params as RepositoryIdParamInput).repoId,
-    );
+    const response = await repositoryService.deactivateRepository(getRepositoryAccess(req));
     res.status(200).json(response);
   }),
 );
@@ -131,13 +129,10 @@ router.get(
   "/:repoId/delete-readiness",
   requireDashboardSession,
   validate(repositoryIdParamSchema, "params"),
+  repoAccess({ action: "repository.delete" }),
+  repoStatus({ required: "deactivated" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthUser(req);
-    const response = await repositoryService.getRepositoryDeleteReadiness(
-      user.userId,
-      user.role,
-      (req.params as RepositoryIdParamInput).repoId,
-    );
+    const response = await repositoryService.getRepositoryDeleteReadiness(getRepositoryAccess(req));
     res.status(200).json(response);
   }),
 );
@@ -148,7 +143,8 @@ router.get(
   requirePythonToken,
   validate(repositoryIdParamSchema, "params"),
   validate(manifestQuerySchema, "query"),
-  repoAccess({ minRole: "read" }),
+  repoAccess({ action: "video.manifest" }),
+  repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
     const { repoId } = req.params as RepositoryIdParamInput;
     const query = req.query as unknown as ManifestQueryInput;
@@ -164,14 +160,10 @@ router.get(
   "/:repoId",
   requireDashboardSession,
   validate(repositoryIdParamSchema, "params"),
-  repoAccess({ minRole: "read" }),
+  repoAccess({ action: "repository.read" }),
+  repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthUser(req);
-    const response = await repositoryService.getRepositoryDetail(
-      user.userId,
-      user.role,
-      (req.params as RepositoryIdParamInput).repoId,
-    );
+    const response = await repositoryService.getRepositoryDetail(getRepositoryAccess(req));
     res.status(200).json(response);
   }),
 );
@@ -182,15 +174,10 @@ router.patch(
   requireDashboardSession,
   validate(repositoryIdParamSchema, "params"),
   validate(updateRepositorySchema),
-  repoAccess({ minRole: "admin" }),
+  repoAccess({ action: "repository.updateSettings" }),
+  repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthUser(req);
-    const response = await repositoryService.updateRepository(
-      user.userId,
-      user.role,
-      (req.params as RepositoryIdParamInput).repoId,
-      req.body,
-    );
+    const response = await repositoryService.updateRepository(getRepositoryAccess(req), req.body);
     res.status(200).json(response);
   }),
 );
@@ -200,13 +187,10 @@ router.delete(
   "/:repoId",
   requireDashboardSession,
   validate(repositoryIdParamSchema, "params"),
+  repoAccess({ action: "repository.delete" }),
+  repoStatus({ required: "deactivated" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthUser(req);
-    const response = await repositoryService.permanentlyDeleteRepository(
-      user.userId,
-      user.role,
-      (req.params as RepositoryIdParamInput).repoId,
-    );
+    const response = await repositoryService.permanentlyDeleteRepository(getRepositoryAccess(req));
     res.status(200).json(response);
   }),
 );
@@ -216,14 +200,10 @@ router.get(
   "/:repoId/members",
   requireDashboardSession,
   validate(repositoryIdParamSchema, "params"),
-  repoAccess({ minRole: "admin" }),
+  repoAccess({ action: "repository.members.list" }),
+  repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthUser(req);
-    const response = await repositoryService.listRepositoryMembers(
-      user.userId,
-      user.role,
-      (req.params as RepositoryIdParamInput).repoId,
-    );
+    const response = await repositoryService.listRepositoryMembers(getRepositoryAccess(req));
     res.status(200).json(response);
   }),
 );
@@ -234,15 +214,10 @@ router.post(
   requireDashboardSession,
   validate(repositoryIdParamSchema, "params"),
   validate(createRepositoryMemberSchema),
-  repoAccess({ minRole: "admin" }),
+  repoAccess({ action: "repository.members.add" }),
+  repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthUser(req);
-    const response = await repositoryService.addRepositoryMember(
-      user.userId,
-      user.role,
-      (req.params as RepositoryIdParamInput).repoId,
-      req.body,
-    );
+    const response = await repositoryService.addRepositoryMember(getRepositoryAccess(req), req.body);
     res.status(200).json(response);
   }),
 );
@@ -253,14 +228,12 @@ router.patch(
   requireDashboardSession,
   validate(repositoryMemberParamSchema, "params"),
   validate(updateRepositoryMemberSchema),
-  repoAccess({ minRole: "admin" }),
+  repoAccess({ action: "repository.members.update" }),
+  repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthUser(req);
     const params = req.params as RepositoryMemberParamInput;
     const response = await repositoryService.updateRepositoryMember(
-      user.userId,
-      user.role,
-      params.repoId,
+      getRepositoryAccess(req),
       params.userId,
       req.body,
     );
@@ -273,14 +246,12 @@ router.delete(
   "/:repoId/members/:userId",
   requireDashboardSession,
   validate(repositoryMemberParamSchema, "params"),
-  repoAccess({ minRole: "admin" }),
+  repoAccess({ action: "repository.members.delete" }),
+  repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
-    const user = getAuthUser(req);
     const params = req.params as RepositoryMemberParamInput;
     const response = await repositoryService.deleteRepositoryMember(
-      user.userId,
-      user.role,
-      params.repoId,
+      getRepositoryAccess(req),
       params.userId,
     );
     res.status(200).json(response);

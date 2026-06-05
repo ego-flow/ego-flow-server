@@ -1,18 +1,19 @@
 import { randomUUID } from "node:crypto";
 
-import { RecordingSessionEndReason, RecordingSessionIngestType, RecordingSessionStatus } from "@prisma/client";
+import { RecordingSessionIngestType, RecordingSessionStatus } from "@prisma/client";
 
 import {
   RECORDING_REGISTRATION_TTL_SECONDS,
   STREAM_ACTIVE_SET_KEY,
   STREAM_RECONCILE_INTERVAL_MS,
 } from "../constants/stream/stream-constants";
-import { AppError, Conflict, ErrorCode, Forbidden, NotFound, PreconditionFailed } from "../lib/errors";
+import { Conflict, Forbidden, NotFound, PreconditionFailed } from "../lib/errors";
 import { redis } from "../lib/redis";
 import { getTargetDirectory } from "../lib/storage";
 import { prisma } from "../lib/prisma";
 import { runtimeConfig as env } from "../config/runtime";
 import type { AppUserRole } from "../types/auth";
+import type { RepositoryRecord } from "../types/repository";
 import type { StreamRegisterInput } from "../schemas/stream.schema";
 import type { RecordingSessionLiveCache } from "../types/stream";
 import { streamRecordingKey } from "../lib/stream-keys";
@@ -36,7 +37,7 @@ export class StreamService {
   /**
    * [1단계: 세션 등록]
    * 앱에서 POST /api/v1/streams/register 호출 시 진입점.
-   * - repository maintain 권한 확인
+   * - route middleware에서 검증된 repository context 사용
    * - 아직 publish가 시작되지 않은 같은 사용자/repository/deviceType의 PENDING 세션은 재사용
    * - DB에 PENDING으로 남아 있는 세션은 age와 무관하게 재사용하고 updatedAt/Redis TTL을 갱신
    * - RecordingSession을 PENDING 상태로 생성하고 PENDING cache를 저장
@@ -44,28 +45,11 @@ export class StreamService {
    */
   async registerSession(
     userId: string,
-    userRole: AppUserRole,
+    repository: RepositoryRecord,
     input: StreamRegisterInput,
   ) {
-    let access: Awaited<ReturnType<typeof repositoryAccessService.assertAccess>>;
-    try {
-      access = await repositoryAccessService.assertAccess(userId, userRole, input.repositoryId, "maintain");
-    } catch (error) {
-      if (this.isForbiddenError(error) || this.isNotFoundError(error)) {
-        await this.completePendingSessionsAfterAccessFailure(
-          input.repositoryId,
-          userId,
-          input.deviceType ?? null,
-          this.isNotFoundError(error)
-            ? RecordingSessionEndReason.REPOSITORY_DELETED
-            : RecordingSessionEndReason.ACCESS_FORBIDDEN,
-        );
-      }
-      throw error;
-    }
-
     const existingSession = await this.findReusablePendingSession(
-      access.repository.id,
+      repository.id,
       userId,
       input.deviceType ?? null,
       input.ingestType,
@@ -74,9 +58,9 @@ export class StreamService {
     if (existingSession) {
       console.info("[rtmp-register] reused-pending", {
         recordingSessionId: existingSession.id,
-        repositoryId: access.repository.id,
-        repositoryName: access.repository.name,
-        ownerId: access.repository.ownerId,
+        repositoryId: repository.id,
+        repositoryName: repository.name,
+        ownerId: repository.ownerId,
         userId,
         deviceType: existingSession.deviceType,
         ingestType: existingSession.ingestType,
@@ -90,11 +74,11 @@ export class StreamService {
     }
 
     const recordingSessionId = randomUUID();
-    const streamPath = this.buildStreamPath(access.repository.name, recordingSessionId);
+    const streamPath = this.buildStreamPath(repository.name, recordingSessionId);
     const session = await recordingSessionService.createSession({
       id: recordingSessionId,
-      repositoryId: access.repository.id,
-      ownerId: access.repository.ownerId,
+      repositoryId: repository.id,
+      ownerId: repository.ownerId,
       userId,
       ...(input.deviceType ? { deviceType: input.deviceType } : {}),
       ingestType: input.ingestType,
@@ -104,9 +88,9 @@ export class StreamService {
 
     console.info("[rtmp-register] issued", {
       recordingSessionId: session.id,
-      repositoryId: access.repository.id,
-      repositoryName: access.repository.name,
-      ownerId: access.repository.ownerId,
+      repositoryId: repository.id,
+      repositoryName: repository.name,
+      ownerId: repository.ownerId,
       userId,
       deviceType: input.deviceType ?? null,
       ingestType: input.ingestType,
@@ -121,69 +105,6 @@ export class StreamService {
 
   private buildStreamPath(repositoryName: string, recordingSessionId: string) {
     return `live/${repositoryName}/${recordingSessionId}`;
-  }
-
-  private isForbiddenError(error: unknown) {
-    return error instanceof AppError && error.code === ErrorCode.FORBIDDEN;
-  }
-
-  private isNotFoundError(error: unknown) {
-    return error instanceof AppError && error.code === ErrorCode.NOT_FOUND;
-  }
-
-  private async completePendingSessionsAfterAccessFailure(
-    repositoryId: string,
-    userId: string,
-    deviceType: string | null,
-    endReason: RecordingSessionEndReason,
-  ) {
-    const pendingSessions = await prisma.recordingSession.findMany({
-      where: {
-        repositoryId,
-        userId,
-        deviceType,
-        status: RecordingSessionStatus.PENDING,
-      },
-      select: { id: true },
-    });
-
-    if (pendingSessions.length === 0) {
-      return;
-    }
-
-    const closedSessionIds: string[] = [];
-    const closedAt = new Date();
-    for (const session of pendingSessions) {
-      const result = await prisma.recordingSession.updateMany({
-        where: {
-          id: session.id,
-          status: RecordingSessionStatus.PENDING,
-        },
-        data: {
-          status: RecordingSessionStatus.CLOSED,
-          endReason,
-          closedAt,
-        },
-      });
-
-      if (result.count > 0) {
-        closedSessionIds.push(session.id);
-      }
-    }
-
-    if (closedSessionIds.length === 0) {
-      return;
-    }
-
-    await redis.del(...closedSessionIds.map(streamRecordingKey));
-
-    console.info("[rtmp-register] access-failure-pending-closed", {
-      repositoryId,
-      userId,
-      deviceType,
-      recordingSessionIds: closedSessionIds,
-      endReason,
-    });
   }
 
   private async findReusablePendingSession(
@@ -283,7 +204,11 @@ export class StreamService {
    * active set의 stale id는 hook/reconcile이 정리한다.
    */
   async listLiveStreams(requestUserId: string, requestUserRole: AppUserRole) {
-    const accessibleRepoIds = await repositoryService.listAccessibleRepositoryIds(requestUserId, requestUserRole);
+    const accessibleRepoIds = await repositoryService.listAccessibleRepositoryIds(
+      requestUserId,
+      requestUserRole,
+      "live.list",
+    );
     const activeIds = await redis.smembers(STREAM_ACTIVE_SET_KEY);
 
     if (activeIds.length === 0) {
@@ -348,10 +273,16 @@ export class StreamService {
       throw NotFound("Live stream not found.");
     }
 
-    const access = await repositoryAccessService.getAccess(requestUserId, requestUserRole, session.repositoryId);
+    const access = await repositoryAccessService.getAccessForAction(
+      requestUserId,
+      requestUserRole,
+      session.repositoryId,
+      "live.detail",
+    );
     if (!access) {
       throw NotFound("Live stream not found.");
     }
+    await repositoryAccessService.assertRepositoryStatus(session.repositoryId, "active");
 
     const repoName = recordingSessionService.extractRepositoryName(session.streamPath);
     const playbackAvailable = session.ingestType === RecordingSessionIngestType.MEDIAMTX;
@@ -409,14 +340,16 @@ export class StreamService {
       throw Conflict("Live stream playback is not available for this ingest type.");
     }
 
-    const access = await repositoryAccessService.getAccess(
+    const access = await repositoryAccessService.getAccessForAction(
       requestUserId,
       requestUserRole,
       liveCache.repositoryId,
+      "live.playbackTicket",
     );
     if (!access) {
       throw NotFound("Live stream not found.");
     }
+    await repositoryAccessService.assertRepositoryStatus(liveCache.repositoryId, "active");
 
     const streamPath = this.buildStreamPath(liveCache.repositoryName, recordingSessionId);
     const ticketGrant = await streamOwnershipService.issueHlsPlaybackTicket({

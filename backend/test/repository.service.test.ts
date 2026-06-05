@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { RepoRole } from "@prisma/client";
 import { beforeEach, test } from "node:test";
+import type { RepositoryAccessContext } from "../src/types/repository";
 
 process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egoflow";
 process.env.JWT_SECRET ??= "replace-this-in-tests-only";
@@ -20,6 +21,21 @@ const repository = {
 
 const transactionOperations: unknown[] = [];
 const operationCalls: Array<{ model: string; method: string; args?: unknown }> = [];
+
+const repositoryAccess = (): RepositoryAccessContext => ({
+  repository: {
+    id: repository.id,
+    name: repository.name,
+    ownerId: repository.ownerId,
+    visibility: "public",
+    description: repository.description,
+    tags: repository.tags,
+    createdAt: repository.createdAt,
+    updatedAt: repository.updatedAt,
+  },
+  effectiveRole: "admin",
+  isSystemAdmin: true,
+});
 
 const fakePrisma: any = {
   repository: {
@@ -98,7 +114,7 @@ test("deactivateRepository marks repository deactivated without blocking active 
     throw new Error("deactivateRepository should not check recording segments");
   };
 
-  const result = await repositoryService.deactivateRepository("admin", "admin", repository.id);
+  const result = await repositoryService.deactivateRepository(repositoryAccess());
 
   assert.deepEqual(result, {
     id: repository.id,
@@ -109,16 +125,35 @@ test("deactivateRepository marks repository deactivated without blocking active 
   ]);
 });
 
-test("getRepositoryDeleteReadiness requires deactivation and no active work", async () => {
+test("getRepositoryDeleteReadiness uses prevalidated deactivated repository access", async () => {
+  fakePrisma.repository.findUnique = async () => {
+    throw new Error("getRepositoryDeleteReadiness should not recheck repository status");
+  };
   fakePrisma.recordingSession.count = async () => 1;
 
-  const result = await repositoryService.getRepositoryDeleteReadiness("admin", "admin", repository.id);
+  const result = await repositoryService.getRepositoryDeleteReadiness(repositoryAccess());
 
   assert.deepEqual(result, {
     repository_id: repository.id,
     can_delete: false,
     checks: {
-      is_deactivated: false,
+      is_deactivated: true,
+      active_streaming_session_count: 1,
+      finalizing_segment_count: 0,
+    },
+  });
+});
+
+test("getRepositoryDeleteReadiness returns delete checks for deactivated repositories", async () => {
+  fakePrisma.recordingSession.count = async () => 1;
+
+  const result = await repositoryService.getRepositoryDeleteReadiness(repositoryAccess());
+
+  assert.deepEqual(result, {
+    repository_id: repository.id,
+    can_delete: false,
+    checks: {
+      is_deactivated: true,
       active_streaming_session_count: 1,
       finalizing_segment_count: 0,
     },
@@ -175,24 +210,21 @@ test("listDeactivatedAdminRepositories returns deactivated repositories where us
   ]);
 });
 
-test("permanentlyDeleteRepository rejects an active repository", async () => {
+test("permanentlyDeleteRepository rejects active repository work after route validation", async () => {
+  fakePrisma.recordingSession.count = async () => 1;
+
   await assert.rejects(
-    () => repositoryService.permanentlyDeleteRepository("admin", "admin", repository.id),
+    () => repositoryService.permanentlyDeleteRepository(repositoryAccess()),
     (error: any) =>
-      error?.code === "VALIDATION_ERROR" &&
-      error?.message === "Deactivate the repository before permanent deletion.",
+      error?.code === "CONFLICT" &&
+      error?.message === "Repository cannot be permanently deleted while streams or recording finalization are active.",
   );
 
   assert.equal(operationCalls.length, 0);
 });
 
 test("permanentlyDeleteRepository allows pending sessions and deletes repository-owned records", async () => {
-  fakePrisma.repository.findUnique = async () => ({
-    ...repository,
-    deactivated: true,
-  });
-
-  const result = await repositoryService.permanentlyDeleteRepository("admin", "admin", repository.id);
+  const result = await repositoryService.permanentlyDeleteRepository(repositoryAccess());
 
   assert.deepEqual(result, {
     id: repository.id,

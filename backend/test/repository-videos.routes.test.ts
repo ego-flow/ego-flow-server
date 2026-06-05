@@ -67,7 +67,8 @@ const originalVerifyAccessToken = accessTokenLib.verifyAccessToken;
 const originalFindActiveAuthenticatedUser = userRepository.findActiveAuthenticatedUser;
 const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
 const originalVerifyDashboardSession = dashboardSessionService.verifySession;
-const originalAssertRepositoryAccess = repositoryAccessService.assertAccess;
+const originalAssertRepositoryAccess = repositoryAccessService.assertAction;
+const originalAssertRepositoryStatus = repositoryAccessService.assertRepositoryStatus;
 const originalListRepositoryVideos = videoService.listRepositoryVideos;
 const originalGetRepositoryVideoDownload = videoService.getRepositoryVideoDownload;
 const originalDeleteRepositoryVideo = videoService.deleteRepositoryVideo;
@@ -130,13 +131,13 @@ beforeEach(() => {
           displayName: "Alice Kim",
         }
       : null;
-  repositoryAccessService.assertAccess = (async (
+  repositoryAccessService.assertAction = (async (
     _userId: string,
     _userRole: "admin" | "user",
     repoId: string,
-    minRole: "read" | "maintain" | "admin",
+    action: string,
   ) => {
-    if (minRole === "maintain") {
+    if (action === "video.delete") {
       throw new AppError(403, "FORBIDDEN", "Insufficient repository permissions.");
     }
 
@@ -154,7 +155,11 @@ beforeEach(() => {
       effectiveRole: "read",
       isSystemAdmin: false,
     };
-  }) as typeof repositoryAccessService.assertAccess;
+  }) as typeof repositoryAccessService.assertAction;
+  repositoryAccessService.assertRepositoryStatus = async (repositoryId: string) => ({
+    id: repositoryId,
+    deactivated: false,
+  });
   videoService.listRepositoryVideos = originalListRepositoryVideos;
   videoService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
   videoService.deleteRepositoryVideo = originalDeleteRepositoryVideo;
@@ -165,7 +170,8 @@ afterEach(async () => {
   userRepository.findActiveAuthenticatedUser = originalFindActiveAuthenticatedUser;
   apiTokenService.verifyPythonToken = originalVerifyPythonToken;
   dashboardSessionService.verifySession = originalVerifyDashboardSession;
-  repositoryAccessService.assertAccess = originalAssertRepositoryAccess;
+  repositoryAccessService.assertAction = originalAssertRepositoryAccess;
+  repositoryAccessService.assertRepositoryStatus = originalAssertRepositoryStatus;
   videoService.listRepositoryVideos = originalListRepositoryVideos;
   videoService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
   videoService.deleteRepositoryVideo = originalDeleteRepositoryVideo;

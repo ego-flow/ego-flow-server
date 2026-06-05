@@ -14,12 +14,12 @@ const { repositoryAccessService } =
 const { repoAccess } =
   require("../src/middleware/repo-access.middleware") as typeof import("../src/middleware/repo-access.middleware");
 
-const originalAssertAccess = repositoryAccessService.assertAccess;
+const originalAssertAction = repositoryAccessService.assertAction;
 
 const createResponse = () => ({});
 
 beforeEach(() => {
-  repositoryAccessService.assertAccess = originalAssertAccess;
+  repositoryAccessService.assertAction = originalAssertAction;
 });
 
 test("repoAccess stores repository access resolved from params.repoId", async () => {
@@ -38,10 +38,10 @@ test("repoAccess stores repository access resolved from params.repoId", async ()
     isSystemAdmin: false,
   };
   let capturedArgs: unknown[] = [];
-  repositoryAccessService.assertAccess = (async (...args) => {
+  repositoryAccessService.assertAction = (async (...args) => {
     capturedArgs = args;
     return access;
-  }) as typeof repositoryAccessService.assertAccess;
+  }) as typeof repositoryAccessService.assertAction;
 
   const req: any = {
     params: { repoId: "repo-1" },
@@ -53,12 +53,55 @@ test("repoAccess stores repository access resolved from params.repoId", async ()
   };
   let nextError: unknown = "not-called";
 
-  await repoAccess({ minRole: "admin" })(req, createResponse() as any, (error?: unknown) => {
+  await repoAccess({ action: "repository.updateSettings" })(req, createResponse() as any, (error?: unknown) => {
     nextError = error ?? null;
   });
 
   assert.equal(nextError, null);
-  assert.deepEqual(capturedArgs, ["alice", "user", "repo-1", "admin"]);
+  assert.deepEqual(capturedArgs, ["alice", "user", "repo-1", "repository.updateSettings"]);
+  assert.equal(req.repositoryAccess, access);
+});
+
+test("repoAccess can resolve repository id from request body", async () => {
+  const access: RepositoryAccessContext = {
+    repository: {
+      id: "repo-body",
+      name: "daily-kitchen",
+      ownerId: "alice",
+      visibility: "private",
+      description: null,
+      tags: [],
+      createdAt: new Date("2026-04-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-12T00:00:00.000Z"),
+    },
+    effectiveRole: "maintain",
+    isSystemAdmin: false,
+  };
+  let capturedArgs: unknown[] = [];
+  repositoryAccessService.assertAction = (async (...args) => {
+    capturedArgs = args;
+    return access;
+  }) as typeof repositoryAccessService.assertAction;
+  const req: any = {
+    body: { repositoryId: " repo-body " },
+    params: {},
+    user: {
+      userId: "alice",
+      role: "user",
+      displayName: "Alice Kim",
+    },
+  };
+  let nextError: unknown = "not-called";
+
+  await repoAccess({
+    action: "stream.record",
+    repositoryId: (request) => request.body.repositoryId,
+  })(req, createResponse() as any, (error?: unknown) => {
+    nextError = error ?? null;
+  });
+
+  assert.equal(nextError, null);
+  assert.deepEqual(capturedArgs, ["alice", "user", "repo-body", "stream.record"]);
   assert.equal(req.repositoryAccess, access);
 });
 
@@ -68,7 +111,7 @@ test("repoAccess rejects unauthenticated requests", async () => {
   };
   let nextError: unknown = null;
 
-  await repoAccess({ minRole: "read" })(req, createResponse() as any, (error?: unknown) => {
+  await repoAccess({ action: "video.download" })(req, createResponse() as any, (error?: unknown) => {
     nextError = error ?? null;
   });
 
@@ -87,7 +130,7 @@ test("repoAccess requires params.repoId", async () => {
   };
   let nextError: unknown = null;
 
-  await repoAccess({ minRole: "read" })(req, createResponse() as any, (error?: unknown) => {
+  await repoAccess({ action: "video.download" })(req, createResponse() as any, (error?: unknown) => {
     nextError = error ?? null;
   });
 
@@ -98,9 +141,9 @@ test("repoAccess requires params.repoId", async () => {
 
 test("repoAccess passes repository access errors through", async () => {
   const expectedError = new Error("access failure");
-  repositoryAccessService.assertAccess = (async () => {
+  repositoryAccessService.assertAction = (async () => {
     throw expectedError;
-  }) as typeof repositoryAccessService.assertAccess;
+  }) as typeof repositoryAccessService.assertAction;
   const req: any = {
     params: { repoId: "repo-1" },
     user: {
@@ -111,7 +154,7 @@ test("repoAccess passes repository access errors through", async () => {
   };
   let nextError: unknown = null;
 
-  await repoAccess({ minRole: "read" })(req, createResponse() as any, (error?: unknown) => {
+  await repoAccess({ action: "video.download" })(req, createResponse() as any, (error?: unknown) => {
     nextError = error ?? null;
   });
 

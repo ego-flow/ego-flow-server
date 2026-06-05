@@ -1,31 +1,32 @@
 import type { NextFunction, Request, Response } from "express";
 
 import { BadRequest, Unauthorized } from "../lib/errors";
+import type { RepositoryAccessAction } from "../lib/repository-access-policy";
 import { repositoryAccessService } from "../services/repository-access.service";
-import type { AppRepoRole } from "../types/repository";
 
 interface RepoAccessOptions {
-  minRole: AppRepoRole;
+  action: RepositoryAccessAction;
+  repositoryId?: (req: Request) => unknown;
 }
 
 export const repoAccess =
-  ({ minRole }: RepoAccessOptions) =>
+  ({ action, repositoryId }: RepoAccessOptions) =>
   async (req: Request, _res: Response, next: NextFunction) => {
     if (!req.user) {
       return next(Unauthorized());
     }
 
-    const rawRepoId = req.params.repoId;
+    const rawRepoId = repositoryId ? repositoryId(req) : req.params.repoId;
     if (typeof rawRepoId !== "string" || !rawRepoId.trim()) {
       return next(BadRequest("Repository id is required."));
     }
 
     try {
-      req.repositoryAccess = await repositoryAccessService.assertAccess(
+      req.repositoryAccess = await repositoryAccessService.assertAction(
         req.user.userId,
         req.user.role,
-        rawRepoId,
-        minRole,
+        rawRepoId.trim(),
+        action,
       );
       return next();
     } catch (error) {

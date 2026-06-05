@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { RecordingSessionEndReason, RecordingSessionIngestType, RecordingSessionStatus } from "@prisma/client";
+import { RecordingSessionIngestType, RecordingSessionStatus } from "@prisma/client";
 import { after, beforeEach, test } from "node:test";
 
 import { FakeRedis } from "./helpers/fake-redis";
@@ -52,10 +52,11 @@ const { repositoryAccessService } =
   require("../src/services/repository-access.service") as typeof import("../src/services/repository-access.service");
 const { repositoryService } =
   require("../src/services/repository.service") as typeof import("../src/services/repository.service");
-const { Forbidden, NotFound } = require("../src/lib/errors") as typeof import("../src/lib/errors");
+const { Forbidden } = require("../src/lib/errors") as typeof import("../src/lib/errors");
 
-const originalAssertAccess = repositoryAccessService.assertAccess;
-const originalGetAccess = repositoryAccessService.getAccess;
+const originalAssertAccess = repositoryAccessService.assertAction;
+const originalGetAccess = repositoryAccessService.getAccessForAction;
+const originalAssertRepositoryStatus = repositoryAccessService.assertRepositoryStatus;
 const originalListAccessibleRepositoryIds = repositoryService.listAccessibleRepositoryIds;
 
 const repository = {
@@ -95,12 +96,16 @@ beforeEach(() => {
   fakePrisma.recordingSession.update = async () => null;
   fakePrisma.recordingSession.updateMany = async () => ({ count: 0 });
 
-  repositoryAccessService.assertAccess = async () => ({
+  repositoryAccessService.assertAction = async () => ({
     repository,
     effectiveRole: "maintain",
     isSystemAdmin: false,
   });
-  repositoryAccessService.getAccess = originalGetAccess;
+  repositoryAccessService.getAccessForAction = originalGetAccess;
+  repositoryAccessService.assertRepositoryStatus = async (repositoryId: string) => ({
+    id: repositoryId,
+    deactivated: false,
+  });
   repositoryService.listAccessibleRepositoryIds = originalListAccessibleRepositoryIds;
 });
 
@@ -111,7 +116,7 @@ test("registerSession creates a unique MediaMTX path and caches pending metadata
     return createSessionFromArgs(args);
   };
 
-  const response = await streamService.registerSession("maintainer-1", "user", {
+  const response = await streamService.registerSession("maintainer-1", repository, {
     repositoryId: repository.id,
     deviceType: "phone_android",
     ingestType: "MEDIAMTX",
@@ -163,7 +168,7 @@ test("registerSession reuses a non-expired pending session for the same user rep
     };
   };
 
-  const response = await streamService.registerSession("maintainer-1", "user", {
+  const response = await streamService.registerSession("maintainer-1", repository, {
     repositoryId: repository.id,
     deviceType: "phone_android",
     ingestType: "MEDIAMTX",
@@ -216,7 +221,7 @@ test("registerSession reuses pending sessions regardless of age and refreshes Re
     return { count: 1 };
   };
 
-  const response = await streamService.registerSession("maintainer-1", "user", {
+  const response = await streamService.registerSession("maintainer-1", repository, {
     repositoryId: repository.id,
     deviceType: "phone_android",
     ingestType: "MEDIAMTX",
@@ -229,130 +234,6 @@ test("registerSession reuses pending sessions regardless of age and refreshes Re
   assert.equal(updateManyCalls.length, 0);
   assert.equal(response.recordingSessionId, stalePendingSession.id);
   assert.equal(fakeRedis.getJson<RecordingSessionLiveCache>(`stream:recording:${stalePendingSession.id}`)?.status, "PENDING");
-});
-
-test("registerSession completes pending sessions when maintain access is forbidden", async () => {
-  const existingSession = {
-    id: "33333333-3333-4333-8333-333333333333",
-    repositoryId: repository.id,
-    ownerId: repository.ownerId,
-    userId: "maintainer-1",
-    deviceType: "phone_android",
-    ingestType: RecordingSessionIngestType.MEDIAMTX,
-    streamPath: "live/test2/33333333-3333-4333-8333-333333333333",
-    status: RecordingSessionStatus.PENDING,
-    targetDirectory: "/data",
-    createdAt: new Date(Date.now() - 60_000),
-    updatedAt: new Date(Date.now() - 60_000),
-  };
-  const findManyCalls: Array<Record<string, unknown>> = [];
-  const updateManyCalls: Array<Record<string, unknown>> = [];
-
-  repositoryAccessService.assertAccess = async () => {
-    throw Forbidden("You do not have permission for this repository action.");
-  };
-  fakePrisma.recordingSession.findMany = async (args: Record<string, unknown>) => {
-    findManyCalls.push(args);
-    return [existingSession];
-  };
-  fakePrisma.recordingSession.updateMany = async (args: Record<string, unknown>) => {
-    updateManyCalls.push(args);
-    return { count: 1 };
-  };
-  fakeRedis.setJson(`stream:recording:${existingSession.id}`, {
-    repositoryId: repository.id,
-    repositoryName: repository.name,
-    userId: "maintainer-1",
-    deviceType: "phone_android",
-    ingestType: "MEDIAMTX",
-    status: "PENDING",
-  } satisfies RecordingSessionLiveCache);
-
-  await assert.rejects(
-    () =>
-      streamService.registerSession("maintainer-1", "user", {
-        repositoryId: repository.id,
-        deviceType: "phone_android",
-        ingestType: "MEDIAMTX",
-      }),
-    (error: any) => error?.code === "FORBIDDEN",
-  );
-
-  assert.equal(findManyCalls.length, 1);
-  assert.deepEqual((findManyCalls[0] as any).where, {
-    repositoryId: repository.id,
-    userId: "maintainer-1",
-    deviceType: "phone_android",
-    status: RecordingSessionStatus.PENDING,
-  });
-  assert.equal(updateManyCalls.length, 1);
-  assert.deepEqual((updateManyCalls[0] as any).where, {
-    id: existingSession.id,
-    status: RecordingSessionStatus.PENDING,
-  });
-  assert.equal((updateManyCalls[0] as any).data.status, RecordingSessionStatus.CLOSED);
-  assert.equal((updateManyCalls[0] as any).data.endReason, RecordingSessionEndReason.ACCESS_FORBIDDEN);
-  assert.equal(await fakeRedis.get(`stream:recording:${existingSession.id}`), null);
-});
-
-test("registerSession completes pending sessions when repository is missing", async () => {
-  const existingSession = {
-    id: "33333333-3333-4333-8333-333333333333",
-    repositoryId: repository.id,
-    ownerId: repository.ownerId,
-    userId: "maintainer-1",
-    deviceType: "phone_android",
-    ingestType: RecordingSessionIngestType.MEDIAMTX,
-    streamPath: "live/test2/33333333-3333-4333-8333-333333333333",
-    status: RecordingSessionStatus.PENDING,
-    targetDirectory: "/data",
-    createdAt: new Date(Date.now() - 60_000),
-    updatedAt: new Date(Date.now() - 60_000),
-  };
-  const findManyCalls: Array<Record<string, unknown>> = [];
-  const updateManyCalls: Array<Record<string, unknown>> = [];
-
-  repositoryAccessService.assertAccess = async () => {
-    throw NotFound("Repository not found.");
-  };
-  fakePrisma.recordingSession.findMany = async (args: Record<string, unknown>) => {
-    findManyCalls.push(args);
-    return [existingSession];
-  };
-  fakePrisma.recordingSession.updateMany = async (args: Record<string, unknown>) => {
-    updateManyCalls.push(args);
-    return { count: 1 };
-  };
-  fakeRedis.setJson(`stream:recording:${existingSession.id}`, {
-    repositoryId: repository.id,
-    repositoryName: repository.name,
-    userId: "maintainer-1",
-    deviceType: "phone_android",
-    ingestType: "MEDIAMTX",
-    status: "PENDING",
-  } satisfies RecordingSessionLiveCache);
-
-  await assert.rejects(
-    () =>
-      streamService.registerSession("maintainer-1", "user", {
-        repositoryId: repository.id,
-        deviceType: "phone_android",
-        ingestType: "MEDIAMTX",
-      }),
-    (error: any) => error?.code === "NOT_FOUND",
-  );
-
-  assert.equal(findManyCalls.length, 1);
-  assert.deepEqual((findManyCalls[0] as any).where, {
-    repositoryId: repository.id,
-    userId: "maintainer-1",
-    deviceType: "phone_android",
-    status: RecordingSessionStatus.PENDING,
-  });
-  assert.equal(updateManyCalls.length, 1);
-  assert.equal((updateManyCalls[0] as any).data.status, RecordingSessionStatus.CLOSED);
-  assert.equal((updateManyCalls[0] as any).data.endReason, RecordingSessionEndReason.REPOSITORY_DELETED);
-  assert.equal(await fakeRedis.get(`stream:recording:${existingSession.id}`), null);
 });
 
 test("issuePublishTicket skips repository recheck and stores only ticket metadata", async () => {
@@ -374,7 +255,7 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
   let repositoryAccessChecked = false;
 
   fakePrisma.recordingSession.findUnique = async () => pendingSession;
-  repositoryAccessService.assertAccess = async () => {
+  repositoryAccessService.assertAction = async () => {
     repositoryAccessChecked = true;
     throw Forbidden("Repository access should not be rechecked.");
   };
@@ -529,7 +410,7 @@ test("getLiveStreamDetail exposes HTTP upload progress from Redis cache", async 
     createdAt: new Date("2026-05-29T00:00:00.000Z"),
     updatedAt: new Date("2026-05-29T01:00:00.000Z"),
   });
-  repositoryAccessService.getAccess = async () => ({
+  repositoryAccessService.getAccessForAction = async () => ({
     repository,
     effectiveRole: "read",
     isSystemAdmin: false,
@@ -556,7 +437,7 @@ test("getLiveStreamDetail exposes HTTP upload progress from Redis cache", async 
 });
 
 test("issueHlsPlaybackTicket authorizes read access and stores a Redis playback ticket", async () => {
-  repositoryAccessService.getAccess = async () => ({
+  repositoryAccessService.getAccessForAction = async () => ({
     repository,
     effectiveRole: "read",
     isSystemAdmin: false,
@@ -586,7 +467,8 @@ test("issueHlsPlaybackTicket authorizes read access and stores a Redis playback 
 });
 
 after(() => {
-  repositoryAccessService.assertAccess = originalAssertAccess;
-  repositoryAccessService.getAccess = originalGetAccess;
+  repositoryAccessService.assertAction = originalAssertAccess;
+  repositoryAccessService.getAccessForAction = originalGetAccess;
+  repositoryAccessService.assertRepositoryStatus = originalAssertRepositoryStatus;
   repositoryService.listAccessibleRepositoryIds = originalListAccessibleRepositoryIds;
 });

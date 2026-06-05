@@ -10,6 +10,7 @@ import { toSignedFileUrl } from "../lib/signed-file-url";
 import { getTargetDirectory } from "../lib/storage";
 import { requireDashboardOrPython, requireDashboardSession } from "../middleware/auth.middleware";
 import { repoAccess } from "../middleware/repo-access.middleware";
+import { repoStatus } from "../middleware/repo-status.middleware";
 import { validate } from "../middleware/validate.middleware";
 import type {
   RepoVideoListQueryInput,
@@ -59,7 +60,8 @@ router.use(validate(repoVideoRepositoryParamSchema, "params"));
 router.get(
   "/",
   requireDashboardSession,
-  repoAccess({ minRole: "read" }),
+  repoAccess({ action: "video.list" }),
+  repoStatus({ required: "active" }),
   validate(repoVideoListQuerySchema, "query"),
   asyncHandler(async (req, res) => {
     const response = await videoService.listRepositoryVideos(
@@ -74,7 +76,8 @@ router.get(
 router.get(
   "/:videoId",
   requireDashboardSession,
-  repoAccess({ minRole: "read" }),
+  repoAccess({ action: "video.detail" }),
+  repoStatus({ required: "active" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const params = req.params as RepoVideoParamsInput;
@@ -91,7 +94,8 @@ router.get(
 router.get(
   "/:videoId/status",
   requireDashboardSession,
-  repoAccess({ minRole: "read" }),
+  repoAccess({ action: "video.status" }),
+  repoStatus({ required: "active" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const params = req.params as RepoVideoParamsInput;
@@ -104,7 +108,8 @@ router.get(
 router.delete(
   "/:videoId",
   requireDashboardSession,
-  repoAccess({ minRole: "maintain" }),
+  repoAccess({ action: "video.delete" }),
+  repoStatus({ required: "active" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const params = req.params as RepoVideoParamsInput;
@@ -122,7 +127,8 @@ router.head("/:videoId/download", (_req, _res, next) => {
 router.get(
   "/:videoId/download",
   requireDashboardOrPython,
-  repoAccess({ minRole: "read" }),
+  repoAccess({ action: "video.download" }),
+  repoStatus({ required: "active" }),
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const params = req.params as RepoVideoParamsInput;

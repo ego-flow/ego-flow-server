@@ -3,8 +3,9 @@ import path from "path";
 
 import { Prisma, RecordingSegmentStatus, RecordingSessionStatus, RepoRole, RepoVisibility } from "@prisma/client";
 
-import { BadRequest, Conflict, Forbidden, NotFound } from "../lib/errors";
+import { BadRequest, Conflict, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
+import { getRepositoryAccessPolicy, type RepositoryActiveAccessAction } from "../lib/repository-access-policy";
 import { isRepoRoleAtLeast, toAppRepoRole } from "../lib/repository-roles";
 import { getTargetDirectory } from "../lib/storage";
 import { normalizeRepositoryTags, toRepositoryRecord } from "../mappers/repository.mapper";
@@ -20,17 +21,6 @@ import { movePath, pathExists } from "../lib/file-system";
 import { remapPathWithinDirectory } from "../lib/path-mapping";
 import { repositoryAccessService } from "./repository-access.service";
 import { refreshRepositoryContributors } from "./repository-contributors.service";
-
-type RepositoryLifecycleRecord = {
-  id: string;
-  name: string;
-  ownerId: string;
-  visibility: RepoVisibility;
-  description: string | null;
-  deactivated: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-};
 
 const toRepositoryResponse = (
   repository: RepositoryRecord,
@@ -68,27 +58,30 @@ const normalizeDescription = (description: string | null | undefined): string | 
 const isConflictError = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 
+const repositorySummarySelect = {
+  id: true,
+  name: true,
+  ownerId: true,
+  visibility: true,
+  description: true,
+  tags: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.RepositorySelect;
+
+type RepositorySummaryRow = Prisma.RepositoryGetPayload<{
+  select: typeof repositorySummarySelect;
+}>;
+
+type AccessibleRepositoryEntry = {
+  record: RepositoryRecord;
+  effectiveRole: AppRepoRole;
+};
+
 export class RepositoryService {
-  async getRepositoryAccess(
-    userId: string,
-    userRole: AppUserRole,
-    repositoryId: string,
-  ): Promise<RepositoryAccessContext | null> {
-    return repositoryAccessService.getAccess(userId, userRole, repositoryId);
-  }
-
-  async assertRepositoryAccess(
-    userId: string,
-    userRole: AppUserRole,
-    repositoryId: string,
-    minRole: AppRepoRole,
-  ): Promise<RepositoryAccessContext> {
-    return repositoryAccessService.assertAccess(userId, userRole, repositoryId, minRole);
-  }
-
   async listAccessibleRepositories(userId: string, userRole: AppUserRole) {
     return {
-      repositories: await this.getAccessibleRepositories(userId, userRole),
+      repositories: await this.getAccessibleRepositories(userId, userRole, "repository.list"),
     };
   }
 
@@ -98,7 +91,13 @@ export class RepositoryService {
    * - admin: deactivated=false repository id 전체
    * - 일반 사용자: owner / member / public repository id의 합집합
    */
-  async listAccessibleRepositoryIds(userId: string, userRole: AppUserRole): Promise<Set<string> | null> {
+  async listAccessibleRepositoryIds(
+    userId: string,
+    userRole: AppUserRole,
+    action: RepositoryActiveAccessAction = "repository.list",
+  ): Promise<Set<string> | null> {
+    const policy = getRepositoryAccessPolicy(action);
+
     if (userRole === "admin") {
       const repositories = await prisma.repository.findMany({
         where: { deactivated: false },
@@ -107,11 +106,8 @@ export class RepositoryService {
       return new Set(repositories.map((repository) => repository.id));
     }
 
-    const memberships = await prisma.repoMember.findMany({
-      where: { userId },
-      select: { repositoryId: true },
-    });
-    const memberRepoIds = memberships.map((membership) => membership.repositoryId);
+    const membershipRoleMap = await this.getMembershipRoleMap(userId);
+    const memberRepoIds = this.getRepositoryIdsWithRoleAtLeast(membershipRoleMap, policy.minRole);
 
     const [memberRepos, publicRepos] = await Promise.all([
       prisma.repository.findMany({
@@ -121,13 +117,15 @@ export class RepositoryService {
         },
         select: { id: true },
       }),
-      prisma.repository.findMany({
-        where: {
-          visibility: RepoVisibility.public,
-          deactivated: false,
-        },
-        select: { id: true },
-      }),
+      this.allowsPublicReadFallback(policy.minRole)
+        ? prisma.repository.findMany({
+            where: {
+              visibility: RepoVisibility.public,
+              deactivated: false,
+            },
+            select: { id: true },
+          })
+        : Promise.resolve([]),
     ]);
 
     const accessible = new Set<string>();
@@ -143,7 +141,7 @@ export class RepositoryService {
 
   async listMaintainedRepositories(userId: string, userRole: AppUserRole) {
     return {
-      repositories: await this.getAccessibleRepositories(userId, userRole, "maintain"),
+      repositories: await this.getAccessibleRepositories(userId, userRole, "repository.listMaintained"),
     };
   }
 
@@ -158,8 +156,7 @@ export class RepositoryService {
     };
   }
 
-  async getRepositoryDetail(userId: string, userRole: AppUserRole, repositoryId: string) {
-    const access = await this.assertRepositoryAccess(userId, userRole, repositoryId, "read");
+  async getRepositoryDetail(access: RepositoryAccessContext) {
     return {
       repository: toRepositoryResponse(access.repository, access.effectiveRole),
     };
@@ -195,7 +192,12 @@ export class RepositoryService {
       throw NotFound("Repository not found.");
     }
 
-    const access = await this.getRepositoryAccess(requestUserId, requestUserRole, repository.id);
+    const access = await repositoryAccessService.getAccessForAction(
+      requestUserId,
+      requestUserRole,
+      repository.id,
+      "repository.read",
+    );
     if (!access) {
       throw NotFound("Repository not found.");
     }
@@ -249,13 +251,11 @@ export class RepositoryService {
   }
 
   async updateRepository(
-    userId: string,
-    userRole: AppUserRole,
-    repositoryId: string,
+    access: RepositoryAccessContext,
     input: UpdateRepositoryInput,
   ) {
-    const access = await this.assertRepositoryAccess(userId, userRole, repositoryId, "admin");
     const previousRepository = access.repository;
+    const repositoryId = previousRepository.id;
     const nextName = input.name ?? previousRepository.name;
     const nextVisibility = input.visibility ?? previousRepository.visibility;
     const nextDescription =
@@ -311,15 +311,13 @@ export class RepositoryService {
     }
   }
 
-  async deactivateRepository(userId: string, userRole: AppUserRole, repositoryId: string) {
-    const access = await this.assertRepositoryLifecycleAccess(userId, userRole, repositoryId, "admin");
+  async deactivateRepository(access: RepositoryAccessContext) {
+    const repositoryId = access.repository.id;
 
-    if (!access.repository.deactivated) {
-      await prisma.repository.update({
-        where: { id: repositoryId },
-        data: { deactivated: true },
-      });
-    }
+    await prisma.repository.update({
+      where: { id: repositoryId },
+      data: { deactivated: true },
+    });
 
     return {
       id: repositoryId,
@@ -327,26 +325,23 @@ export class RepositoryService {
     };
   }
 
-  async getRepositoryDeleteReadiness(userId: string, userRole: AppUserRole, repositoryId: string) {
-    const state = await this.getRepositoryPermanentDeleteState(userId, userRole, repositoryId);
+  async getRepositoryDeleteReadiness(access: RepositoryAccessContext) {
+    const state = await this.getRepositoryPermanentDeleteState(access);
 
     return {
-      repository_id: repositoryId,
+      repository_id: access.repository.id,
       can_delete: state.canDelete,
       checks: {
-        is_deactivated: state.repository.deactivated,
+        is_deactivated: true,
         active_streaming_session_count: state.activeStreamingSessionCount,
         finalizing_segment_count: state.finalizingSegmentCount,
       },
     };
   }
 
-  async permanentlyDeleteRepository(userId: string, userRole: AppUserRole, repositoryId: string) {
-    const state = await this.getRepositoryPermanentDeleteState(userId, userRole, repositoryId);
-
-    if (!state.repository.deactivated) {
-      throw BadRequest("Deactivate the repository before permanent deletion.");
-    }
+  async permanentlyDeleteRepository(access: RepositoryAccessContext) {
+    const state = await this.getRepositoryPermanentDeleteState(access);
+    const repositoryId = access.repository.id;
 
     if (state.activeStreamingSessionCount > 0 || state.finalizingSegmentCount > 0) {
       throw Conflict(
@@ -372,7 +367,7 @@ export class RepositoryService {
       ),
     );
 
-    const repositoryDir = path.join(getTargetDirectory(), state.repository.ownerId, state.repository.name);
+    const repositoryDir = path.join(getTargetDirectory(), access.repository.ownerId, access.repository.name);
     await fs.rm(repositoryDir, { recursive: true, force: true });
 
     await prisma.$transaction([
@@ -391,8 +386,8 @@ export class RepositoryService {
     };
   }
 
-  async listRepositoryMembers(userId: string, userRole: AppUserRole, repositoryId: string) {
-    const access = await this.assertRepositoryAccess(userId, userRole, repositoryId, "admin");
+  async listRepositoryMembers(access: RepositoryAccessContext) {
+    const repositoryId = access.repository.id;
 
     const memberships = await prisma.repoMember.findMany({
       where: { repositoryId },
@@ -436,12 +431,10 @@ export class RepositoryService {
   }
 
   async addRepositoryMember(
-    userId: string,
-    userRole: AppUserRole,
-    repositoryId: string,
+    access: RepositoryAccessContext,
     input: CreateRepositoryMemberInput,
   ) {
-    const access = await this.assertRepositoryAccess(userId, userRole, repositoryId, "admin");
+    const repositoryId = access.repository.id;
     await this.ensureTargetUserCanBeManaged(access.repository.ownerId, input.user_id);
 
     await prisma.repoMember.upsert({
@@ -462,17 +455,15 @@ export class RepositoryService {
     });
     await refreshRepositoryContributors(repositoryId);
 
-    return this.listRepositoryMembers(userId, userRole, repositoryId);
+    return this.listRepositoryMembers(access);
   }
 
   async updateRepositoryMember(
-    requestUserId: string,
-    requestUserRole: AppUserRole,
-    repositoryId: string,
+    access: RepositoryAccessContext,
     targetUserId: string,
     input: UpdateRepositoryMemberInput,
   ) {
-    const access = await this.assertRepositoryAccess(requestUserId, requestUserRole, repositoryId, "admin");
+    const repositoryId = access.repository.id;
     await this.ensureTargetUserCanBeManaged(access.repository.ownerId, targetUserId);
 
     const membership = await prisma.repoMember.findUnique({
@@ -502,16 +493,14 @@ export class RepositoryService {
     });
     await refreshRepositoryContributors(repositoryId);
 
-    return this.listRepositoryMembers(requestUserId, requestUserRole, repositoryId);
+    return this.listRepositoryMembers(access);
   }
 
   async deleteRepositoryMember(
-    requestUserId: string,
-    requestUserRole: AppUserRole,
-    repositoryId: string,
+    access: RepositoryAccessContext,
     targetUserId: string,
   ) {
-    const access = await this.assertRepositoryAccess(requestUserId, requestUserRole, repositoryId, "admin");
+    const repositoryId = access.repository.id;
     await this.ensureTargetUserCanBeManaged(access.repository.ownerId, targetUserId);
 
     const membership = await prisma.repoMember.findUnique({
@@ -559,70 +548,8 @@ export class RepositoryService {
     return new Map(grouped.map((row) => [row.repositoryId, row._count._all]));
   }
 
-  private async assertRepositoryLifecycleAccess(
-    userId: string,
-    userRole: AppUserRole,
-    repositoryId: string,
-    minRole: AppRepoRole,
-  ): Promise<{ repository: RepositoryLifecycleRecord; effectiveRole: AppRepoRole; isSystemAdmin: boolean }> {
-    const repository = await prisma.repository.findUnique({
-      where: { id: repositoryId },
-      select: {
-        id: true,
-        name: true,
-        ownerId: true,
-        visibility: true,
-        description: true,
-        deactivated: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    if (!repository) {
-      throw NotFound("Repository not found.");
-    }
-
-    if (userRole === "admin") {
-      return {
-        repository,
-        effectiveRole: "admin",
-        isSystemAdmin: true,
-      };
-    }
-
-    const membership = await prisma.repoMember.findUnique({
-      where: {
-        repositoryId_userId: {
-          repositoryId,
-          userId,
-        },
-      },
-      select: { role: true },
-    });
-
-    if (!membership) {
-      throw Forbidden("You do not have access to this repository.");
-    }
-
-    const effectiveRole = toAppRepoRole(membership.role);
-    if (!isRepoRoleAtLeast(effectiveRole, minRole)) {
-      throw Forbidden("You do not have permission for this repository action.");
-    }
-
-    return {
-      repository,
-      effectiveRole,
-      isSystemAdmin: false,
-    };
-  }
-
-  private async getRepositoryPermanentDeleteState(
-    userId: string,
-    userRole: AppUserRole,
-    repositoryId: string,
-  ) {
-    const access = await this.assertRepositoryLifecycleAccess(userId, userRole, repositoryId, "admin");
+  private async getRepositoryPermanentDeleteState(access: RepositoryAccessContext) {
+    const repositoryId = access.repository.id;
     const [activeStreamingSessionCount, finalizingSegmentCount] = await Promise.all([
       prisma.recordingSession.count({
         where: {
@@ -650,59 +577,44 @@ export class RepositoryService {
       activeStreamingSessionCount,
       finalizingSegmentCount,
       canDelete:
-        access.repository.deactivated &&
         activeStreamingSessionCount === 0 &&
         finalizingSegmentCount === 0,
     };
   }
 
-  private async getAccessibleRepositories(userId: string, userRole: AppUserRole, minRole: AppRepoRole = "read") {
+  private async getAccessibleRepositories(
+    userId: string,
+    userRole: AppUserRole,
+    action: RepositoryActiveAccessAction,
+  ) {
+    const policy = getRepositoryAccessPolicy(action);
+    const accessible = await this.getAccessibleRepositoryEntries(userId, userRole, policy.minRole);
+    const videoCounts = await this.getVideoCountsByRepositoryId(accessible.map((entry) => entry.record.id));
+
+    return accessible.map((entry) =>
+      toRepositorySummary(entry.record, entry.effectiveRole, videoCounts.get(entry.record.id) ?? 0),
+    );
+  }
+
+  private async getAccessibleRepositoryEntries(
+    userId: string,
+    userRole: AppUserRole,
+    minRole: AppRepoRole,
+  ): Promise<AccessibleRepositoryEntry[]> {
     if (userRole === "admin") {
       const repositories = await prisma.repository.findMany({
         where: { deactivated: false },
         orderBy: [{ ownerId: "asc" }, { name: "asc" }],
-        select: {
-          id: true,
-          name: true,
-          ownerId: true,
-          visibility: true,
-          description: true,
-          tags: true,
-          createdAt: true,
-          updatedAt: true,
-        },
+        select: repositorySummarySelect,
       });
 
-      const videoCounts = await this.getVideoCountsByRepositoryId(repositories.map((repository) => repository.id));
       return repositories.map((repository) =>
-        toRepositorySummary(toRepositoryRecord(repository), "admin", videoCounts.get(repository.id) ?? 0),
+        ({ record: toRepositoryRecord(repository), effectiveRole: "admin" }),
       );
     }
 
-    const memberships = await prisma.repoMember.findMany({
-      where: { userId },
-      select: {
-        repositoryId: true,
-        role: true,
-      },
-    });
-
-    const membershipRoleMap = new Map(memberships.map((membership) => [membership.repositoryId, toAppRepoRole(membership.role)]));
-    const memberRepoIds = memberships
-      .filter((membership) => isRepoRoleAtLeast(toAppRepoRole(membership.role), minRole))
-      .map((membership) => membership.repositoryId);
-
-    const accessWhere =
-      minRole === "read"
-        ? {
-            OR: [
-              { visibility: RepoVisibility.public },
-              { id: { in: Array.from(membershipRoleMap.keys()) } },
-            ],
-          }
-        : {
-            id: { in: memberRepoIds },
-          };
+    const membershipRoleMap = await this.getMembershipRoleMap(userId);
+    const accessWhere = this.buildAccessibleRepositoryWhere(membershipRoleMap, minRole);
 
     const repositories = await prisma.repository.findMany({
       where: {
@@ -712,34 +624,71 @@ export class RepositoryService {
         ],
       },
       orderBy: [{ ownerId: "asc" }, { name: "asc" }],
+      select: repositorySummarySelect,
+    });
+
+    return repositories
+      .map((repository) => this.toAccessibleRepositoryEntry(repository, membershipRoleMap, minRole))
+      .filter((entry): entry is AccessibleRepositoryEntry => Boolean(entry));
+  }
+
+  private async getMembershipRoleMap(userId: string): Promise<Map<string, AppRepoRole>> {
+    const memberships = await prisma.repoMember.findMany({
+      where: { userId },
       select: {
-        id: true,
-        name: true,
-        ownerId: true,
-        visibility: true,
-        description: true,
-        tags: true,
-        createdAt: true,
-        updatedAt: true,
+        repositoryId: true,
+        role: true,
       },
     });
 
-    const accessible = repositories
-      .map((repository) => {
-        const repositoryRecord = toRepositoryRecord(repository);
-        const effectiveRole = membershipRoleMap.get(repository.id) ?? (repository.visibility === RepoVisibility.public ? "read" : null);
-        if (!effectiveRole || !isRepoRoleAtLeast(effectiveRole, minRole)) {
-          return null;
-        }
+    return new Map(memberships.map((membership) => [membership.repositoryId, toAppRepoRole(membership.role)]));
+  }
 
-        return { record: repositoryRecord, effectiveRole };
-      })
-      .filter((entry): entry is { record: RepositoryRecord; effectiveRole: AppRepoRole } => Boolean(entry));
+  private buildAccessibleRepositoryWhere(
+    membershipRoleMap: Map<string, AppRepoRole>,
+    minRole: AppRepoRole,
+  ): Prisma.RepositoryWhereInput {
+    if (this.allowsPublicReadFallback(minRole)) {
+      return {
+        OR: [
+          { visibility: RepoVisibility.public },
+          { id: { in: Array.from(membershipRoleMap.keys()) } },
+        ],
+      };
+    }
 
-    const videoCounts = await this.getVideoCountsByRepositoryId(accessible.map((entry) => entry.record.id));
-    return accessible.map((entry) =>
-      toRepositorySummary(entry.record, entry.effectiveRole, videoCounts.get(entry.record.id) ?? 0),
-    );
+    return {
+      id: { in: this.getRepositoryIdsWithRoleAtLeast(membershipRoleMap, minRole) },
+    };
+  }
+
+  private toAccessibleRepositoryEntry(
+    repository: RepositorySummaryRow,
+    membershipRoleMap: Map<string, AppRepoRole>,
+    minRole: AppRepoRole,
+  ): AccessibleRepositoryEntry | null {
+    const repositoryRecord = toRepositoryRecord(repository);
+    const effectiveRole =
+      membershipRoleMap.get(repository.id) ?? (repository.visibility === RepoVisibility.public ? "read" : null);
+
+    if (!effectiveRole || !isRepoRoleAtLeast(effectiveRole, minRole)) {
+      return null;
+    }
+
+    return { record: repositoryRecord, effectiveRole };
+  }
+
+  private getRepositoryIdsWithRoleAtLeast(
+    membershipRoleMap: Map<string, AppRepoRole>,
+    minRole: AppRepoRole,
+  ): string[] {
+    return Array.from(membershipRoleMap.entries())
+      .filter(([, role]) => isRepoRoleAtLeast(role, minRole))
+      .map(([repositoryId]) => repositoryId);
+  }
+
+  private allowsPublicReadFallback(minRole: AppRepoRole): boolean {
+    return minRole === "read";
   }
 
   private async getDeactivatedAdminRepositories(userId: string, userRole: AppUserRole) {

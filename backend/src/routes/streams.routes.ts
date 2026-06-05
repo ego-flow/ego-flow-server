@@ -1,8 +1,10 @@
 import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
-import { getAuthUser } from "../lib/request-context";
+import { getAuthUser, getRepositoryAccess } from "../lib/request-context";
 import { requireAppJwt } from "../middleware/auth.middleware";
+import { repoAccess } from "../middleware/repo-access.middleware";
+import { repoStatus } from "../middleware/repo-status.middleware";
 import { validate } from "../middleware/validate.middleware";
 import {
   publishTicketParamsSchema,
@@ -23,9 +25,11 @@ router.post(
   "/register",
   requireAppJwt,
   validate(streamRegisterSchema),
+  repoAccess({ action: "stream.record", repositoryId: (req) => req.body.repositoryId }),
+  repoStatus({ required: "active", repositoryId: (req) => req.body.repositoryId }),
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    const response = await streamService.registerSession(user.userId, user.role, req.body);
+    const response = await streamService.registerSession(user.userId, getRepositoryAccess(req).repository, req.body);
     res.status(200).json(response);
   }),
 );
