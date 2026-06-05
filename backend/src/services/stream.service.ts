@@ -15,7 +15,7 @@ import { runtimeConfig as env } from "../config/runtime";
 import type { AppUserRole } from "../types/auth";
 import type { StreamRegisterInput } from "../schemas/stream.schema";
 import type { RecordingSessionLiveCache } from "../types/stream";
-import { streamRecordingKey } from "../utils/stream-keys";
+import { streamRecordingKey } from "../lib/stream-keys";
 import { repositoryAccessService } from "./repository-access.service";
 import { repositoryService } from "./repository.service";
 import { recordingSessionService } from "./recording-session.service";

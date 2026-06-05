@@ -12,7 +12,7 @@ import {
 import { redis } from "../lib/redis";
 import { userRepository } from "../repositories/user.repository";
 import type { AuthenticatedUser } from "../types/auth";
-import { createPrefixedRandomToken, hashValue } from "../utils/crypto";
+import { createPrefixedRandomToken, hashValue } from "../lib/crypto";
 
 interface DashboardSessionRecord {
   sessionId: string;

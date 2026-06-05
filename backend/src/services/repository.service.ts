@@ -16,8 +16,8 @@ import type {
 } from "../schemas/repository.schema";
 import type { AppUserRole } from "../types/auth";
 import type { AppRepoRole, RepositoryAccessContext, RepositoryRecord } from "../types/repository";
-import { movePath, pathExists } from "../utils/file-system";
-import { remapPathWithinDirectory } from "../utils/path-mapping";
+import { movePath, pathExists } from "../lib/file-system";
+import { remapPathWithinDirectory } from "../lib/path-mapping";
 import { repositoryAccessService } from "./repository-access.service";
 import { refreshRepositoryContributors } from "./repository-contributors.service";
 

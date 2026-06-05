@@ -11,7 +11,7 @@ import type {
   RecordingSessionIngestTypeValue,
   RecordingSessionLiveCache,
 } from "../types/stream";
-import { hlsPlaybackTicketKey, streamRecordingKey, streamTicketKey } from "../utils/stream-keys";
+import { hlsPlaybackTicketKey, streamRecordingKey, streamTicketKey } from "../lib/stream-keys";
 
 type PublishTicketValidationResult =
   | {

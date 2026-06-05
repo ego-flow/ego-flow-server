@@ -18,7 +18,7 @@ import { redis } from "../lib/redis";
 import { runtimeConfig as env } from "../config/runtime";
 import { processingService } from "./processing.service";
 import { streamOwnershipService } from "./stream-ownership.service";
-import { streamRecordingKey } from "../utils/stream-keys";
+import { streamRecordingKey } from "../lib/stream-keys";
 import type {
   RecordingSessionLiveCache,
   RecordingFinalizeJobData,

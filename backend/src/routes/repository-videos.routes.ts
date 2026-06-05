@@ -21,7 +21,7 @@ import {
   repoVideoRepositoryParamSchema,
 } from "../schemas/repository-video.schema";
 import { videoService } from "../services/video.service";
-import { isMissingFileError } from "../utils/file-system";
+import { isMissingFileError } from "../lib/file-system";
 
 const router = Router({ mergeParams: true });
 

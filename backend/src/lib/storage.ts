@@ -3,8 +3,8 @@ import path from "path";
 
 import { TARGET_DIRECTORY_SETTING_KEY } from "../constants/storage/storage-constants";
 import { runtimeConfig as env } from "../config/runtime";
-import { movePath, pathExists } from "../utils/file-system";
-import { remapPathWithinDirectory } from "../utils/path-mapping";
+import { movePath, pathExists } from "./file-system";
+import { remapPathWithinDirectory } from "./path-mapping";
 import { prisma } from "./prisma";
 
 let activeTargetDirectory = path.resolve(env.TARGET_DIRECTORY);

@@ -9,7 +9,7 @@ import { prisma } from "../lib/prisma";
 import { toAppUserRole } from "../mappers/user.mapper";
 import type { CreateApiTokenInput } from "../schemas/api-token.schema";
 import type { AppUserRole } from "../types/auth";
-import { createPrefixedRandomToken, hashValue } from "../utils/crypto";
+import { createPrefixedRandomToken, hashValue } from "../lib/crypto";
 
 const toIsoString = (value: Date | null) => value?.toISOString() ?? null;
 

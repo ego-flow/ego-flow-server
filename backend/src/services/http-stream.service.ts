@@ -22,7 +22,7 @@ import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import type { HttpStreamFinishInput, HttpStreamStartInput } from "../schemas/stream.schema";
 import type { RecordingSessionLiveCache } from "../types/stream";
-import { httpUploadLockKey, streamRecordingKey } from "../utils/stream-keys";
+import { httpUploadLockKey, streamRecordingKey } from "../lib/stream-keys";
 import { recordingSessionService } from "./recording-session.service";
 import { streamOwnershipService } from "./stream-ownership.service";
 
