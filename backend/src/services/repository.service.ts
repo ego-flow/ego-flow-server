@@ -1,17 +1,23 @@
 import fs from "fs/promises";
 import path from "path";
 
-import { Prisma, RecordingSegmentStatus, RecordingSessionStatus, RepoRole, RepoVisibility } from "@prisma/client";
+import { RepoVisibility } from "@prisma/client";
 
-import { BadRequest, Conflict, NotFound } from "../lib/errors";
-import { prisma } from "../lib/prisma";
+import { BadRequest, Conflict, ErrorCode, NotFound } from "../lib/errors";
 import { getRepositoryAccessPolicy, type RepositoryActiveAccessAction } from "../lib/repository-access-policy";
 import { isRepoRoleAtLeast, toAppRepoRole } from "../lib/repository-roles";
 import { getTargetDirectory } from "../lib/storage";
 import { normalizeRepositoryTags, toRepositoryRecord } from "../mappers/repository.mapper";
+import {
+  isUniqueConstraintError,
+  repositoriesRepository,
+  type RepositorySummaryRow,
+} from "../repositories/repositories.repository";
 import type {
   CreateRepositoryInput,
   CreateRepositoryMemberInput,
+  ManifestQueryInput,
+  RepositoryResolveQueryInput,
   UpdateRepositoryInput,
   UpdateRepositoryMemberInput,
 } from "../schemas/repository.schema";
@@ -55,24 +61,6 @@ const normalizeDescription = (description: string | null | undefined): string | 
   return trimmed ? trimmed : null;
 };
 
-const isConflictError = (error: unknown): boolean =>
-  error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
-
-const repositorySummarySelect = {
-  id: true,
-  name: true,
-  ownerId: true,
-  visibility: true,
-  description: true,
-  tags: true,
-  createdAt: true,
-  updatedAt: true,
-} satisfies Prisma.RepositorySelect;
-
-type RepositorySummaryRow = Prisma.RepositoryGetPayload<{
-  select: typeof repositorySummarySelect;
-}>;
-
 type AccessibleRepositoryEntry = {
   record: RepositoryRecord;
   effectiveRole: AppRepoRole;
@@ -99,41 +87,25 @@ export class RepositoryService {
     const policy = getRepositoryAccessPolicy(action);
 
     if (userRole === "admin") {
-      const repositories = await prisma.repository.findMany({
-        where: { deactivated: false },
-        select: { id: true },
-      });
-      return new Set(repositories.map((repository) => repository.id));
+      return new Set(await repositoriesRepository.findActiveRepositoryIds());
     }
 
     const membershipRoleMap = await this.getMembershipRoleMap(userId);
     const memberRepoIds = this.getRepositoryIdsWithRoleAtLeast(membershipRoleMap, policy.minRole);
 
     const [memberRepos, publicRepos] = await Promise.all([
-      prisma.repository.findMany({
-        where: {
-          id: { in: memberRepoIds },
-          deactivated: false,
-        },
-        select: { id: true },
-      }),
+      repositoriesRepository.findActiveRepositoryIdsByIds(memberRepoIds),
       this.allowsPublicReadFallback(policy.minRole)
-        ? prisma.repository.findMany({
-            where: {
-              visibility: RepoVisibility.public,
-              deactivated: false,
-            },
-            select: { id: true },
-          })
+        ? repositoriesRepository.findActivePublicRepositoryIds()
         : Promise.resolve([]),
     ]);
 
     const accessible = new Set<string>();
-    for (const repo of memberRepos) {
-      accessible.add(repo.id);
+    for (const repositoryId of memberRepos) {
+      accessible.add(repositoryId);
     }
-    for (const repo of publicRepos) {
-      accessible.add(repo.id);
+    for (const repositoryId of publicRepos) {
+      accessible.add(repositoryId);
     }
 
     return accessible;
@@ -162,31 +134,22 @@ export class RepositoryService {
     };
   }
 
+  async resolveRepositoryFromQuery(
+    requestUserId: string,
+    requestUserRole: AppUserRole,
+    query: RepositoryResolveQueryInput,
+  ) {
+    const { ownerId, repoName } = this.getRepositoryResolveTarget(query);
+    return this.resolveRepository(requestUserId, requestUserRole, ownerId, repoName);
+  }
+
   async resolveRepository(
     requestUserId: string,
     requestUserRole: AppUserRole,
     ownerId: string,
     repoName: string,
   ) {
-    const repository = await prisma.repository.findUnique({
-      where: {
-        ownerId_name: {
-          ownerId,
-          name: repoName,
-        },
-      },
-      select: {
-        id: true,
-        name: true,
-        ownerId: true,
-        visibility: true,
-        description: true,
-        tags: true,
-        deactivated: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const repository = await repositoriesRepository.findRepositoryByOwnerAndName(ownerId, repoName);
 
     if (!repository || repository.deactivated) {
       throw NotFound("Repository not found.");
@@ -207,42 +170,34 @@ export class RepositoryService {
     };
   }
 
+  async getRepositoryManifest(access: RepositoryAccessContext, query: ManifestQueryInput) {
+    const { videosService } = await import("./videos.service");
+    return videosService.getRepositoryManifest(
+      access.repository.id,
+      access.repository,
+      access.effectiveRole,
+      query,
+    );
+  }
+
   async createRepository(userId: string, input: CreateRepositoryInput) {
     try {
-      const repository = await prisma.repository.create({
-        data: {
-          name: input.name,
-          ownerId: userId,
-          visibility: input.visibility,
-          description: normalizeDescription(input.description),
-          tags: normalizeRepositoryTags(input.tags),
-          contributors: [userId],
-        },
-        select: {
-          id: true,
-          name: true,
-          ownerId: true,
-          visibility: true,
-          description: true,
-          tags: true,
-          createdAt: true,
-          updatedAt: true,
-        },
+      const repository = await repositoriesRepository.createRepository({
+        name: input.name,
+        ownerId: userId,
+        visibility: input.visibility,
+        description: normalizeDescription(input.description),
+        tags: normalizeRepositoryTags(input.tags),
+        contributors: [userId],
       });
 
-      await prisma.repoMember.create({
-        data: {
-          repositoryId: repository.id,
-          userId,
-          role: RepoRole.admin,
-        },
-      });
+      await repositoriesRepository.createRepositoryAdminMember(repository.id, userId);
 
       return {
         repository: toRepositoryResponse(toRepositoryRecord(repository), "admin"),
       };
     } catch (error) {
-      if (isConflictError(error)) {
+      if (isUniqueConstraintError(error)) {
         throw Conflict("Repository name already exists for this owner.");
       }
 
@@ -279,31 +234,19 @@ export class RepositoryService {
     }
 
     try {
-      const repository = await prisma.repository.update({
-        where: { id: repositoryId },
-        data: {
-          name: nextName,
-          visibility: nextVisibility === "public" ? RepoVisibility.public : RepoVisibility.private,
-          description: nextDescription,
-          tags: nextTags,
-        },
-        select: {
-          id: true,
-          name: true,
-          ownerId: true,
-          visibility: true,
-          description: true,
-          tags: true,
-          createdAt: true,
-          updatedAt: true,
-        },
+      const repository = await repositoriesRepository.updateRepository({
+        repositoryId,
+        name: nextName,
+        visibility: nextVisibility === "public" ? RepoVisibility.public : RepoVisibility.private,
+        description: nextDescription,
+        tags: nextTags,
       });
 
       return {
         repository: toRepositoryResponse(toRepositoryRecord(repository), access.effectiveRole),
       };
     } catch (error) {
-      if (isConflictError(error)) {
+      if (isUniqueConstraintError(error)) {
         throw Conflict("Repository name already exists for this owner.");
       }
 
@@ -314,10 +257,7 @@ export class RepositoryService {
   async deactivateRepository(access: RepositoryAccessContext) {
     const repositoryId = access.repository.id;
 
-    await prisma.repository.update({
-      where: { id: repositoryId },
-      data: { deactivated: true },
-    });
+    await repositoriesRepository.markRepositoryDeactivated(repositoryId);
 
     return {
       id: repositoryId,
@@ -349,15 +289,7 @@ export class RepositoryService {
       );
     }
 
-    const videos = await prisma.video.findMany({
-      where: { repositoryId },
-      select: {
-        rawRecordingPath: true,
-        vlmVideoPath: true,
-        dashboardVideoPath: true,
-        thumbnailPath: true,
-      },
-    });
+    const videos = await repositoriesRepository.findRepositoryVideoPaths(repositoryId);
 
     await Promise.all(
       videos.flatMap((video) =>
@@ -370,15 +302,7 @@ export class RepositoryService {
     const repositoryDir = path.join(getTargetDirectory(), access.repository.ownerId, access.repository.name);
     await fs.rm(repositoryDir, { recursive: true, force: true });
 
-    await prisma.$transaction([
-      prisma.repoMember.deleteMany({ where: { repositoryId } }),
-      prisma.video.deleteMany({ where: { repositoryId } }),
-      prisma.recordingSegment.deleteMany({
-        where: { recordingSession: { repositoryId } },
-      }),
-      prisma.recordingSession.deleteMany({ where: { repositoryId } }),
-      prisma.repository.delete({ where: { id: repositoryId } }),
-    ]);
+    await repositoriesRepository.deleteRepositoryGraph(repositoryId);
 
     return {
       id: repositoryId,
@@ -389,28 +313,8 @@ export class RepositoryService {
   async listRepositoryMembers(access: RepositoryAccessContext) {
     const repositoryId = access.repository.id;
 
-    const memberships = await prisma.repoMember.findMany({
-      where: { repositoryId },
-      orderBy: [{ role: "desc" }, { userId: "asc" }],
-      select: {
-        userId: true,
-        role: true,
-        createdAt: true,
-      },
-    });
-
-    const users = await prisma.user.findMany({
-      where: {
-        id: {
-          in: memberships.map((membership) => membership.userId),
-        },
-      },
-      select: {
-        id: true,
-        displayName: true,
-        deactivated: true,
-      },
-    });
+    const memberships = await repositoriesRepository.findRepositoryMembers(repositoryId);
+    const users = await repositoriesRepository.findUserSummaries(memberships.map((membership) => membership.userId));
 
     const userMap = new Map(users.map((user) => [user.id, user]));
 
@@ -437,21 +341,10 @@ export class RepositoryService {
     const repositoryId = access.repository.id;
     await this.ensureTargetUserCanBeManaged(access.repository.ownerId, input.user_id);
 
-    await prisma.repoMember.upsert({
-      where: {
-        repositoryId_userId: {
-          repositoryId,
-          userId: input.user_id,
-        },
-      },
-      update: {
-        role: input.role,
-      },
-      create: {
-        repositoryId,
-        userId: input.user_id,
-        role: input.role,
-      },
+    await repositoriesRepository.upsertRepositoryMember({
+      repositoryId,
+      userId: input.user_id,
+      role: input.role,
     });
     await refreshRepositoryContributors(repositoryId);
 
@@ -466,30 +359,16 @@ export class RepositoryService {
     const repositoryId = access.repository.id;
     await this.ensureTargetUserCanBeManaged(access.repository.ownerId, targetUserId);
 
-    const membership = await prisma.repoMember.findUnique({
-      where: {
-        repositoryId_userId: {
-          repositoryId,
-          userId: targetUserId,
-        },
-      },
-      select: { userId: true },
-    });
+    const membership = await repositoriesRepository.findRepositoryMembership(repositoryId, targetUserId);
 
     if (!membership) {
       throw NotFound("Repository member not found.");
     }
 
-    await prisma.repoMember.update({
-      where: {
-        repositoryId_userId: {
-          repositoryId,
-          userId: targetUserId,
-        },
-      },
-      data: {
-        role: input.role,
-      },
+    await repositoriesRepository.updateRepositoryMemberRole({
+      repositoryId,
+      userId: targetUserId,
+      role: input.role,
     });
     await refreshRepositoryContributors(repositoryId);
 
@@ -503,28 +382,13 @@ export class RepositoryService {
     const repositoryId = access.repository.id;
     await this.ensureTargetUserCanBeManaged(access.repository.ownerId, targetUserId);
 
-    const membership = await prisma.repoMember.findUnique({
-      where: {
-        repositoryId_userId: {
-          repositoryId,
-          userId: targetUserId,
-        },
-      },
-      select: { userId: true },
-    });
+    const membership = await repositoriesRepository.findRepositoryMembership(repositoryId, targetUserId);
 
     if (!membership) {
       throw NotFound("Repository member not found.");
     }
 
-    await prisma.repoMember.delete({
-      where: {
-        repositoryId_userId: {
-          repositoryId,
-          userId: targetUserId,
-        },
-      },
-    });
+    await repositoriesRepository.deleteRepositoryMember(repositoryId, targetUserId);
     await refreshRepositoryContributors(repositoryId);
 
     return {
@@ -535,42 +399,13 @@ export class RepositoryService {
   }
 
   private async getVideoCountsByRepositoryId(repositoryIds: string[]): Promise<Map<string, number>> {
-    if (repositoryIds.length === 0) {
-      return new Map();
-    }
-
-    const grouped = await prisma.video.groupBy({
-      by: ["repositoryId"],
-      where: { repositoryId: { in: repositoryIds } },
-      _count: { _all: true },
-    });
-
-    return new Map(grouped.map((row) => [row.repositoryId, row._count._all]));
+    return repositoriesRepository.countVideosByRepositoryIds(repositoryIds);
   }
 
   private async getRepositoryPermanentDeleteState(access: RepositoryAccessContext) {
     const repositoryId = access.repository.id;
-    const [activeStreamingSessionCount, finalizingSegmentCount] = await Promise.all([
-      prisma.recordingSession.count({
-        where: {
-          repositoryId,
-          status: RecordingSessionStatus.STREAMING,
-        },
-      }),
-      prisma.recordingSegment.count({
-        where: {
-          status: {
-            in: [
-              RecordingSegmentStatus.WRITE_DONE,
-              RecordingSegmentStatus.PROCESSING,
-            ],
-          },
-          recordingSession: {
-            repositoryId,
-          },
-        },
-      }),
-    ]);
+    const { activeStreamingSessionCount, finalizingSegmentCount } =
+      await repositoriesRepository.getRepositoryDeleteState(repositoryId);
 
     return {
       repository: access.repository,
@@ -602,11 +437,7 @@ export class RepositoryService {
     minRole: AppRepoRole,
   ): Promise<AccessibleRepositoryEntry[]> {
     if (userRole === "admin") {
-      const repositories = await prisma.repository.findMany({
-        where: { deactivated: false },
-        orderBy: [{ ownerId: "asc" }, { name: "asc" }],
-        select: repositorySummarySelect,
-      });
+      const repositories = await repositoriesRepository.findActiveRepositorySummaries();
 
       return repositories.map((repository) =>
         ({ record: toRepositoryRecord(repository), effectiveRole: "admin" }),
@@ -614,17 +445,9 @@ export class RepositoryService {
     }
 
     const membershipRoleMap = await this.getMembershipRoleMap(userId);
-    const accessWhere = this.buildAccessibleRepositoryWhere(membershipRoleMap, minRole);
-
-    const repositories = await prisma.repository.findMany({
-      where: {
-        AND: [
-          { deactivated: false },
-          accessWhere,
-        ],
-      },
-      orderBy: [{ ownerId: "asc" }, { name: "asc" }],
-      select: repositorySummarySelect,
+    const repositories = await repositoriesRepository.findActiveRepositorySummariesForAccess({
+      memberRepositoryIds: this.getRepositoryIdsWithRoleAtLeast(membershipRoleMap, minRole),
+      includePublic: this.allowsPublicReadFallback(minRole),
     });
 
     return repositories
@@ -633,33 +456,9 @@ export class RepositoryService {
   }
 
   private async getMembershipRoleMap(userId: string): Promise<Map<string, AppRepoRole>> {
-    const memberships = await prisma.repoMember.findMany({
-      where: { userId },
-      select: {
-        repositoryId: true,
-        role: true,
-      },
-    });
+    const memberships = await repositoriesRepository.findMembershipRolesByUser(userId);
 
     return new Map(memberships.map((membership) => [membership.repositoryId, toAppRepoRole(membership.role)]));
-  }
-
-  private buildAccessibleRepositoryWhere(
-    membershipRoleMap: Map<string, AppRepoRole>,
-    minRole: AppRepoRole,
-  ): Prisma.RepositoryWhereInput {
-    if (this.allowsPublicReadFallback(minRole)) {
-      return {
-        OR: [
-          { visibility: RepoVisibility.public },
-          { id: { in: Array.from(membershipRoleMap.keys()) } },
-        ],
-      };
-    }
-
-    return {
-      id: { in: this.getRepositoryIdsWithRoleAtLeast(membershipRoleMap, minRole) },
-    };
   }
 
   private toAccessibleRepositoryEntry(
@@ -693,51 +492,16 @@ export class RepositoryService {
 
   private async getDeactivatedAdminRepositories(userId: string, userRole: AppUserRole) {
     if (userRole === "admin") {
-      return prisma.repository.findMany({
-        where: { deactivated: true },
-        orderBy: [{ ownerId: "asc" }, { name: "asc" }],
-        select: {
-          id: true,
-          name: true,
-          ownerId: true,
-          visibility: true,
-          description: true,
-          tags: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      });
+      return repositoriesRepository.findDeactivatedRepositorySummariesForSystemAdmin();
     }
 
-    const adminMemberships = await prisma.repoMember.findMany({
-      where: {
-        userId,
-        role: RepoRole.admin,
-      },
-      select: { repositoryId: true },
-    });
+    const adminRepositoryIds = await repositoriesRepository.findAdminRepositoryIdsByUser(userId);
 
-    if (adminMemberships.length === 0) {
+    if (adminRepositoryIds.length === 0) {
       return [];
     }
 
-    return prisma.repository.findMany({
-      where: {
-        id: { in: adminMemberships.map((membership) => membership.repositoryId) },
-        deactivated: true,
-      },
-      orderBy: [{ ownerId: "asc" }, { name: "asc" }],
-      select: {
-        id: true,
-        name: true,
-        ownerId: true,
-        visibility: true,
-        description: true,
-        tags: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    return repositoriesRepository.findDeactivatedRepositorySummariesByIds(adminRepositoryIds);
   }
 
   private async ensureTargetUserCanBeManaged(ownerId: string, targetUserId: string) {
@@ -745,13 +509,7 @@ export class RepositoryService {
       throw BadRequest("Repository owner membership cannot be changed.");
     }
 
-    const targetUser = await prisma.user.findUnique({
-      where: { id: targetUserId },
-      select: {
-        id: true,
-        deactivated: true,
-      },
-    });
+    const targetUser = await repositoriesRepository.findActiveUserState(targetUserId);
 
     if (!targetUser) {
       throw NotFound("User not found.");
@@ -767,40 +525,16 @@ export class RepositoryService {
     _repositoryName: string,
     options: { blockPending?: boolean } = { blockPending: true },
   ) {
-    const sessionStatusFilter = options.blockPending
-      ? {
-          in: [
-            RecordingSessionStatus.PENDING,
-            RecordingSessionStatus.STREAMING,
-          ],
-        }
-      : RecordingSessionStatus.STREAMING;
-    const activeSession = await prisma.recordingSession.findFirst({
-      where: {
-        repositoryId,
-        status: sessionStatusFilter,
-      },
-      select: { id: true },
+    const activeSession = await repositoriesRepository.hasOpenRecordingSession({
+      repositoryId,
+      blockPending: options.blockPending ?? true,
     });
 
     if (activeSession) {
       throw Conflict("Repository cannot be modified while a stream is active.");
     }
 
-    const finalizingSegment = await prisma.recordingSegment.findFirst({
-      where: {
-        status: {
-          in: [
-            RecordingSegmentStatus.WRITE_DONE,
-            RecordingSegmentStatus.PROCESSING,
-          ],
-        },
-        recordingSession: {
-          repositoryId,
-        },
-      },
-      select: { id: true },
-    });
+    const finalizingSegment = await repositoriesRepository.hasFinalizingRecordingSegment(repositoryId);
 
     if (finalizingSegment) {
       throw Conflict("Repository cannot be modified while recording finalization is in progress.");
@@ -821,28 +555,35 @@ export class RepositoryService {
       await movePath(previousDirectory, nextDirectory);
     }
 
-    const videos = await prisma.video.findMany({
-      where: { repositoryId },
-      select: {
-        id: true,
-        vlmVideoPath: true,
-        dashboardVideoPath: true,
-        thumbnailPath: true,
-      },
-    });
+    const videos = await repositoriesRepository.findVideoPathsForRepositoryRename(repositoryId);
 
-    await prisma.$transaction(
-      videos.map((video) =>
-        prisma.video.update({
-          where: { id: video.id },
-          data: {
-            vlmVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.vlmVideoPath),
-            dashboardVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.dashboardVideoPath),
-            thumbnailPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.thumbnailPath),
-          },
-        }),
-      ),
-    );
+    await repositoriesRepository.updateVideoPathsForRepositoryRename({
+      videos: videos.map((video) => ({
+        id: video.id,
+        vlmVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.vlmVideoPath),
+        dashboardVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.dashboardVideoPath),
+        thumbnailPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.thumbnailPath),
+      })),
+    });
+  }
+
+  private getRepositoryResolveTarget(query: RepositoryResolveQueryInput) {
+    if (query.slug) {
+      const parts = query.slug.split("/");
+      if (parts.length !== 2 || !parts[0] || !parts[1]) {
+        throw BadRequest("Slug must be in 'owner/name' format.", ErrorCode.INVALID_SLUG);
+      }
+
+      return {
+        ownerId: parts[0],
+        repoName: parts[1],
+      };
+    }
+
+    return {
+      ownerId: query.owner_id!,
+      repoName: query.name!,
+    };
   }
 }
 

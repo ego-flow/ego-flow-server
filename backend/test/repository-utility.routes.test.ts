@@ -55,8 +55,8 @@ const { repositoryAccessService } =
   require("../src/services/repository-access.service") as typeof import("../src/services/repository-access.service");
 const { repositoryService } =
   require("../src/services/repository.service") as typeof import("../src/services/repository.service");
-const { videoService } =
-  require("../src/services/video.service") as typeof import("../src/services/video.service");
+const { videosService } =
+  require("../src/services/videos.service") as typeof import("../src/services/videos.service");
 const { repositoriesRoutes } =
   require("../src/routes/repositories.routes") as typeof import("../src/routes/repositories.routes");
 
@@ -66,7 +66,7 @@ const originalVerifyPythonToken = pythonToken.verifyPythonToken;
 const originalAssertRepositoryAccess = repositoryAccessService.assertAction;
 const originalAssertRepositoryStatus = repositoryAccessService.assertRepositoryStatus;
 const originalResolveRepository = repositoryService.resolveRepository;
-const originalGetRepositoryManifest = videoService.getRepositoryManifest;
+const originalGetRepositoryManifest = videosService.getRepositoryManifest;
 
 let server: import("node:http").Server | null = null;
 const repoId = "11111111-1111-4111-8111-111111111111";
@@ -95,7 +95,7 @@ beforeEach(() => {
     deactivated: required === "deactivated",
   });
   repositoryService.resolveRepository = originalResolveRepository;
-  videoService.getRepositoryManifest = originalGetRepositoryManifest;
+  videosService.getRepositoryManifest = originalGetRepositoryManifest;
 });
 
 afterEach(async () => {
@@ -280,7 +280,7 @@ test("GET /repositories/:repoId/manifest uses repoAccess context and validated q
     effectiveRole: "read",
     isSystemAdmin: false,
   })) as typeof repositoryAccessService.assertAction;
-  videoService.getRepositoryManifest = (async (requestedRepoId, repository, effectiveRole, query) => {
+  videosService.getRepositoryManifest = (async (requestedRepoId, repository, effectiveRole, query) => {
     capturedRepoId = requestedRepoId;
     capturedRole = effectiveRole;
     capturedPage = query.page;
@@ -304,7 +304,7 @@ test("GET /repositories/:repoId/manifest uses repoAccess context and validated q
       },
       videos: [],
     };
-  }) as typeof videoService.getRepositoryManifest;
+  }) as typeof videosService.getRepositoryManifest;
 
   const response = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/manifest?page=2&limit=5`, {
     headers: { Authorization: "Bearer ef_0123456789abcdef0123456789abcdef01234567" },
@@ -409,7 +409,7 @@ test("GET /repositories/:repoId/manifest applies default page and limit", async 
     effectiveRole: "read",
     isSystemAdmin: false,
   })) as typeof repositoryAccessService.assertAction;
-  videoService.getRepositoryManifest = (async (_repoId, repository, effectiveRole, query) => {
+  videosService.getRepositoryManifest = (async (_repoId, repository, effectiveRole, query) => {
     capturedPage = query.page;
     capturedLimit = query.limit;
 
@@ -431,7 +431,7 @@ test("GET /repositories/:repoId/manifest applies default page and limit", async 
       },
       videos: [],
     };
-  }) as typeof videoService.getRepositoryManifest;
+  }) as typeof videosService.getRepositoryManifest;
 
   const response = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/manifest`, {
     headers: { Authorization: "Bearer ef_0123456789abcdef0123456789abcdef01234567" },

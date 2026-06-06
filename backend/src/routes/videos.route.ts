@@ -1,13 +1,8 @@
-import fsp from "node:fs/promises";
-
-import type { Response } from "express";
 import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
 import { NotFound } from "../lib/errors";
 import { getRepositoryAccess } from "../lib/request-context";
-import { toSignedFileUrl } from "../lib/signed-file-url";
-import { getTargetDirectory } from "../lib/storage";
 import { requireDashboardOrPython, requireDashboardSession } from "../middleware/auth.middleware";
 import { repoAccess, repoStatus } from "../middleware/repository.middleware";
 import { validate } from "../middleware/validate.middleware";
@@ -20,38 +15,9 @@ import {
   repoVideoParamsSchema,
   repoVideoRepositoryParamSchema,
 } from "../schemas/repository-video.schema";
-import { videoService } from "../services/video.service";
-import { isMissingFileError } from "../lib/file-system";
+import { videosService } from "../services/videos.service";
 
 const router = Router({ mergeParams: true });
-
-const ensureFileExists = async (filePath: string, missingMessage: string) => {
-  try {
-    await fsp.stat(filePath);
-  } catch (error) {
-    if (isMissingFileError(error)) {
-      throw NotFound(missingMessage);
-    }
-
-    throw error;
-  }
-};
-
-const redirectToSignedDownload = async (
-  res: Response,
-  video: {
-    path: string;
-  },
-) => {
-  await ensureFileExists(video.path, "Video file is not available.");
-
-  const signedUrl = toSignedFileUrl(getTargetDirectory(), video.path);
-  if (!signedUrl) {
-    throw NotFound("Video file is not available.");
-  }
-
-  res.redirect(307, signedUrl);
-};
 
 router.use(validate(repoVideoRepositoryParamSchema, "params"));
 
@@ -63,7 +29,7 @@ router.get(
   repoStatus({ required: "active" }),
   validate(repoVideoListQuerySchema, "query"),
   asyncHandler(async (req, res) => {
-    const response = await videoService.listRepositoryVideos(
+    const response = await videosService.listRepositoryVideos(
       getRepositoryAccess(req).repository,
       req.query as unknown as RepoVideoListQueryInput,
     );
@@ -80,7 +46,7 @@ router.get(
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const params = req.params as RepoVideoParamsInput;
-    const response = await videoService.getRepositoryVideoDetail(
+    const response = await videosService.getRepositoryVideoDetail(
       params.repoId,
       getRepositoryAccess(req).repository,
       params.videoId,
@@ -98,7 +64,7 @@ router.get(
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const params = req.params as RepoVideoParamsInput;
-    const response = await videoService.getRepositoryVideoStatus(params.repoId, params.videoId);
+    const response = await videosService.getRepositoryVideoStatus(params.repoId, params.videoId);
     res.status(200).json(response);
   }),
 );
@@ -112,7 +78,7 @@ router.delete(
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const params = req.params as RepoVideoParamsInput;
-    const response = await videoService.deleteRepositoryVideo(params.repoId, params.videoId);
+    const response = await videosService.deleteRepositoryVideo(params.repoId, params.videoId);
     res.status(200).json(response);
   }),
 );
@@ -131,9 +97,9 @@ router.get(
   validate(repoVideoParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const params = req.params as RepoVideoParamsInput;
-    const video = await videoService.getRepositoryVideoDownload(params.repoId, params.videoId);
-    await redirectToSignedDownload(res, video);
+    const download = await videosService.getRepositoryVideoDownload(params.repoId, params.videoId);
+    res.redirect(307, download.redirectUrl);
   }),
 );
 
-export const repositoryVideosRoutes = router;
+export const videosRoutes = router;

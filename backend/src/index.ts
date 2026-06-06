@@ -19,9 +19,9 @@ import { hooksRoutes } from "./routes/hooks.routes";
 import { httpStreamsRoutes } from "./routes/http-streams.routes";
 import { liveStreamsRoutes } from "./routes/live-streams.routes";
 import { recordingsRoutes } from "./routes/recordings.routes";
-import { repositoryVideosRoutes } from "./routes/repository-videos.routes";
 import { repositoriesRoutes } from "./routes/repositories.routes";
 import { streamsRoutes } from "./routes/streams.routes";
+import { videosRoutes } from "./routes/videos.route";
 import { streamService } from "./services/stream.service";
 
 const app = express();
@@ -70,7 +70,7 @@ app.get("/api/v1/info", (_req, res) => {
 
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/admin", adminRoutes);
-app.use("/api/v1/repositories/:repoId/videos", repositoryVideosRoutes);
+app.use("/api/v1/repositories/:repoId/videos", videosRoutes);
 app.use("/api/v1/repositories", repositoriesRoutes);
 app.use("/api/v1/live-streams", liveStreamsRoutes);
 app.use("/api/v1/http-streams", httpStreamsRoutes);

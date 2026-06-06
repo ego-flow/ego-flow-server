@@ -194,12 +194,12 @@ const fakePrisma: any = {
 
 (globalThis as any).__egoflowPrisma = fakePrisma;
 
-const { VideoService } = require("../src/services/video.service") as typeof import("../src/services/video.service");
+const { VideosService } = require("../src/services/videos.service") as typeof import("../src/services/videos.service");
 const { verifySignedFileUrlToken } =
   require("../src/lib/signed-file-url") as typeof import("../src/lib/signed-file-url");
 const { getTargetDirectory } = require("../src/lib/storage") as typeof import("../src/lib/storage");
 
-const service = new VideoService();
+const service = new VideosService();
 const targetDirectory = getTargetDirectory();
 
 const assertSignedFileUrl = (value: string | null | undefined, expectedPath: string) => {

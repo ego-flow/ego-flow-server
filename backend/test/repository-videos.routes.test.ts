@@ -58,16 +58,16 @@ const dashboardSession =
 const mutableDashboardSession = dashboardSession as unknown as {
   verifyDashboardSession: typeof dashboardSession.verifyDashboardSession;
 };
-const { verifySignedFileUrlToken } =
+const { toSignedFileUrl, verifySignedFileUrlToken } =
   require("../src/lib/signed-file-url") as typeof import("../src/lib/signed-file-url");
 const { getTargetDirectory } =
   require("../src/lib/storage") as typeof import("../src/lib/storage");
 const { repositoryAccessService } =
   require("../src/services/repository-access.service") as typeof import("../src/services/repository-access.service");
-const { videoService } =
-  require("../src/services/video.service") as typeof import("../src/services/video.service");
-const { repositoryVideosRoutes } =
-  require("../src/routes/repository-videos.routes") as typeof import("../src/routes/repository-videos.routes");
+const { videosService } =
+  require("../src/services/videos.service") as typeof import("../src/services/videos.service");
+const { videosRoutes } =
+  require("../src/routes/videos.route") as typeof import("../src/routes/videos.route");
 
 const originalVerifyAccessToken = accessTokenLib.verifyAccessToken;
 const originalFindActiveAuthenticatedUser = userRepository.findActiveAuthenticatedUser;
@@ -75,9 +75,9 @@ const originalVerifyPythonToken = pythonToken.verifyPythonToken;
 const originalVerifyDashboardSession = dashboardSession.verifyDashboardSession;
 const originalAssertRepositoryAccess = repositoryAccessService.assertAction;
 const originalAssertRepositoryStatus = repositoryAccessService.assertRepositoryStatus;
-const originalListRepositoryVideos = videoService.listRepositoryVideos;
-const originalGetRepositoryVideoDownload = videoService.getRepositoryVideoDownload;
-const originalDeleteRepositoryVideo = videoService.deleteRepositoryVideo;
+const originalListRepositoryVideos = videosService.listRepositoryVideos;
+const originalGetRepositoryVideoDownload = videosService.getRepositoryVideoDownload;
+const originalDeleteRepositoryVideo = videosService.deleteRepositoryVideo;
 
 const repoId = "11111111-1111-4111-8111-111111111111";
 const videoId = "22222222-2222-4222-8222-222222222222";
@@ -86,7 +86,7 @@ const targetDirectory = getTargetDirectory();
 const startServer = async () => {
   const app = express();
   app.use(express.json());
-  app.use("/api/v1/repositories/:repoId/videos", repositoryVideosRoutes);
+  app.use("/api/v1/repositories/:repoId/videos", videosRoutes);
   app.use(errorMiddleware);
 
   const listening = app.listen(0, "127.0.0.1");
@@ -166,9 +166,9 @@ beforeEach(() => {
     id: repositoryId,
     deactivated: false,
   });
-  videoService.listRepositoryVideos = originalListRepositoryVideos;
-  videoService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
-  videoService.deleteRepositoryVideo = originalDeleteRepositoryVideo;
+  videosService.listRepositoryVideos = originalListRepositoryVideos;
+  videosService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
+  videosService.deleteRepositoryVideo = originalDeleteRepositoryVideo;
 });
 
 afterEach(async () => {
@@ -178,9 +178,9 @@ afterEach(async () => {
   mutableDashboardSession.verifyDashboardSession = originalVerifyDashboardSession;
   repositoryAccessService.assertAction = originalAssertRepositoryAccess;
   repositoryAccessService.assertRepositoryStatus = originalAssertRepositoryStatus;
-  videoService.listRepositoryVideos = originalListRepositoryVideos;
-  videoService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
-  videoService.deleteRepositoryVideo = originalDeleteRepositoryVideo;
+  videosService.listRepositoryVideos = originalListRepositoryVideos;
+  videosService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
+  videosService.deleteRepositoryVideo = originalDeleteRepositoryVideo;
 
 });
 
@@ -189,7 +189,7 @@ test("repo-scoped list uses repository context resolved by repoAccess", { concur
   let capturedRepositoryId = "";
   let capturedStatus = "";
 
-  videoService.listRepositoryVideos = (async (repository, query) => {
+  videosService.listRepositoryVideos = (async (repository, query) => {
     capturedRepositoryId = repository.id;
     capturedStatus = query.status ?? "";
     return {
@@ -199,7 +199,7 @@ test("repo-scoped list uses repository context resolved by repoAccess", { concur
       contributors: [],
       data: [],
     };
-  }) as typeof videoService.listRepositoryVideos;
+  }) as typeof videosService.listRepositoryVideos;
 
   try {
     const response = await fetch(
@@ -231,12 +231,13 @@ test("repo-scoped download rejects HEAD but accepts GET dashboard sessions and P
   await fs.mkdir(path.dirname(videoPath), { recursive: true });
   await fs.writeFile(videoPath, Buffer.from("0123456789", "utf8"));
 
-  videoService.getRepositoryVideoDownload = (async () => ({
+  videosService.getRepositoryVideoDownload = (async () => ({
     id: videoId,
     path: videoPath,
     sizeBytes: 10n,
     sha256: "a".repeat(64),
-  })) as typeof videoService.getRepositoryVideoDownload;
+    redirectUrl: toSignedFileUrl(targetDirectory, videoPath)!,
+  })) as typeof videosService.getRepositoryVideoDownload;
 
   try {
     const headResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {
@@ -298,9 +299,9 @@ test("repo-scoped download rejects HEAD but accepts GET dashboard sessions and P
 
 test("repo-scoped DELETE requires maintain role", { concurrency: false }, async () => {
   const { baseUrl, close } = await startServer();
-  videoService.deleteRepositoryVideo = (async () => {
+  videosService.deleteRepositoryVideo = (async () => {
     throw new Error("DELETE handler should not execute without maintain access");
-  }) as typeof videoService.deleteRepositoryVideo;
+  }) as typeof videosService.deleteRepositoryVideo;
 
   try {
     const deleteResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}`, {

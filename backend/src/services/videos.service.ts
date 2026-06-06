@@ -3,9 +3,13 @@ import fs from "fs/promises";
 import { VideoStatus, type Prisma } from "@prisma/client";
 
 import { Internal, NotFound } from "../lib/errors";
-import { prisma } from "../lib/prisma";
+import { isMissingFileError } from "../lib/file-system";
 import { toSignedFileUrl } from "../lib/signed-file-url";
 import { getTargetDirectory, toStorageRelativePath } from "../lib/storage";
+import {
+  videosRepository,
+  type RepositoryVideoRecord,
+} from "../repositories/videos.repository";
 import type { RepoVideoListQueryInput } from "../schemas/repository-video.schema";
 import type { AppRepoRole, RepositoryRecord } from "../types/repository";
 import {
@@ -18,28 +22,6 @@ import { normalizeContributorUserIds, refreshRepositoryContributors } from "./re
 type VideoOrderQuery = {
   sort_by: "recorded_at" | "duration_sec" | "size_bytes";
   sort_order: "asc" | "desc";
-};
-
-type RepositoryVideoRecord = {
-  id: string;
-  repositoryId: string;
-  recordingSessionId: string | null;
-  status: VideoStatus;
-  durationSec: number | null;
-  resolutionWidth: number | null;
-  resolutionHeight: number | null;
-  fps: number | null;
-  codec: string | null;
-  recordedAt: Date | null;
-  thumbnailPath: string | null;
-  dashboardVideoPath: string | null;
-  sizeBytes: bigint | null;
-  recorder: string | null;
-  semanticMetadata: {
-    sceneSummary: string | null;
-    clipSegments: Prisma.JsonValue | null;
-  } | null;
-  createdAt: Date;
 };
 
 type RepositoryContributor = {
@@ -148,34 +130,9 @@ const toContributorResponse = (contributor: RepositoryContributor) => ({
   latest_recorded_at: contributor.latestRecordedAt ? contributor.latestRecordedAt.toISOString() : null,
 });
 
-export class VideoService {
+export class VideosService {
   private async getRepositoryVideoForResponse(repoId: string, videoId: string) {
-    const video = await prisma.video.findUnique({
-      where: { id: videoId },
-      select: {
-        id: true,
-        repositoryId: true,
-        recordingSessionId: true,
-        status: true,
-        durationSec: true,
-        resolutionWidth: true,
-        resolutionHeight: true,
-        fps: true,
-        codec: true,
-        recordedAt: true,
-        thumbnailPath: true,
-        dashboardVideoPath: true,
-        sizeBytes: true,
-        recorder: true,
-        semanticMetadata: {
-          select: {
-            sceneSummary: true,
-            clipSegments: true,
-          },
-        },
-        createdAt: true,
-      },
-    });
+    const video = await videosRepository.findVideoForResponse(videoId);
 
     if (!video || video.repositoryId !== repoId) {
       throw NotFound("Video not found in this repository.");
@@ -185,18 +142,7 @@ export class VideoService {
   }
 
   private async getRepositoryVideoForStatus(repoId: string, videoId: string) {
-    const video = await prisma.video.findUnique({
-      where: { id: videoId },
-      select: {
-        id: true,
-        repositoryId: true,
-        recordingSessionId: true,
-        status: true,
-        errorMessage: true,
-        processingStartedAt: true,
-        processingCompletedAt: true,
-      },
-    });
+    const video = await videosRepository.findVideoForStatus(videoId);
 
     if (!video || video.repositoryId !== repoId) {
       throw NotFound("Video not found in this repository.");
@@ -206,19 +152,7 @@ export class VideoService {
   }
 
   private async getManagedRepositoryVideo(repoId: string, videoId: string) {
-    const video = await prisma.video.findUnique({
-      where: { id: videoId },
-      select: {
-        id: true,
-        repositoryId: true,
-        status: true,
-        vlmVideoPath: true,
-        dashboardVideoPath: true,
-        thumbnailPath: true,
-        sizeBytes: true,
-        vlmSha256: true,
-      },
-    });
+    const video = await videosRepository.findManagedVideo(videoId);
 
     if (!video || video.repositoryId !== repoId) {
       throw NotFound("Video not found in this repository.");
@@ -240,47 +174,36 @@ export class VideoService {
     );
   }
 
+  private async ensureFileExists(filePath: string, missingMessage: string) {
+    try {
+      await fs.stat(filePath);
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        throw NotFound(missingMessage);
+      }
+
+      throw error;
+    }
+  }
+
   private async getUserDisplayNames(userIds: string[]): Promise<Map<string, string>> {
     const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
     if (uniqueUserIds.length === 0) {
       return new Map<string, string>();
     }
 
-    const users = await prisma.user.findMany({
-      where: { id: { in: uniqueUserIds } },
-      select: {
-        id: true,
-        displayName: true,
-      },
-    });
-
-    return new Map(users.map((user) => [user.id, user.displayName]));
+    return videosRepository.findUserDisplayNames(uniqueUserIds);
   }
 
   private async getRepositoryContributors(repositoryId: string): Promise<RepositoryContributor[]> {
-    const repository = await prisma.repository.findUnique({
-      where: { id: repositoryId },
-      select: {
-        contributors: true,
-      },
-    });
-    const contributorUserIds = normalizeContributorUserIds(repository?.contributors);
+    const contributors = await videosRepository.findRepositoryContributors(repositoryId);
+    const contributorUserIds = normalizeContributorUserIds(contributors);
 
     if (contributorUserIds.length === 0) {
       return [];
     }
 
-    const contributorVideos = await prisma.video.findMany({
-      where: {
-        repositoryId,
-        recorder: { in: contributorUserIds },
-      },
-      select: {
-        recorder: true,
-        recordedAt: true,
-        createdAt: true,
-      },
-    });
+    const contributorVideos = await videosRepository.findContributorVideos(repositoryId, contributorUserIds);
 
     const contributorsByUserId = new Map<string, Omit<RepositoryContributor, "displayName">>(
       contributorUserIds.map((userId) => [
@@ -349,35 +272,12 @@ export class VideoService {
     };
 
     const [total, videos, contributors] = await Promise.all([
-      prisma.video.count({ where }),
-      prisma.video.findMany({
+      videosRepository.countVideos(where),
+      videosRepository.findVideos({
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
         orderBy: buildOrderBy(query),
-        select: {
-          id: true,
-          repositoryId: true,
-          recordingSessionId: true,
-          status: true,
-          durationSec: true,
-          resolutionWidth: true,
-          resolutionHeight: true,
-          fps: true,
-          codec: true,
-          recordedAt: true,
-          thumbnailPath: true,
-          dashboardVideoPath: true,
-          sizeBytes: true,
-          recorder: true,
-          semanticMetadata: {
-            select: {
-              sceneSummary: true,
-              clipSegments: true,
-            },
-          },
-          createdAt: true,
-        },
       }),
       this.getRepositoryContributors(repository.id),
     ]);
@@ -429,30 +329,11 @@ export class VideoService {
     };
 
     const [total, videos] = await Promise.all([
-      prisma.video.count({ where }),
-      prisma.video.findMany({
+      videosRepository.countVideos(where),
+      videosRepository.findManifestVideos({
         where,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
-        orderBy: { recordedAt: "desc" },
-        select: {
-          id: true,
-          durationSec: true,
-          resolutionWidth: true,
-          resolutionHeight: true,
-          fps: true,
-          codec: true,
-          recordedAt: true,
-          semanticMetadata: {
-            select: {
-              sceneSummary: true,
-              clipSegments: true,
-            },
-          },
-          sizeBytes: true,
-          vlmSha256: true,
-          thumbnailPath: true,
-        },
       }),
     ]);
 
@@ -525,11 +406,19 @@ export class VideoService {
       throw NotFound("Video file is not available.");
     }
 
+    const targetDirectory = getTargetDirectory();
+    await this.ensureFileExists(video.vlmVideoPath, "Video file is not available.");
+    const redirectUrl = toSignedFileUrl(targetDirectory, video.vlmVideoPath);
+    if (!redirectUrl) {
+      throw NotFound("Video file is not available.");
+    }
+
     return {
       id: video.id,
       path: video.vlmVideoPath,
       sizeBytes: video.sizeBytes,
       sha256: video.vlmSha256,
+      redirectUrl,
     };
   }
 
@@ -542,7 +431,7 @@ export class VideoService {
       managedVideo.dashboardVideoPath,
       managedVideo.thumbnailPath,
     ]);
-    await prisma.video.delete({ where: { id: managedVideo.id } });
+    await videosRepository.deleteVideo(managedVideo.id);
     await refreshRepositoryContributors(repoId);
 
     return {
@@ -552,4 +441,4 @@ export class VideoService {
   }
 }
 
-export const videoService = new VideoService();
+export const videosService = new VideosService();

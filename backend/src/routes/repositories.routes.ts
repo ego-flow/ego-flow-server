@@ -1,7 +1,6 @@
 import { Router } from "express";
 
 import { asyncHandler } from "../lib/async-handler";
-import { BadRequest, ErrorCode } from "../lib/errors";
 import { getAuthUser, getRepositoryAccess } from "../lib/request-context";
 import { repoAccess, repoStatus } from "../middleware/repository.middleware";
 import {
@@ -13,7 +12,6 @@ import {
 import { validate } from "../middleware/validate.middleware";
 import type {
   ManifestQueryInput,
-  RepositoryIdParamInput,
   RepositoryMemberParamInput,
   RepositoryResolveQueryInput,
 } from "../schemas/repository.schema";
@@ -28,7 +26,6 @@ import {
   updateRepositorySchema,
 } from "../schemas/repository.schema";
 import { repositoryService } from "../services/repository.service";
-import { videoService } from "../services/video.service";
 
 const router = Router();
 
@@ -85,26 +82,10 @@ router.get(
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
     const query = req.query as unknown as RepositoryResolveQueryInput;
-    let ownerId: string;
-    let repoName: string;
-
-    if (query.slug) {
-      const parts = query.slug.split("/");
-      if (parts.length !== 2 || !parts[0] || !parts[1]) {
-        throw BadRequest("Slug must be in 'owner/name' format.", ErrorCode.INVALID_SLUG);
-      }
-
-      [ownerId, repoName] = parts;
-    } else {
-      ownerId = query.owner_id!;
-      repoName = query.name!;
-    }
-
-    const response = await repositoryService.resolveRepository(
+    const response = await repositoryService.resolveRepositoryFromQuery(
       user.userId,
       user.role,
-      ownerId,
-      repoName,
+      query,
     );
     res.status(200).json(response);
   }),
@@ -145,11 +126,10 @@ router.get(
   repoAccess({ action: "video.manifest" }),
   repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
-    const { repoId } = req.params as RepositoryIdParamInput;
-    const query = req.query as unknown as ManifestQueryInput;
-    const { repository, effectiveRole } = getRepositoryAccess(req);
-
-    const response = await videoService.getRepositoryManifest(repoId, repository, effectiveRole, query);
+    const response = await repositoryService.getRepositoryManifest(
+      getRepositoryAccess(req),
+      req.query as unknown as ManifestQueryInput,
+    );
     res.status(200).json(response);
   }),
 );
