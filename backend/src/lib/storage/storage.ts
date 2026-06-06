@@ -3,9 +3,10 @@ import path from "path";
 
 import { TARGET_DIRECTORY_SETTING_KEY } from "../../constants/storage/storage-constants";
 import { runtimeConfig as env } from "../../config/runtime";
+import { settingRepository } from "../../repositories/setting.repository";
+import { videosRepository } from "../../repositories/videos.repository";
 import { movePath, pathExists } from "./file-system";
 import { remapPathWithinDirectory } from "./path-mapping";
-import { prisma } from "../infra/prisma";
 
 let activeTargetDirectory = path.resolve(env.TARGET_DIRECTORY);
 
@@ -45,43 +46,22 @@ const migrateDirectoryContents = async (previousDirectory: string, nextDirectory
 };
 
 const rewriteManagedVideoPaths = async (previousDirectory: string, nextDirectory: string) => {
-  const videos = await prisma.video.findMany({
-    where: {
-      OR: [
-        { vlmVideoPath: { startsWith: previousDirectory } },
-        { dashboardVideoPath: { startsWith: previousDirectory } },
-        { thumbnailPath: { startsWith: previousDirectory } },
-      ],
-    },
-    select: {
-      id: true,
-      vlmVideoPath: true,
-      dashboardVideoPath: true,
-      thumbnailPath: true,
-    },
-  });
+  const videos = await videosRepository.findManagedPathsStartingWith(previousDirectory);
 
-  await prisma.$transaction(
-    videos.map((video) =>
-      prisma.video.update({
-        where: { id: video.id },
-        data: {
-          vlmVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.vlmVideoPath),
-          dashboardVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.dashboardVideoPath),
-          thumbnailPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.thumbnailPath),
-        },
-      }),
-    ),
-  );
+  await videosRepository.updateManagedVideoPaths({
+    videos: videos.map((video) => ({
+      id: video.id,
+      vlmVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.vlmVideoPath),
+      dashboardVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.dashboardVideoPath),
+      thumbnailPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.thumbnailPath),
+    })),
+  });
 };
 
 export const initializeTargetDirectory = async (): Promise<string> => {
   const configuredTargetDirectory = path.resolve(env.TARGET_DIRECTORY);
-  const setting = await prisma.setting.findUnique({
-    where: { key: TARGET_DIRECTORY_SETTING_KEY },
-    select: { value: true },
-  });
-  const previousTargetDirectory = setting?.value ? path.resolve(setting.value) : null;
+  const previousTargetDirectoryValue = await settingRepository.findValue(TARGET_DIRECTORY_SETTING_KEY);
+  const previousTargetDirectory = previousTargetDirectoryValue ? path.resolve(previousTargetDirectoryValue) : null;
 
   await fs.mkdir(configuredTargetDirectory, { recursive: true });
 
@@ -91,19 +71,11 @@ export const initializeTargetDirectory = async (): Promise<string> => {
     );
     await migrateDirectoryContents(previousTargetDirectory, configuredTargetDirectory);
     await rewriteManagedVideoPaths(previousTargetDirectory, configuredTargetDirectory);
-    await prisma.setting.update({
-      where: { key: TARGET_DIRECTORY_SETTING_KEY },
-      data: { value: configuredTargetDirectory },
-    });
+    await settingRepository.updateValue(TARGET_DIRECTORY_SETTING_KEY, configuredTargetDirectory);
   }
 
   if (!previousTargetDirectory) {
-    await prisma.setting.create({
-      data: {
-        key: TARGET_DIRECTORY_SETTING_KEY,
-        value: configuredTargetDirectory,
-      },
-    });
+    await settingRepository.createValue(TARGET_DIRECTORY_SETTING_KEY, configuredTargetDirectory);
   }
 
   activeTargetDirectory = configuredTargetDirectory;

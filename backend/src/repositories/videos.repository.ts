@@ -225,7 +225,20 @@ export class VideosRepository {
     });
   }
 
-  async updateVideoPathsForRepositoryRename(input: {
+  async findManagedPathsStartingWith(baseDirectory: string): Promise<RepositoryRenameVideoPathRow[]> {
+    return prisma.video.findMany({
+      where: {
+        OR: [
+          { vlmVideoPath: { startsWith: baseDirectory } },
+          { dashboardVideoPath: { startsWith: baseDirectory } },
+          { thumbnailPath: { startsWith: baseDirectory } },
+        ],
+      },
+      select: repositoryRenameVideoPathSelect,
+    });
+  }
+
+  async updateManagedVideoPaths(input: {
     videos: Array<{
       id: string;
       vlmVideoPath: string | null;
@@ -233,6 +246,10 @@ export class VideosRepository {
       thumbnailPath: string | null;
     }>;
   }): Promise<void> {
+    if (input.videos.length === 0) {
+      return;
+    }
+
     await prisma.$transaction(
       input.videos.map((video) =>
         prisma.video.update({
@@ -245,6 +262,17 @@ export class VideosRepository {
         }),
       ),
     );
+  }
+
+  async updateVideoPathsForRepositoryRename(input: {
+    videos: Array<{
+      id: string;
+      vlmVideoPath: string | null;
+      dashboardVideoPath: string | null;
+      thumbnailPath: string | null;
+    }>;
+  }): Promise<void> {
+    await this.updateManagedVideoPaths(input);
   }
 
   async deleteVideo(videoId: string): Promise<void> {
