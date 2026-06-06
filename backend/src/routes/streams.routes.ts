@@ -1,7 +1,7 @@
 import { Router } from "express";
 
 import { asyncHandler } from "../lib/http/async-handler";
-import { getAuthUser, getRepositoryAccess } from "../lib/http/request-context";
+import { getAuthUser, getRepositoryAccessContext } from "../lib/http/request-context";
 import { requireAppJwt } from "../middleware/auth.middleware";
 import { repoAccess, repoStatus } from "../middleware/repository.middleware";
 import { validate } from "../middleware/validate.middleware";
@@ -28,7 +28,11 @@ router.post(
   repoStatus({ required: "active", repositoryId: (req) => req.body.repositoryId }),
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    const response = await streamService.registerSession(user.userId, getRepositoryAccess(req).repository, req.body);
+    const response = await streamService.registerSession(
+      user.userId,
+      getRepositoryAccessContext(req).repository,
+      req.body,
+    );
     res.status(200).json(response);
   }),
 );

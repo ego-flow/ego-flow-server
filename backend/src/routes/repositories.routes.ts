@@ -1,7 +1,7 @@
 import { Router } from "express";
 
 import { asyncHandler } from "../lib/http/async-handler";
-import { getAuthUser, getRepositoryAccess } from "../lib/http/request-context";
+import { getAuthUser, getRepositoryAccessContext } from "../lib/http/request-context";
 import { repoAccess, repoStatus } from "../middleware/repository.middleware";
 import {
   requireDashboardOrApp,
@@ -99,7 +99,7 @@ router.delete(
   repoAccess({ action: "repository.deactivate" }),
   repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
-    const response = await repositoryService.deactivateRepository(getRepositoryAccess(req));
+    const response = await repositoryService.deactivateRepository(getRepositoryAccessContext(req));
     res.status(200).json(response);
   }),
 );
@@ -112,7 +112,7 @@ router.get(
   repoAccess({ action: "repository.delete" }),
   repoStatus({ required: "deactivated" }),
   asyncHandler(async (req, res) => {
-    const response = await repositoryService.getRepositoryDeleteReadiness(getRepositoryAccess(req));
+    const response = await repositoryService.getRepositoryDeleteReadiness(getRepositoryAccessContext(req));
     res.status(200).json(response);
   }),
 );
@@ -127,7 +127,7 @@ router.get(
   repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
     const response = await repositoryService.getRepositoryManifest(
-      getRepositoryAccess(req),
+      getRepositoryAccessContext(req),
       req.query as unknown as ManifestQueryInput,
     );
     res.status(200).json(response);
@@ -142,7 +142,7 @@ router.get(
   repoAccess({ action: "repository.read" }),
   repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
-    const response = await repositoryService.getRepositoryDetail(getRepositoryAccess(req));
+    const response = await repositoryService.getRepositoryDetail(getRepositoryAccessContext(req));
     res.status(200).json(response);
   }),
 );
@@ -156,7 +156,7 @@ router.patch(
   repoAccess({ action: "repository.updateSettings" }),
   repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
-    const response = await repositoryService.updateRepository(getRepositoryAccess(req), req.body);
+    const response = await repositoryService.updateRepository(getRepositoryAccessContext(req), req.body);
     res.status(200).json(response);
   }),
 );
@@ -169,7 +169,7 @@ router.delete(
   repoAccess({ action: "repository.delete" }),
   repoStatus({ required: "deactivated" }),
   asyncHandler(async (req, res) => {
-    const response = await repositoryService.permanentlyDeleteRepository(getRepositoryAccess(req));
+    const response = await repositoryService.permanentlyDeleteRepository(getRepositoryAccessContext(req));
     res.status(200).json(response);
   }),
 );
@@ -182,7 +182,7 @@ router.get(
   repoAccess({ action: "repository.members.list" }),
   repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
-    const response = await repositoryService.listRepositoryMembers(getRepositoryAccess(req));
+    const response = await repositoryService.listRepositoryMembers(getRepositoryAccessContext(req));
     res.status(200).json(response);
   }),
 );
@@ -196,7 +196,7 @@ router.post(
   repoAccess({ action: "repository.members.add" }),
   repoStatus({ required: "active" }),
   asyncHandler(async (req, res) => {
-    const response = await repositoryService.addRepositoryMember(getRepositoryAccess(req), req.body);
+    const response = await repositoryService.addRepositoryMember(getRepositoryAccessContext(req), req.body);
     res.status(200).json(response);
   }),
 );
@@ -212,7 +212,7 @@ router.patch(
   asyncHandler(async (req, res) => {
     const params = req.params as RepositoryMemberParamInput;
     const response = await repositoryService.updateRepositoryMember(
-      getRepositoryAccess(req),
+      getRepositoryAccessContext(req),
       params.userId,
       req.body,
     );
@@ -230,7 +230,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const params = req.params as RepositoryMemberParamInput;
     const response = await repositoryService.deleteRepositoryMember(
-      getRepositoryAccess(req),
+      getRepositoryAccessContext(req),
       params.userId,
     );
     res.status(200).json(response);

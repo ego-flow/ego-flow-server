@@ -4,7 +4,7 @@ import { beforeEach, test } from "node:test";
 import { VideoStatus } from "@prisma/client";
 
 import { AppError } from "../src/lib/core/errors";
-import type { RepositoryRecord } from "../src/types/repository";
+import type { RepositoryAccessContext, RepositoryRecord } from "../src/types/repository";
 
 process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egoflow";
 process.env.JWT_SECRET ??= "replace-this-in-tests-only";
@@ -195,6 +195,8 @@ const fakePrisma: any = {
 (globalThis as any).__egoflowPrisma = fakePrisma;
 
 const { VideosService } = require("../src/services/videos.service") as typeof import("../src/services/videos.service");
+const { repositoryService } =
+  require("../src/services/repository.service") as typeof import("../src/services/repository.service");
 const { verifySignedFileUrlToken } =
   require("../src/lib/storage/signed-file-url") as typeof import("../src/lib/storage/signed-file-url");
 const { getTargetDirectory } = require("../src/lib/storage/storage") as typeof import("../src/lib/storage/storage");
@@ -221,6 +223,15 @@ const repository: RepositoryRecord = {
   createdAt: new Date("2026-04-01T00:00:00.000Z"),
   updatedAt: new Date("2026-04-12T00:00:00.000Z"),
 };
+
+const repositoryAccess = (
+  record: RepositoryRecord,
+  effectiveRole: RepositoryAccessContext["effectiveRole"] = "read",
+): RepositoryAccessContext => ({
+  repository: record,
+  effectiveRole,
+  isSystemAdmin: false,
+});
 
 beforeEach(() => {
   videos.clear();
@@ -449,15 +460,17 @@ test("repo-scoped detail returns 404 when the video belongs to another repositor
 });
 
 test("getRepositoryManifest returns completed videos with download metadata and no internal paths", async () => {
-  const response = await service.getRepositoryManifest(
-    "repo-1",
-    {
+  const response = await repositoryService.getRepositoryManifest(
+    repositoryAccess({
       id: repository.id,
       name: repository.name,
       ownerId: repository.ownerId,
       visibility: repository.visibility,
-    },
-    "read",
+      description: repository.description,
+      tags: repository.tags,
+      createdAt: repository.createdAt,
+      updatedAt: repository.updatedAt,
+    }),
     {
       page: 1,
       limit: 1,
@@ -514,15 +527,17 @@ test("getRepositoryManifest returns completed videos with download metadata and 
   assert.equal("vlmVideoPath" in firstVideo, false);
   assert.equal("thumbnailPath" in firstVideo, false);
 
-  const secondPage = await service.getRepositoryManifest(
-    "repo-1",
-    {
+  const secondPage = await repositoryService.getRepositoryManifest(
+    repositoryAccess({
       id: repository.id,
       name: repository.name,
       ownerId: repository.ownerId,
       visibility: repository.visibility,
-    },
-    "read",
+      description: repository.description,
+      tags: repository.tags,
+      createdAt: repository.createdAt,
+      updatedAt: repository.updatedAt,
+    }),
     {
       page: 2,
       limit: 1,
@@ -553,15 +568,17 @@ test("getRepositoryManifest returns completed videos with download metadata and 
 });
 
 test("getRepositoryManifest returns an empty manifest page for repositories without completed videos", async () => {
-  const response = await service.getRepositoryManifest(
-    "repo-2",
-    {
+  const response = await repositoryService.getRepositoryManifest(
+    repositoryAccess({
       id: "repo-2",
       name: "public-repo",
       ownerId: "bob",
       visibility: "public",
-    },
-    "read",
+      description: null,
+      tags: [],
+      createdAt: new Date("2026-04-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-12T00:00:00.000Z"),
+    }),
     {
       page: 1,
       limit: 50,
@@ -615,15 +632,17 @@ test("getRepositoryManifest throws when a completed video lacks artifact metadat
 
   await assert.rejects(
     () =>
-      service.getRepositoryManifest(
-        "repo-1",
-        {
+      repositoryService.getRepositoryManifest(
+        repositoryAccess({
           id: repository.id,
           name: repository.name,
           ownerId: repository.ownerId,
           visibility: repository.visibility,
-        },
-        "read",
+          description: repository.description,
+          tags: repository.tags,
+          createdAt: repository.createdAt,
+          updatedAt: repository.updatedAt,
+        }),
         {
           page: 1,
           limit: 50,

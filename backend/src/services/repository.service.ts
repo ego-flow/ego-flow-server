@@ -1,13 +1,14 @@
 import fs from "fs/promises";
 import path from "path";
 
-import { RepoVisibility } from "@prisma/client";
+import { RepoVisibility, VideoStatus, type Prisma } from "@prisma/client";
 
-import { BadRequest, Conflict, ErrorCode, NotFound } from "../lib/core/errors";
+import { BadRequest, Conflict, ErrorCode, Internal, NotFound } from "../lib/core/errors";
 import { getRepositoryAccessPolicy, type RepositoryActiveAccessAction } from "../lib/repositories/access-policy";
 import { isRepoRoleAtLeast, toAppRepoRole } from "../lib/repositories/roles";
 import { runPrismaTransaction } from "../lib/infra/prisma";
 import { getTargetDirectory } from "../lib/storage/storage";
+import { toSignedFileUrl } from "../lib/storage/signed-file-url";
 import { normalizeRepositoryTags, toRepositoryRecord } from "../mappers/repository.mapper";
 import {
   isUniqueConstraintError,
@@ -18,7 +19,7 @@ import { repoMemberRepository } from "../repositories/repo-member.repository";
 import { recordingSegmentRepository } from "../repositories/recording-segment.repository";
 import { recordingSessionRepository } from "../repositories/recording-session.repository";
 import { userRepository } from "../repositories/user.repository";
-import { videosRepository } from "../repositories/videos.repository";
+import { videosRepository, type ManifestVideoRecord } from "../repositories/videos.repository";
 import type {
   CreateRepositoryInput,
   CreateRepositoryMemberInput,
@@ -65,6 +66,29 @@ const normalizeDescription = (description: string | null | undefined): string | 
 
   const trimmed = description.trim();
   return trimmed ? trimmed : null;
+};
+
+const toRepositoryThumbnailUrl = (
+  targetDirectory: string,
+  video: Pick<ManifestVideoRecord, "thumbnailPath">,
+) => toSignedFileUrl(targetDirectory, video.thumbnailPath);
+
+const toRepositoryVideoDownloadUrl = (repositoryId: string, videoId: string) =>
+  `/api/v1/repositories/${repositoryId}/videos/${videoId}/download`;
+
+const getManifestArtifactMetadata = (video: {
+  id: string;
+  sizeBytes: bigint | null;
+  vlmSha256: string | null;
+}) => {
+  if (video.sizeBytes === null || !video.vlmSha256) {
+    throw Internal(`Manifest metadata is missing for completed video '${video.id}'.`);
+  }
+
+  return {
+    size_bytes: Number(video.sizeBytes),
+    sha256: video.vlmSha256,
+  };
 };
 
 type AccessibleRepositoryEntry = {
@@ -140,6 +164,70 @@ export class RepositoryService {
     };
   }
 
+  async getRepositoryManifest(access: RepositoryAccessContext, query: ManifestQueryInput) {
+    const targetDirectory = getTargetDirectory();
+    const repository = access.repository;
+    const where: Prisma.VideoWhereInput = {
+      repositoryId: repository.id,
+      status: VideoStatus.COMPLETED,
+    };
+
+    const [total, videos] = await Promise.all([
+      videosRepository.countVideos(where),
+      videosRepository.findManifestVideos({
+        where,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+    ]);
+
+    return {
+      manifest_version: "1",
+      repository: {
+        id: repository.id,
+        owner_id: repository.ownerId,
+        name: repository.name,
+        visibility: repository.visibility,
+        my_role: access.effectiveRole,
+      },
+      default_artifact: "vlm_video",
+      pagination: {
+        total,
+        page: query.page,
+        limit: query.limit,
+        has_next: query.page * query.limit < total,
+      },
+      videos: videos.map((video) => {
+        const artifactMetadata = getManifestArtifactMetadata(video);
+
+        return {
+          video_id: video.id,
+          recorded_at: video.recordedAt ? video.recordedAt.toISOString() : null,
+          duration_sec: video.durationSec,
+          resolution_width: video.resolutionWidth,
+          resolution_height: video.resolutionHeight,
+          fps: video.fps,
+          codec: video.codec,
+          scene_summary: video.semanticMetadata?.sceneSummary ?? null,
+          clip_segments: video.semanticMetadata?.clipSegments ?? null,
+          artifacts: {
+            vlm_video: {
+              download_url: toRepositoryVideoDownloadUrl(repository.id, video.id),
+              ...artifactMetadata,
+              content_type: "video/mp4",
+            },
+            thumbnail: video.thumbnailPath
+              ? {
+                  download_url: toRepositoryThumbnailUrl(targetDirectory, video),
+                  content_type: "image/jpeg",
+                }
+              : null,
+          },
+        };
+      }),
+    };
+  }
+
   async resolveRepositoryFromQuery(
     requestUserId: string,
     requestUserRole: AppUserRole,
@@ -174,16 +262,6 @@ export class RepositoryService {
     return {
       repository: toRepositoryResponse(toRepositoryRecord(repository), access.effectiveRole),
     };
-  }
-
-  async getRepositoryManifest(access: RepositoryAccessContext, query: ManifestQueryInput) {
-    const { videosService } = await import("./videos.service");
-    return videosService.getRepositoryManifest(
-      access.repository.id,
-      access.repository,
-      access.effectiveRole,
-      query,
-    );
   }
 
   async createRepository(userId: string, input: CreateRepositoryInput) {

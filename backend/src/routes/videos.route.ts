@@ -2,7 +2,7 @@ import { Router } from "express";
 
 import { asyncHandler } from "../lib/http/async-handler";
 import { NotFound } from "../lib/core/errors";
-import { getRepositoryAccess } from "../lib/http/request-context";
+import { getRepositoryAccessContext } from "../lib/http/request-context";
 import { requireDashboardOrPython, requireDashboardSession } from "../middleware/auth.middleware";
 import { repoAccess, repoStatus } from "../middleware/repository.middleware";
 import { validate } from "../middleware/validate.middleware";
@@ -30,7 +30,7 @@ router.get(
   validate(repoVideoListQuerySchema, "query"),
   asyncHandler(async (req, res) => {
     const response = await videosService.listRepositoryVideos(
-      getRepositoryAccess(req).repository,
+      getRepositoryAccessContext(req).repository,
       req.query as unknown as RepoVideoListQueryInput,
     );
     res.status(200).json(response);
@@ -48,7 +48,7 @@ router.get(
     const params = req.params as RepoVideoParamsInput;
     const response = await videosService.getRepositoryVideoDetail(
       params.repoId,
-      getRepositoryAccess(req).repository,
+      getRepositoryAccessContext(req).repository,
       params.videoId,
     );
     res.status(200).json(response);

@@ -12,7 +12,7 @@ export const getAuthUser = (req: Request): AuthenticatedUser => {
   return req.user;
 };
 
-export const getRepositoryAccess = (req: Request): RepositoryAccessContext => {
+export const getRepositoryAccessContext = (req: Request): RepositoryAccessContext => {
   if (!req.repositoryAccess) {
     throw Internal("Repository access context is missing.");
   }

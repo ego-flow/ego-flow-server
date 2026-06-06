@@ -2,7 +2,7 @@ import fs from "fs/promises";
 
 import { VideoStatus, type Prisma } from "@prisma/client";
 
-import { Internal, NotFound } from "../lib/core/errors";
+import { NotFound } from "../lib/core/errors";
 import { isMissingFileError } from "../lib/storage/file-system";
 import { toSignedFileUrl } from "../lib/storage/signed-file-url";
 import { getTargetDirectory, toStorageRelativePath } from "../lib/storage/storage";
@@ -13,7 +13,7 @@ import {
 import { repositoriesRepository } from "../repositories/repositories.repository";
 import { userRepository } from "../repositories/user.repository";
 import type { RepoVideoListQueryInput } from "../schemas/repository-video.schema";
-import type { AppRepoRole, RepositoryRecord } from "../types/repository";
+import type { RepositoryRecord } from "../types/repository";
 import {
   RECORDING_FINALIZE_COMPLETED_PROGRESS,
   type RecordingFinalizeProgress,
@@ -34,7 +34,6 @@ type RepositoryContributor = {
 };
 
 type VideoRepositoryContext = Pick<RepositoryRecord, "id" | "name" | "ownerId">;
-type ManifestRepositoryContext = VideoRepositoryContext & Pick<RepositoryRecord, "visibility">;
 
 const buildOrderBy = (query: VideoOrderQuery): Prisma.VideoOrderByWithRelationInput => {
   switch (query.sort_by) {
@@ -65,30 +64,12 @@ const toRepositoryThumbnailUrl = (
   video: Pick<RepositoryVideoRecord, "thumbnailPath">,
 ) => toSignedFileUrl(targetDirectory, video.thumbnailPath);
 
-const toRepositoryVideoDownloadUrl = (repositoryId: string, videoId: string) =>
-  `/api/v1/repositories/${repositoryId}/videos/${videoId}/download`;
-
 const toSizeBytes = (value: bigint | number | null | undefined) => {
   if (typeof value === "bigint") {
     return Number(value);
   }
 
   return typeof value === "number" ? value : null;
-};
-
-const getManifestArtifactMetadata = (video: {
-  id: string;
-  sizeBytes: bigint | null;
-  vlmSha256: string | null;
-}) => {
-  if (video.sizeBytes === null || !video.vlmSha256) {
-    throw Internal(`Manifest metadata is missing for completed video '${video.id}'.`);
-  }
-
-  return {
-    size_bytes: Number(video.sizeBytes),
-    sha256: video.vlmSha256,
-  };
 };
 
 const toRepoVideoResponse = (
@@ -317,74 +298,6 @@ export class VideosService {
       includeDashboardVideoUrl: true,
       processingProgress,
     });
-  }
-
-  async getRepositoryManifest(
-    repoId: string,
-    repository: ManifestRepositoryContext,
-    effectiveRole: AppRepoRole,
-    query: { page: number; limit: number },
-  ) {
-    const targetDirectory = getTargetDirectory();
-    const where: Prisma.VideoWhereInput = {
-      repositoryId: repoId,
-      status: VideoStatus.COMPLETED,
-    };
-
-    const [total, videos] = await Promise.all([
-      videosRepository.countVideos(where),
-      videosRepository.findManifestVideos({
-        where,
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
-      }),
-    ]);
-
-    return {
-      manifest_version: "1",
-      repository: {
-        id: repository.id,
-        owner_id: repository.ownerId,
-        name: repository.name,
-        visibility: repository.visibility,
-        my_role: effectiveRole,
-      },
-      default_artifact: "vlm_video",
-      pagination: {
-        total,
-        page: query.page,
-        limit: query.limit,
-        has_next: query.page * query.limit < total,
-      },
-      videos: videos.map((video) => {
-        const artifactMetadata = getManifestArtifactMetadata(video);
-
-        return {
-          video_id: video.id,
-          recorded_at: video.recordedAt ? video.recordedAt.toISOString() : null,
-          duration_sec: video.durationSec,
-          resolution_width: video.resolutionWidth,
-          resolution_height: video.resolutionHeight,
-          fps: video.fps,
-          codec: video.codec,
-          scene_summary: video.semanticMetadata?.sceneSummary ?? null,
-          clip_segments: video.semanticMetadata?.clipSegments ?? null,
-          artifacts: {
-            vlm_video: {
-              download_url: toRepositoryVideoDownloadUrl(repoId, video.id),
-              ...artifactMetadata,
-              content_type: "video/mp4",
-            },
-            thumbnail: video.thumbnailPath
-              ? {
-                  download_url: toRepositoryThumbnailUrl(targetDirectory, video),
-                  content_type: "image/jpeg",
-                }
-              : null,
-          },
-        };
-      }),
-    };
   }
 
   async getRepositoryVideoStatus(repoId: string, videoId: string) {
