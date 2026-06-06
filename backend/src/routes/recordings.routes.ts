@@ -7,8 +7,9 @@ import { validate } from "../middleware/validate.middleware";
 import {
   recordingCloseIntentSchema,
   recordingSessionIdParamsSchema,
+  type RecordingCloseIntentInput,
 } from "../schemas/stream.schema";
-import { recordingSessionService } from "../services/recording-session.service";
+import { recordingsService } from "../services/recordings.service";
 
 const router = Router();
 
@@ -26,12 +27,11 @@ router.post(
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
     const { recordingSessionId } = req.params as { recordingSessionId: string };
-    const { reason } = req.body as { reason: string };
 
-    await recordingSessionService.recordCloseIntent(
+    await recordingsService.recordCloseIntent(
       recordingSessionId,
       user.userId,
-      reason,
+      req.body as RecordingCloseIntentInput,
     );
 
     res.status(200).json({

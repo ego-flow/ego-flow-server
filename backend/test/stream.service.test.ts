@@ -48,6 +48,8 @@ const fakePrisma: any = {
 
 const { streamService } =
   require("../src/services/stream.service") as typeof import("../src/services/stream.service");
+const { liveStreamsService } =
+  require("../src/services/live-streams.service") as typeof import("../src/services/live-streams.service");
 const { repositoryAccessService } =
   require("../src/services/repository-access.service") as typeof import("../src/services/repository-access.service");
 const { repositoryService } =
@@ -376,7 +378,7 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
     status: "STREAMING",
   } satisfies RecordingSessionLiveCache);
 
-  const streams = await streamService.listLiveStreams("maintainer-1", "user");
+  const streams = await liveStreamsService.listLiveStreams("maintainer-1", "user");
 
   assert.deepEqual(streams, [
     {
@@ -427,7 +429,7 @@ test("getLiveStreamDetail exposes HTTP upload progress from Redis cache", async 
     lastChunkAt,
   } satisfies RecordingSessionLiveCache);
 
-  const detail = await streamService.getLiveStreamDetail("session-http", "viewer-1", "user");
+  const detail = await liveStreamsService.getLiveStreamDetail("session-http", "viewer-1", "user");
 
   assert.equal(detail.playback_available, false);
   assert.equal(detail.playback_ready, false);
@@ -451,7 +453,7 @@ test("issueHlsPlaybackTicket authorizes read access and stores a Redis playback 
     status: "STREAMING",
   } satisfies RecordingSessionLiveCache);
 
-  const response = await streamService.issueHlsPlaybackTicket("session-1", "viewer-1", "user");
+  const response = await liveStreamsService.issueHlsPlaybackTicket("session-1", "viewer-1", "user");
 
   assert.ok(response.playback_ticket.startsWith("pt_"));
   assert.equal(Object.hasOwn(response, "playback_ticket_expires_at"), false);

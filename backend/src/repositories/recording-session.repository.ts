@@ -23,6 +23,7 @@ export type RecordingSessionRecord = Pick<
   | "streamPath"
   | "status"
   | "readyAt"
+  | "createdAt"
   | "closedAt"
   | "endReason"
 >;
@@ -73,6 +74,7 @@ export class RecordingSessionRepository {
         streamPath: true,
         status: true,
         readyAt: true,
+        createdAt: true,
         closedAt: true,
         endReason: true,
       },
@@ -100,6 +102,15 @@ export class RecordingSessionRepository {
         status: RecordingSessionStatus.CLOSED,
         closedAt: input.closedAt,
         endReason: input.endReason,
+      },
+    });
+  }
+
+  async recordCloseIntent(recordingSessionId: string, endReason: RecordingSessionEndReason) {
+    return prisma.recordingSession.update({
+      where: { id: recordingSessionId },
+      data: {
+        endReason,
       },
     });
   }
@@ -153,6 +164,7 @@ export class RecordingSessionRepository {
         streamPath: true,
         status: true,
         readyAt: true,
+        createdAt: true,
         closedAt: true,
         endReason: true,
       },

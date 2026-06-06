@@ -10,7 +10,6 @@ import {
 import {
   RECORDING_REGISTRATION_TTL_SECONDS,
 } from "../constants/stream/stream-constants";
-import { BadRequest, Conflict, Forbidden, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { runtimeConfig as env } from "../config/runtime";
@@ -113,48 +112,6 @@ export class RecordingSessionService {
       userId: session.userId,
       ttlSec: ttlSeconds,
     });
-  }
-
-  /**
-   * [close-intent 기록]
-   * App이 사용자 의도에 따라 RTMP socket을 닫기 직전에 호출한다.
-   * 실제 연결 종료 확정과 CLOSED 전이는 stream-not-ready hook이 담당하므로,
-   * 여기서는 NORMAL_DISCONNECT intent만 session row에 기록한다.
-   */
-  async recordCloseIntent(recordingSessionId: string, requestUserId: string, reason: string) {
-    if (reason !== RecordingSessionEndReason.NORMAL_DISCONNECT) {
-      throw BadRequest("Unsupported close intent reason.");
-    }
-
-    const session = await prisma.recordingSession.findUnique({
-      where: { id: recordingSessionId },
-    });
-    if (!session) {
-      throw NotFound("Recording session not found.");
-    }
-    if (session.userId !== requestUserId) {
-      throw Forbidden("Only the recording session owner can close this recording session.");
-    }
-    if (session.status !== RecordingSessionStatus.STREAMING) {
-      throw Conflict(`Recording session is not in STREAMING state (current: ${session.status}).`);
-    }
-
-    const updated = await prisma.recordingSession.update({
-      where: { id: recordingSessionId },
-      data: {
-        endReason: RecordingSessionEndReason.NORMAL_DISCONNECT,
-      },
-    });
-
-    console.info("[rtmp-state] close-intent-recorded", {
-      recordingSessionId,
-      repositoryId: updated.repositoryId,
-      repositoryName: this.extractRepositoryName(updated.streamPath),
-      userId: updated.userId,
-      reason: updated.endReason,
-    });
-
-    return updated;
   }
 
   /**

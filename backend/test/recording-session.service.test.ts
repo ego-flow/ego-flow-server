@@ -73,6 +73,8 @@ const fakePrisma: any = {
 
 const { recordingSessionService } =
   require("../src/services/recording-session.service") as typeof import("../src/services/recording-session.service");
+const { recordingsService } =
+  require("../src/services/recordings.service") as typeof import("../src/services/recordings.service");
 const { hooksService } =
   require("../src/services/hooks.service") as typeof import("../src/services/hooks.service");
 const { streamOwnershipService } =
@@ -368,11 +370,9 @@ test("recordCloseIntent stores NORMAL_DISCONNECT and stream-not-ready preserves 
 
   recordingSessionService.tryEnqueueFinalize = async () => true;
 
-  await recordingSessionService.recordCloseIntent(
-    "session-1",
-    "user-1",
-    RecordingSessionEndReason.NORMAL_DISCONNECT,
-  );
+  await recordingsService.recordCloseIntent("session-1", "user-1", {
+    reason: RecordingSessionEndReason.NORMAL_DISCONNECT,
+  });
   await hooksService.handleStreamNotReady({
     path: "live/repo-name/session-1",
   });
@@ -405,11 +405,9 @@ test("recordCloseIntent rejects non-owner requests", async () => {
   });
 
   await assert.rejects(
-    recordingSessionService.recordCloseIntent(
-      "session-1",
-      "user-2",
-      RecordingSessionEndReason.NORMAL_DISCONNECT,
-    ),
+    recordingsService.recordCloseIntent("session-1", "user-2", {
+      reason: RecordingSessionEndReason.NORMAL_DISCONNECT,
+    }),
     { statusCode: 403 },
   );
 });

@@ -8,7 +8,7 @@ import {
   liveStreamRecordingSessionParamSchema,
   type LiveStreamRecordingSessionParamInput,
 } from "../schemas/live-stream.schema";
-import { streamService } from "../services/stream.service";
+import { liveStreamsService } from "../services/live-streams.service";
 
 const router = Router();
 
@@ -25,7 +25,7 @@ router.get(
   requireDashboardOrAppOrPython,
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    const streams = await streamService.listLiveStreams(user.userId, user.role);
+    const streams = await liveStreamsService.listLiveStreams(user.userId, user.role);
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json({ streams });
   }),
@@ -43,7 +43,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
     const { recordingSessionId } = req.params as LiveStreamRecordingSessionParamInput;
-    const result = await streamService.getLiveStreamDetail(recordingSessionId, user.userId, user.role);
+    const result = await liveStreamsService.getLiveStreamDetail(recordingSessionId, user.userId, user.role);
     res.status(200).json(result);
   }),
 );
@@ -56,7 +56,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
     const { recordingSessionId } = req.params as LiveStreamRecordingSessionParamInput;
-    const result = await streamService.issueHlsPlaybackTicket(recordingSessionId, user.userId, user.role);
+    const result = await liveStreamsService.issueHlsPlaybackTicket(recordingSessionId, user.userId, user.role);
     res.setHeader("Cache-Control", "no-store");
     res.status(201).json(result);
   }),
