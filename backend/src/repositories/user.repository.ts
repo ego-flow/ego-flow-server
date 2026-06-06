@@ -9,6 +9,12 @@ export interface UserPasswordCredential {
   passwordHash: string;
 }
 
+export interface UserSummaryRecord {
+  id: string;
+  displayName: string;
+  deactivated: boolean;
+}
+
 export class UserRepository {
   async findActiveAuthenticatedUser(userId: string): Promise<AuthenticatedUser | null> {
     const user = await prisma.user.findUnique({
@@ -59,6 +65,35 @@ export class UserRepository {
       where: { id: userId },
       data: {
         passwordHash,
+      },
+    });
+  }
+
+  async findSummaries(userIds: string[]): Promise<UserSummaryRecord[]> {
+    if (userIds.length === 0) {
+      return [];
+    }
+
+    return prisma.user.findMany({
+      where: {
+        id: {
+          in: userIds,
+        },
+      },
+      select: {
+        id: true,
+        displayName: true,
+        deactivated: true,
+      },
+    });
+  }
+
+  async findActiveState(userId: string): Promise<{ id: string; deactivated: boolean } | null> {
+    return prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        deactivated: true,
       },
     });
   }

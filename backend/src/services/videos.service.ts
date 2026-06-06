@@ -10,6 +10,8 @@ import {
   videosRepository,
   type RepositoryVideoRecord,
 } from "../repositories/videos.repository";
+import { repositoriesRepository } from "../repositories/repositories.repository";
+import { userRepository } from "../repositories/user.repository";
 import type { RepoVideoListQueryInput } from "../schemas/repository-video.schema";
 import type { AppRepoRole, RepositoryRecord } from "../types/repository";
 import {
@@ -192,11 +194,12 @@ export class VideosService {
       return new Map<string, string>();
     }
 
-    return videosRepository.findUserDisplayNames(uniqueUserIds);
+    const users = await userRepository.findSummaries(uniqueUserIds);
+    return new Map(users.map((user) => [user.id, user.displayName]));
   }
 
   private async getRepositoryContributors(repositoryId: string): Promise<RepositoryContributor[]> {
-    const contributors = await videosRepository.findRepositoryContributors(repositoryId);
+    const contributors = await repositoriesRepository.findContributors(repositoryId);
     const contributorUserIds = normalizeContributorUserIds(contributors);
 
     if (contributorUserIds.length === 0) {

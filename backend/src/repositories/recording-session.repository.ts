@@ -1,16 +1,11 @@
-import { randomUUID } from "node:crypto";
-
 import {
-  type Prisma,
   type RecordingSession,
-  RecordingSegmentStatus,
   RecordingSessionEndReason,
   RecordingSessionIngestType,
   RecordingSessionStatus,
-  VideoStatus,
 } from "@prisma/client";
 
-import { prisma } from "../lib/prisma";
+import { prisma, type PrismaTransactionClient } from "../lib/prisma";
 
 export type RecordingSessionRecord = Pick<
   RecordingSession,
@@ -27,13 +22,6 @@ export type RecordingSessionRecord = Pick<
   | "closedAt"
   | "endReason"
 >;
-
-class RecordingSessionTransitionRace extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "RecordingSessionTransitionRace";
-  }
-}
 
 export class RecordingSessionRepository {
   async create(input: {
@@ -145,37 +133,23 @@ export class RecordingSessionRepository {
     });
   }
 
-  async startHttpUpload(input: {
+  async markHttpUploadStreaming(input: {
     recordingSessionId: string;
-    rawPath: string;
     readyAt: Date;
   }): Promise<boolean> {
-    return prisma.$transaction(async (tx) => {
-      const sessionUpdate = await tx.recordingSession.updateMany({
-        where: {
-          id: input.recordingSessionId,
-          status: RecordingSessionStatus.PENDING,
-          ingestType: RecordingSessionIngestType.HTTP,
-        },
-        data: {
-          status: RecordingSessionStatus.STREAMING,
-          readyAt: input.readyAt,
-        },
-      });
-      if (sessionUpdate.count !== 1) {
-        return false;
-      }
-
-      await tx.recordingSegment.create({
-        data: {
-          recordingSessionId: input.recordingSessionId,
-          rawPath: input.rawPath,
-          status: RecordingSegmentStatus.WRITING,
-        },
-      });
-
-      return true;
+    const sessionUpdate = await prisma.recordingSession.updateMany({
+      where: {
+        id: input.recordingSessionId,
+        status: RecordingSessionStatus.PENDING,
+        ingestType: RecordingSessionIngestType.HTTP,
+      },
+      data: {
+        status: RecordingSessionStatus.STREAMING,
+        readyAt: input.readyAt,
+      },
     });
+
+    return sessionUpdate.count === 1;
   }
 
   async findStreamingHttpUploads(): Promise<RecordingSessionRecord[]> {
@@ -201,131 +175,67 @@ export class RecordingSessionRepository {
     });
   }
 
-  async closeHttpUploadAsWriteDone(input: {
+  async countStreamingByRepositoryId(repositoryId: string): Promise<number> {
+    return prisma.recordingSession.count({
+      where: {
+        repositoryId,
+        status: RecordingSessionStatus.STREAMING,
+      },
+    });
+  }
+
+  async hasOpenSessionByRepositoryId(input: {
+    repositoryId: string;
+    blockPending: boolean;
+  }): Promise<boolean> {
+    const sessionStatusFilter = input.blockPending
+      ? {
+          in: [
+            RecordingSessionStatus.PENDING,
+            RecordingSessionStatus.STREAMING,
+          ],
+        }
+      : RecordingSessionStatus.STREAMING;
+
+    const activeSession = await prisma.recordingSession.findFirst({
+      where: {
+        repositoryId: input.repositoryId,
+        status: sessionStatusFilter,
+      },
+      select: { id: true },
+    });
+
+    return Boolean(activeSession);
+  }
+
+  async deleteManyByRepositoryId(
+    repositoryId: string,
+    client: PrismaTransactionClient | typeof prisma = prisma,
+  ): Promise<void> {
+    await client.recordingSession.deleteMany({ where: { repositoryId } });
+  }
+
+  async closeStreamingHttpUpload(input: {
     recordingSessionId: string;
     userId?: string;
     closedAt: Date;
     endReason: RecordingSessionEndReason;
   }): Promise<boolean> {
-    return this.runClaimedTransition(async (tx) => {
-      const sessionUpdate = await tx.recordingSession.updateMany({
-        where: {
-          id: input.recordingSessionId,
-          ...(input.userId ? { userId: input.userId } : {}),
-          status: RecordingSessionStatus.STREAMING,
-          ingestType: RecordingSessionIngestType.HTTP,
-        },
-        data: {
-          status: RecordingSessionStatus.CLOSED,
-          closedAt: input.closedAt,
-          endReason: input.endReason,
-        },
-      });
-      if (sessionUpdate.count !== 1) {
-        throw new RecordingSessionTransitionRace("HTTP upload session was already closed.");
-      }
-
-      const segmentUpdate = await tx.recordingSegment.updateMany({
-        where: {
-          recordingSessionId: input.recordingSessionId,
-          status: RecordingSegmentStatus.WRITING,
-        },
-        data: {
-          status: RecordingSegmentStatus.WRITE_DONE,
-          completedAt: input.closedAt,
-        },
-      });
-      if (segmentUpdate.count !== 1) {
-        throw new RecordingSessionTransitionRace("HTTP upload segment was already finalized.");
-      }
-    });
-  }
-
-  async findSegmentRawPath(recordingSessionId: string): Promise<{ rawPath: string } | null> {
-    return prisma.recordingSegment.findUnique({
-      where: { recordingSessionId },
-      select: {
-        rawPath: true,
+    const sessionUpdate = await prisma.recordingSession.updateMany({
+      where: {
+        id: input.recordingSessionId,
+        ...(input.userId ? { userId: input.userId } : {}),
+        status: RecordingSessionStatus.STREAMING,
+        ingestType: RecordingSessionIngestType.HTTP,
+      },
+      data: {
+        status: RecordingSessionStatus.CLOSED,
+        closedAt: input.closedAt,
+        endReason: input.endReason,
       },
     });
-  }
 
-  async failHttpUpload(input: {
-    session: RecordingSessionRecord;
-    rawPath: string;
-    errorMessage: string;
-    closedAt: Date;
-  }): Promise<boolean> {
-    return this.runClaimedTransition(async (tx) => {
-      const sessionUpdate = await tx.recordingSession.updateMany({
-        where: {
-          id: input.session.id,
-          status: RecordingSessionStatus.STREAMING,
-          ingestType: RecordingSessionIngestType.HTTP,
-        },
-        data: {
-          status: RecordingSessionStatus.CLOSED,
-          closedAt: input.closedAt,
-          endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
-        },
-      });
-      if (sessionUpdate.count !== 1) {
-        throw new RecordingSessionTransitionRace("HTTP upload session was already closed.");
-      }
-
-      const segmentUpdate = await tx.recordingSegment.updateMany({
-        where: {
-          recordingSessionId: input.session.id,
-          status: RecordingSegmentStatus.WRITING,
-        },
-        data: {
-          status: RecordingSegmentStatus.FAILED,
-          completedAt: input.closedAt,
-        },
-      });
-      if (segmentUpdate.count !== 1) {
-        throw new RecordingSessionTransitionRace("HTTP upload segment was already finalized.");
-      }
-
-      await tx.video.upsert({
-        where: { recordingSessionId: input.session.id },
-        create: {
-          id: randomUUID(),
-          repositoryId: input.session.repositoryId,
-          recordingSessionId: input.session.id,
-          rawRecordingPath: input.rawPath,
-          streamPath: input.session.streamPath,
-          deviceType: input.session.deviceType,
-          recorder: input.session.userId,
-          status: VideoStatus.FAILED,
-          errorMessage: input.errorMessage,
-          processingStartedAt: input.closedAt,
-          processingCompletedAt: input.closedAt,
-        },
-        update: {
-          repositoryId: input.session.repositoryId,
-          rawRecordingPath: input.rawPath,
-          streamPath: input.session.streamPath,
-          deviceType: input.session.deviceType,
-          recorder: input.session.userId,
-          status: VideoStatus.FAILED,
-          errorMessage: input.errorMessage,
-          processingCompletedAt: input.closedAt,
-        },
-      });
-    });
-  }
-
-  private async runClaimedTransition(callback: (tx: Prisma.TransactionClient) => Promise<void>) {
-    try {
-      await prisma.$transaction(callback);
-      return true;
-    } catch (error) {
-      if (error instanceof RecordingSessionTransitionRace) {
-        return false;
-      }
-      throw error;
-    }
+    return sessionUpdate.count === 1;
   }
 }
 

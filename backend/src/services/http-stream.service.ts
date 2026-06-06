@@ -24,6 +24,8 @@ import {
   recordingSessionRepository,
   type RecordingSessionRecord,
 } from "../repositories/recording-session.repository";
+import { recordingSegmentRepository } from "../repositories/recording-segment.repository";
+import { videosRepository } from "../repositories/videos.repository";
 import { recordingSessionService } from "./recording-session.service";
 import { streamOwnershipService } from "./stream-ownership.service";
 
@@ -85,14 +87,17 @@ export class HttpStreamService {
       lastChunkAt: now.getTime(),
     });
 
-    const started = await recordingSessionRepository.startHttpUpload({
+    const started = await recordingSessionRepository.markHttpUploadStreaming({
       recordingSessionId: session.id,
-      rawPath,
       readyAt: session.readyAt ?? now,
     });
     if (!started) {
       throw Conflict("Recording session could not be started.");
     }
+    await recordingSegmentRepository.createWriting({
+      recordingSessionId: session.id,
+      rawPath,
+    });
 
     await redis.multi()
       .set(streamRecordingKey(session.id), JSON.stringify(cache), "EX", RECORDING_ACTIVE_TTL_SECONDS)
@@ -181,14 +186,22 @@ export class HttpStreamService {
         throw PreconditionFailed("Stored raw file size does not match total bytes.");
       }
 
-      const completed = await recordingSessionRepository.closeHttpUploadAsWriteDone({
+      const closedAt = new Date();
+      const completed = await recordingSessionRepository.closeStreamingHttpUpload({
         recordingSessionId,
         userId: requestUserId,
-        closedAt: new Date(),
+        closedAt,
         endReason: RecordingSessionEndReason.NORMAL_DISCONNECT,
       });
       if (!completed) {
         throw Conflict("Recording session could not be closed.");
+      }
+      const segmentCompleted = await recordingSegmentRepository.markWriteDoneByRecordingSessionId(
+        recordingSessionId,
+        closedAt,
+      );
+      if (!segmentCompleted) {
+        throw Conflict("Recording segment could not be completed.");
       }
 
       return {
@@ -382,11 +395,17 @@ export class HttpStreamService {
   }
 
   private async closeUnexpectedAndMarkWriteDone(recordingSessionId: string) {
-    return recordingSessionRepository.closeHttpUploadAsWriteDone({
+    const closedAt = new Date();
+    const sessionClosed = await recordingSessionRepository.closeStreamingHttpUpload({
       recordingSessionId,
-      closedAt: new Date(),
+      closedAt,
       endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
     });
+    if (!sessionClosed) {
+      return false;
+    }
+
+    return recordingSegmentRepository.markWriteDoneByRecordingSessionId(recordingSessionId, closedAt);
   }
 
   private async failHttpUpload(
@@ -394,14 +413,14 @@ export class HttpStreamService {
     cache: HttpUploadCache | null,
     errorMessage: string,
   ) {
-    const segment = await recordingSessionRepository.findSegmentRawPath(session.id);
+    const segment = await recordingSegmentRepository.findRawPathByRecordingSessionId(session.id);
     const rawPath = cache?.rawPath ?? segment?.rawPath ?? this.buildRawPath(session.streamPath, session.id);
 
-    const failed = await recordingSessionRepository.failHttpUpload({
-      session,
-      rawPath,
-      errorMessage,
-      closedAt: new Date(),
+    const closedAt = new Date();
+    const failed = await recordingSessionRepository.closeStreamingHttpUpload({
+      recordingSessionId: session.id,
+      closedAt,
+      endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
     });
     if (!failed) {
       console.info("[http-stream] timeout-failed-skipped", {
@@ -412,6 +431,26 @@ export class HttpStreamService {
       });
       return false;
     }
+    const segmentFailed = await recordingSegmentRepository.markFailedByRecordingSessionId(session.id, closedAt);
+    if (!segmentFailed) {
+      console.info("[http-stream] timeout-failed-skipped", {
+        recordingSessionId: session.id,
+        repositoryId: session.repositoryId,
+        repositoryName: recordingSessionService.extractRepositoryName(session.streamPath),
+        reason: "segment-transition-not-claimed",
+      });
+      return false;
+    }
+    await videosRepository.upsertFailedRecording({
+      repositoryId: session.repositoryId,
+      recordingSessionId: session.id,
+      rawRecordingPath: rawPath,
+      streamPath: session.streamPath,
+      deviceType: session.deviceType,
+      recorder: session.userId,
+      errorMessage,
+      processedAt: closedAt,
+    });
 
     await this.clearHttpPointers(session.id);
     console.warn("[http-stream] timeout-failed", {

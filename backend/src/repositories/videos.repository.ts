@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
+
 import { type Prisma, VideoStatus } from "@prisma/client";
 
-import { prisma } from "../lib/prisma";
+import { prisma, type PrismaTransactionClient } from "../lib/prisma";
 
 const repositoryVideoSelect = {
   id: true,
@@ -66,6 +68,21 @@ const manifestVideoSelect = {
   thumbnailPath: true,
 } satisfies Prisma.VideoSelect;
 
+const repositoryVideoPathSelect = {
+  id: true,
+  rawRecordingPath: true,
+  vlmVideoPath: true,
+  dashboardVideoPath: true,
+  thumbnailPath: true,
+} satisfies Prisma.VideoSelect;
+
+const repositoryRenameVideoPathSelect = {
+  id: true,
+  vlmVideoPath: true,
+  dashboardVideoPath: true,
+  thumbnailPath: true,
+} satisfies Prisma.VideoSelect;
+
 export type RepositoryVideoRecord = Prisma.VideoGetPayload<{
   select: typeof repositoryVideoSelect;
 }>;
@@ -80,6 +97,14 @@ export type ManagedRepositoryVideoRecord = Prisma.VideoGetPayload<{
 
 export type ManifestVideoRecord = Prisma.VideoGetPayload<{
   select: typeof manifestVideoSelect;
+}>;
+
+export type RepositoryVideoPathRow = Prisma.VideoGetPayload<{
+  select: typeof repositoryVideoPathSelect;
+}>;
+
+export type RepositoryRenameVideoPathRow = Prisma.VideoGetPayload<{
+  select: typeof repositoryRenameVideoPathSelect;
 }>;
 
 export type RepositoryContributorVideoRecord = Pick<RepositoryVideoRecord, "recorder" | "recordedAt" | "createdAt">;
@@ -108,6 +133,20 @@ export class VideosRepository {
 
   async countVideos(where: Prisma.VideoWhereInput): Promise<number> {
     return prisma.video.count({ where });
+  }
+
+  async countVideosByRepositoryIds(repositoryIds: string[]): Promise<Map<string, number>> {
+    if (repositoryIds.length === 0) {
+      return new Map();
+    }
+
+    const grouped = await prisma.video.groupBy({
+      by: ["repositoryId"],
+      where: { repositoryId: { in: repositoryIds } },
+      _count: { _all: true },
+    });
+
+    return new Map(grouped.map((row) => [row.repositoryId, row._count._all]));
   }
 
   async findVideos(input: {
@@ -139,17 +178,6 @@ export class VideosRepository {
     });
   }
 
-  async findRepositoryContributors(repositoryId: string): Promise<Prisma.JsonValue | null> {
-    const repository = await prisma.repository.findUnique({
-      where: { id: repositoryId },
-      select: {
-        contributors: true,
-      },
-    });
-
-    return repository?.contributors ?? null;
-  }
-
   async findContributorVideos(repositoryId: string, contributorUserIds: string[]): Promise<RepositoryContributorVideoRecord[]> {
     return prisma.video.findMany({
       where: {
@@ -164,20 +192,89 @@ export class VideosRepository {
     });
   }
 
-  async findUserDisplayNames(userIds: string[]): Promise<Map<string, string>> {
-    const users = await prisma.user.findMany({
-      where: { id: { in: userIds } },
-      select: {
-        id: true,
-        displayName: true,
-      },
+  async findRepositoryVideoPaths(repositoryId: string): Promise<RepositoryVideoPathRow[]> {
+    return prisma.video.findMany({
+      where: { repositoryId },
+      select: repositoryVideoPathSelect,
     });
+  }
 
-    return new Map(users.map((user) => [user.id, user.displayName]));
+  async findVideoPathsForRepositoryRename(repositoryId: string): Promise<RepositoryRenameVideoPathRow[]> {
+    return prisma.video.findMany({
+      where: { repositoryId },
+      select: repositoryRenameVideoPathSelect,
+    });
+  }
+
+  async updateVideoPathsForRepositoryRename(input: {
+    videos: Array<{
+      id: string;
+      vlmVideoPath: string | null;
+      dashboardVideoPath: string | null;
+      thumbnailPath: string | null;
+    }>;
+  }): Promise<void> {
+    await prisma.$transaction(
+      input.videos.map((video) =>
+        prisma.video.update({
+          where: { id: video.id },
+          data: {
+            vlmVideoPath: video.vlmVideoPath,
+            dashboardVideoPath: video.dashboardVideoPath,
+            thumbnailPath: video.thumbnailPath,
+          },
+        }),
+      ),
+    );
   }
 
   async deleteVideo(videoId: string): Promise<void> {
     await prisma.video.delete({ where: { id: videoId } });
+  }
+
+  async deleteManyByRepositoryId(
+    repositoryId: string,
+    client: PrismaTransactionClient | typeof prisma = prisma,
+  ): Promise<void> {
+    await client.video.deleteMany({ where: { repositoryId } });
+  }
+
+  async upsertFailedRecording(input: {
+    repositoryId: string;
+    recordingSessionId: string;
+    rawRecordingPath: string;
+    streamPath: string | null;
+    deviceType: string | null;
+    recorder: string | null;
+    errorMessage: string;
+    processedAt: Date;
+  }) {
+    return prisma.video.upsert({
+      where: { recordingSessionId: input.recordingSessionId },
+      create: {
+        id: randomUUID(),
+        repositoryId: input.repositoryId,
+        recordingSessionId: input.recordingSessionId,
+        rawRecordingPath: input.rawRecordingPath,
+        streamPath: input.streamPath,
+        deviceType: input.deviceType,
+        recorder: input.recorder,
+        status: VideoStatus.FAILED,
+        errorMessage: input.errorMessage,
+        processingStartedAt: input.processedAt,
+        processingCompletedAt: input.processedAt,
+      },
+      update: {
+        repositoryId: input.repositoryId,
+        rawRecordingPath: input.rawRecordingPath,
+        streamPath: input.streamPath,
+        deviceType: input.deviceType,
+        recorder: input.recorder,
+        status: VideoStatus.FAILED,
+        errorMessage: input.errorMessage,
+        processingCompletedAt: input.processedAt,
+      },
+    });
   }
 }
 

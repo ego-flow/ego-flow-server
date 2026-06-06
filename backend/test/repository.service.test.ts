@@ -81,7 +81,11 @@ const fakePrisma: any = {
       return { model: "recordingSegment", method: "deleteMany" };
     },
   },
-  $transaction: async (operations: unknown[]) => {
+  $transaction: async (operations: unknown[] | ((tx: unknown) => Promise<unknown>)) => {
+    if (typeof operations === "function") {
+      return operations(fakePrisma);
+    }
+
     transactionOperations.push(...operations);
     return operations;
   },
@@ -240,7 +244,7 @@ test("permanentlyDeleteRepository allows pending sessions and deletes repository
       "repository.delete",
     ],
   );
-  assert.equal(transactionOperations.length, 5);
+  assert.equal(transactionOperations.length, 0);
   assert.deepEqual(operationCalls.find((call) => call.model === "recordingSession")?.args, {
     where: { repositoryId: repository.id },
   });

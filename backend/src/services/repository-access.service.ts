@@ -8,7 +8,8 @@ import {
 } from "../lib/repository-access-policy";
 import { isRepoRoleAtLeast, toAppRepoRole } from "../lib/repository-roles";
 import { toRepositoryRecord } from "../mappers/repository.mapper";
-import { repositoryAccessRepository } from "../repositories/repository-access.repository";
+import { repoMemberRepository } from "../repositories/repo-member.repository";
+import { repositoriesRepository } from "../repositories/repositories.repository";
 import type { AppUserRole } from "../types/auth";
 import type { AppRepoRole, RepositoryAccessContext } from "../types/repository";
 
@@ -20,7 +21,7 @@ export class RepositoryAccessService {
     userRole: AppUserRole,
     repositoryId: string,
   ): Promise<RepositoryAccessContext | null> {
-    const repository = await repositoryAccessRepository.findRepositoryById(repositoryId);
+    const repository = await repositoriesRepository.findRepositoryById(repositoryId);
     if (!repository) {
       return null;
     }
@@ -33,7 +34,7 @@ export class RepositoryAccessService {
       };
     }
 
-    const membershipRole = await repositoryAccessRepository.findMembershipRole(repositoryId, userId);
+    const membershipRole = await repoMemberRepository.findMembershipRole(repositoryId, userId);
     if (membershipRole) {
       return {
         repository: toRepositoryRecord(repository),
@@ -61,7 +62,7 @@ export class RepositoryAccessService {
   ): Promise<RepositoryAccessContext> {
     const access = await this.getAccess(userId, userRole, repositoryId);
     if (!access) {
-      const repositoryPresence = await repositoryAccessRepository.findRepositoryState(repositoryId);
+      const repositoryPresence = await repositoriesRepository.findRepositoryState(repositoryId);
       if (!repositoryPresence) {
         throw NotFound("Repository not found.");
       }
@@ -105,7 +106,7 @@ export class RepositoryAccessService {
     repositoryId: string,
     required: RepositoryStatusRequirement,
   ): Promise<{ id: string; deactivated: boolean }> {
-    const repositoryPresence = await repositoryAccessRepository.findRepositoryState(repositoryId);
+    const repositoryPresence = await repositoriesRepository.findRepositoryState(repositoryId);
     if (!repositoryPresence) {
       throw NotFound("Repository not found.");
     }

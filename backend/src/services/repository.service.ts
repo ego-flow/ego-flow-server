@@ -6,6 +6,7 @@ import { RepoVisibility } from "@prisma/client";
 import { BadRequest, Conflict, ErrorCode, NotFound } from "../lib/errors";
 import { getRepositoryAccessPolicy, type RepositoryActiveAccessAction } from "../lib/repository-access-policy";
 import { isRepoRoleAtLeast, toAppRepoRole } from "../lib/repository-roles";
+import { runPrismaTransaction } from "../lib/prisma";
 import { getTargetDirectory } from "../lib/storage";
 import { normalizeRepositoryTags, toRepositoryRecord } from "../mappers/repository.mapper";
 import {
@@ -13,6 +14,11 @@ import {
   repositoriesRepository,
   type RepositorySummaryRow,
 } from "../repositories/repositories.repository";
+import { repoMemberRepository } from "../repositories/repo-member.repository";
+import { recordingSegmentRepository } from "../repositories/recording-segment.repository";
+import { recordingSessionRepository } from "../repositories/recording-session.repository";
+import { userRepository } from "../repositories/user.repository";
+import { videosRepository } from "../repositories/videos.repository";
 import type {
   CreateRepositoryInput,
   CreateRepositoryMemberInput,
@@ -191,7 +197,7 @@ export class RepositoryService {
         contributors: [userId],
       });
 
-      await repositoriesRepository.createRepositoryAdminMember(repository.id, userId);
+      await repoMemberRepository.createAdminMember(repository.id, userId);
 
       return {
         repository: toRepositoryResponse(toRepositoryRecord(repository), "admin"),
@@ -289,7 +295,7 @@ export class RepositoryService {
       );
     }
 
-    const videos = await repositoriesRepository.findRepositoryVideoPaths(repositoryId);
+    const videos = await videosRepository.findRepositoryVideoPaths(repositoryId);
 
     await Promise.all(
       videos.flatMap((video) =>
@@ -302,7 +308,13 @@ export class RepositoryService {
     const repositoryDir = path.join(getTargetDirectory(), access.repository.ownerId, access.repository.name);
     await fs.rm(repositoryDir, { recursive: true, force: true });
 
-    await repositoriesRepository.deleteRepositoryGraph(repositoryId);
+    await runPrismaTransaction(async (tx) => {
+      await repoMemberRepository.deleteManyByRepositoryId(repositoryId, tx);
+      await videosRepository.deleteManyByRepositoryId(repositoryId, tx);
+      await recordingSegmentRepository.deleteManyByRepositoryId(repositoryId, tx);
+      await recordingSessionRepository.deleteManyByRepositoryId(repositoryId, tx);
+      await repositoriesRepository.deleteRepository(repositoryId, tx);
+    });
 
     return {
       id: repositoryId,
@@ -313,8 +325,8 @@ export class RepositoryService {
   async listRepositoryMembers(access: RepositoryAccessContext) {
     const repositoryId = access.repository.id;
 
-    const memberships = await repositoriesRepository.findRepositoryMembers(repositoryId);
-    const users = await repositoriesRepository.findUserSummaries(memberships.map((membership) => membership.userId));
+    const memberships = await repoMemberRepository.findRepositoryMembers(repositoryId);
+    const users = await userRepository.findSummaries(memberships.map((membership) => membership.userId));
 
     const userMap = new Map(users.map((user) => [user.id, user]));
 
@@ -341,7 +353,7 @@ export class RepositoryService {
     const repositoryId = access.repository.id;
     await this.ensureTargetUserCanBeManaged(access.repository.ownerId, input.user_id);
 
-    await repositoriesRepository.upsertRepositoryMember({
+    await repoMemberRepository.upsertRepositoryMember({
       repositoryId,
       userId: input.user_id,
       role: input.role,
@@ -359,13 +371,13 @@ export class RepositoryService {
     const repositoryId = access.repository.id;
     await this.ensureTargetUserCanBeManaged(access.repository.ownerId, targetUserId);
 
-    const membership = await repositoriesRepository.findRepositoryMembership(repositoryId, targetUserId);
+    const membership = await repoMemberRepository.findRepositoryMembership(repositoryId, targetUserId);
 
     if (!membership) {
       throw NotFound("Repository member not found.");
     }
 
-    await repositoriesRepository.updateRepositoryMemberRole({
+    await repoMemberRepository.updateRepositoryMemberRole({
       repositoryId,
       userId: targetUserId,
       role: input.role,
@@ -382,13 +394,13 @@ export class RepositoryService {
     const repositoryId = access.repository.id;
     await this.ensureTargetUserCanBeManaged(access.repository.ownerId, targetUserId);
 
-    const membership = await repositoriesRepository.findRepositoryMembership(repositoryId, targetUserId);
+    const membership = await repoMemberRepository.findRepositoryMembership(repositoryId, targetUserId);
 
     if (!membership) {
       throw NotFound("Repository member not found.");
     }
 
-    await repositoriesRepository.deleteRepositoryMember(repositoryId, targetUserId);
+    await repoMemberRepository.deleteRepositoryMember(repositoryId, targetUserId);
     await refreshRepositoryContributors(repositoryId);
 
     return {
@@ -399,13 +411,15 @@ export class RepositoryService {
   }
 
   private async getVideoCountsByRepositoryId(repositoryIds: string[]): Promise<Map<string, number>> {
-    return repositoriesRepository.countVideosByRepositoryIds(repositoryIds);
+    return videosRepository.countVideosByRepositoryIds(repositoryIds);
   }
 
   private async getRepositoryPermanentDeleteState(access: RepositoryAccessContext) {
     const repositoryId = access.repository.id;
-    const { activeStreamingSessionCount, finalizingSegmentCount } =
-      await repositoriesRepository.getRepositoryDeleteState(repositoryId);
+    const [activeStreamingSessionCount, finalizingSegmentCount] = await Promise.all([
+      recordingSessionRepository.countStreamingByRepositoryId(repositoryId),
+      recordingSegmentRepository.countFinalizingByRepositoryId(repositoryId),
+    ]);
 
     return {
       repository: access.repository,
@@ -456,7 +470,7 @@ export class RepositoryService {
   }
 
   private async getMembershipRoleMap(userId: string): Promise<Map<string, AppRepoRole>> {
-    const memberships = await repositoriesRepository.findMembershipRolesByUser(userId);
+    const memberships = await repoMemberRepository.findMembershipRolesByUser(userId);
 
     return new Map(memberships.map((membership) => [membership.repositoryId, toAppRepoRole(membership.role)]));
   }
@@ -495,7 +509,7 @@ export class RepositoryService {
       return repositoriesRepository.findDeactivatedRepositorySummariesForSystemAdmin();
     }
 
-    const adminRepositoryIds = await repositoriesRepository.findAdminRepositoryIdsByUser(userId);
+    const adminRepositoryIds = await repoMemberRepository.findAdminRepositoryIdsByUser(userId);
 
     if (adminRepositoryIds.length === 0) {
       return [];
@@ -509,7 +523,7 @@ export class RepositoryService {
       throw BadRequest("Repository owner membership cannot be changed.");
     }
 
-    const targetUser = await repositoriesRepository.findActiveUserState(targetUserId);
+    const targetUser = await userRepository.findActiveState(targetUserId);
 
     if (!targetUser) {
       throw NotFound("User not found.");
@@ -525,7 +539,7 @@ export class RepositoryService {
     _repositoryName: string,
     options: { blockPending?: boolean } = { blockPending: true },
   ) {
-    const activeSession = await repositoriesRepository.hasOpenRecordingSession({
+    const activeSession = await recordingSessionRepository.hasOpenSessionByRepositoryId({
       repositoryId,
       blockPending: options.blockPending ?? true,
     });
@@ -534,7 +548,7 @@ export class RepositoryService {
       throw Conflict("Repository cannot be modified while a stream is active.");
     }
 
-    const finalizingSegment = await repositoriesRepository.hasFinalizingRecordingSegment(repositoryId);
+    const finalizingSegment = await recordingSegmentRepository.hasFinalizingByRepositoryId(repositoryId);
 
     if (finalizingSegment) {
       throw Conflict("Repository cannot be modified while recording finalization is in progress.");
@@ -555,9 +569,9 @@ export class RepositoryService {
       await movePath(previousDirectory, nextDirectory);
     }
 
-    const videos = await repositoriesRepository.findVideoPathsForRepositoryRename(repositoryId);
+    const videos = await videosRepository.findVideoPathsForRepositoryRename(repositoryId);
 
-    await repositoriesRepository.updateVideoPathsForRepositoryRename({
+    await videosRepository.updateVideoPathsForRepositoryRename({
       videos: videos.map((video) => ({
         id: video.id,
         vlmVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.vlmVideoPath),
