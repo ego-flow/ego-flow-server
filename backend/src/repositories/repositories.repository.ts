@@ -39,6 +39,15 @@ export class RepositoriesRepository {
     return repositories.map((repository) => repository.id);
   }
 
+  async findRepositoryIdsByOwner(ownerId: string): Promise<string[]> {
+    const repositories = await prisma.repository.findMany({
+      where: { ownerId },
+      select: { id: true },
+    });
+
+    return repositories.map((repository) => repository.id);
+  }
+
   async findActiveRepositoryIdsByIds(repositoryIds: string[]): Promise<string[]> {
     if (repositoryIds.length === 0) {
       return [];

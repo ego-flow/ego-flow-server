@@ -51,6 +51,45 @@ export const recordingSegmentRepository = {
     });
   },
 
+  async claimProcessing(id: string): Promise<boolean> {
+    const claim = await prisma.recordingSegment.updateMany({
+      where: {
+        id,
+        status: RecordingSegmentStatus.WRITE_DONE,
+      },
+      data: { status: RecordingSegmentStatus.PROCESSING },
+    });
+
+    return claim.count === 1;
+  },
+
+  async resetProcessingToWriteDone(id: string): Promise<boolean> {
+    const reset = await prisma.recordingSegment.updateMany({
+      where: {
+        id,
+        status: RecordingSegmentStatus.PROCESSING,
+      },
+      data: { status: RecordingSegmentStatus.WRITE_DONE },
+    });
+
+    return reset.count === 1;
+  },
+
+  async markCompletedIfProcessing(
+    id: string,
+    client: PrismaTransactionClient | typeof prisma = prisma,
+  ): Promise<boolean> {
+    const segmentUpdate = await client.recordingSegment.updateMany({
+      where: {
+        id,
+        status: RecordingSegmentStatus.PROCESSING,
+      },
+      data: { status: RecordingSegmentStatus.COMPLETED },
+    });
+
+    return segmentUpdate.count === 1;
+  },
+
   async markWriteDoneByRecordingSessionId(recordingSessionId: string, completedAt: Date): Promise<boolean> {
     const segmentUpdate = await prisma.recordingSegment.updateMany({
       where: {
@@ -76,6 +115,18 @@ export const recordingSegmentRepository = {
         status: RecordingSegmentStatus.FAILED,
         completedAt,
       },
+    });
+
+    return segmentUpdate.count === 1;
+  },
+
+  async markFailedForFinalize(
+    recordingSessionId: string,
+    client: PrismaTransactionClient | typeof prisma = prisma,
+  ): Promise<boolean> {
+    const segmentUpdate = await client.recordingSegment.updateMany({
+      where: { recordingSessionId },
+      data: { status: RecordingSegmentStatus.FAILED },
     });
 
     return segmentUpdate.count === 1;

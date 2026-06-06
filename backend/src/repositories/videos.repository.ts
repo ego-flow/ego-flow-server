@@ -295,6 +295,163 @@ export class VideosRepository {
       },
     });
   }
+
+  async upsertFinalizeProcessing(
+    input: {
+      videoId: string;
+      repositoryId: string;
+      recordingSessionId: string;
+      rawRecordingPath: string;
+      streamPath: string | null;
+      deviceType: string | null;
+      recordedAt: Date | null;
+      recorder: string | null;
+      processingStartedAt: Date;
+    },
+    client: PrismaTransactionClient | typeof prisma = prisma,
+  ) {
+    return client.video.upsert({
+      where: { recordingSessionId: input.recordingSessionId },
+      create: {
+        id: input.videoId,
+        repositoryId: input.repositoryId,
+        recordingSessionId: input.recordingSessionId,
+        rawRecordingPath: input.rawRecordingPath,
+        streamPath: input.streamPath,
+        deviceType: input.deviceType,
+        recordedAt: input.recordedAt,
+        recorder: input.recorder,
+        status: VideoStatus.PROCESSING,
+        errorMessage: null,
+        processingStartedAt: input.processingStartedAt,
+        processingCompletedAt: null,
+      },
+      update: {
+        repositoryId: input.repositoryId,
+        rawRecordingPath: input.rawRecordingPath,
+        streamPath: input.streamPath,
+        deviceType: input.deviceType,
+        recordedAt: input.recordedAt,
+        recorder: input.recorder,
+        status: VideoStatus.PROCESSING,
+        errorMessage: null,
+        processingCompletedAt: null,
+      },
+    });
+  }
+
+  async upsertFinalizeCompleted(
+    input: {
+      videoId: string;
+      repositoryId: string;
+      recordingSessionId: string;
+      rawRecordingPath: string;
+      streamPath: string | null;
+      deviceType: string | null;
+      durationSec: number | null;
+      resolutionWidth: number | null;
+      resolutionHeight: number | null;
+      fps: number | null;
+      codec: string | null;
+      recordedAt: Date | null;
+      vlmVideoPath: string;
+      dashboardVideoPath: string;
+      thumbnailPath: string;
+      sizeBytes: bigint;
+      vlmSha256: string;
+      recorder: string | null;
+      processedAt: Date;
+    },
+    client: PrismaTransactionClient | typeof prisma = prisma,
+  ) {
+    return client.video.upsert({
+      where: { recordingSessionId: input.recordingSessionId },
+      create: {
+        id: input.videoId,
+        repositoryId: input.repositoryId,
+        recordingSessionId: input.recordingSessionId,
+        rawRecordingPath: input.rawRecordingPath,
+        streamPath: input.streamPath,
+        deviceType: input.deviceType,
+        durationSec: input.durationSec,
+        resolutionWidth: input.resolutionWidth,
+        resolutionHeight: input.resolutionHeight,
+        fps: input.fps,
+        codec: input.codec,
+        recordedAt: input.recordedAt,
+        vlmVideoPath: input.vlmVideoPath,
+        dashboardVideoPath: input.dashboardVideoPath,
+        thumbnailPath: input.thumbnailPath,
+        sizeBytes: input.sizeBytes,
+        vlmSha256: input.vlmSha256,
+        recorder: input.recorder,
+        status: VideoStatus.COMPLETED,
+        errorMessage: null,
+        processingStartedAt: input.processedAt,
+        processingCompletedAt: input.processedAt,
+      },
+      update: {
+        repositoryId: input.repositoryId,
+        rawRecordingPath: input.rawRecordingPath,
+        streamPath: input.streamPath,
+        deviceType: input.deviceType,
+        durationSec: input.durationSec,
+        resolutionWidth: input.resolutionWidth,
+        resolutionHeight: input.resolutionHeight,
+        fps: input.fps,
+        codec: input.codec,
+        recordedAt: input.recordedAt,
+        vlmVideoPath: input.vlmVideoPath,
+        dashboardVideoPath: input.dashboardVideoPath,
+        thumbnailPath: input.thumbnailPath,
+        sizeBytes: input.sizeBytes,
+        vlmSha256: input.vlmSha256,
+        recorder: input.recorder,
+        status: VideoStatus.COMPLETED,
+        errorMessage: null,
+        processingCompletedAt: input.processedAt,
+      },
+    });
+  }
+
+  async upsertFinalizeFailed(
+    input: {
+      videoId: string;
+      repositoryId: string;
+      recordingSessionId: string;
+      rawRecordingPath: string;
+      streamPath: string | null;
+      deviceType: string | null;
+      errorMessage: string;
+      processedAt: Date;
+    },
+    client: PrismaTransactionClient | typeof prisma = prisma,
+  ) {
+    return client.video.upsert({
+      where: { recordingSessionId: input.recordingSessionId },
+      create: {
+        id: input.videoId,
+        repositoryId: input.repositoryId,
+        recordingSessionId: input.recordingSessionId,
+        rawRecordingPath: input.rawRecordingPath,
+        streamPath: input.streamPath,
+        deviceType: input.deviceType,
+        status: VideoStatus.FAILED,
+        errorMessage: input.errorMessage,
+        processingStartedAt: input.processedAt,
+        processingCompletedAt: input.processedAt,
+      },
+      update: {
+        repositoryId: input.repositoryId,
+        rawRecordingPath: input.rawRecordingPath,
+        streamPath: input.streamPath,
+        deviceType: input.deviceType,
+        status: VideoStatus.FAILED,
+        errorMessage: input.errorMessage,
+        processingCompletedAt: input.processedAt,
+      },
+    });
+  }
 }
 
 export const videosRepository = new VideosRepository();

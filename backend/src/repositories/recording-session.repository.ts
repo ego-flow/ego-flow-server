@@ -211,6 +211,14 @@ export class RecordingSessionRepository {
     });
   }
 
+  async countByParticipantUserId(userId: string): Promise<number> {
+    return prisma.recordingSession.count({
+      where: {
+        OR: [{ userId }, { ownerId: userId }],
+      },
+    });
+  }
+
   async hasOpenSessionByRepositoryId(input: {
     repositoryId: string;
     blockPending: boolean;

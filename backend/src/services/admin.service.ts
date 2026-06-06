@@ -16,9 +16,12 @@ import {
 } from "../constants/config/config-constants";
 import { BadRequest, Conflict, NotFound } from "../lib/core/errors";
 import { listActivePythonTokensForAdmin } from "../lib/auth/python-token";
-import { prisma } from "../lib/infra/prisma";
 import { getTargetDirectory } from "../lib/storage/storage";
 import { toAppUserRole } from "../mappers/user.mapper";
+import { recordingSessionRepository } from "../repositories/recording-session.repository";
+import { repoMemberRepository } from "../repositories/repo-member.repository";
+import { repositoriesRepository } from "../repositories/repositories.repository";
+import { userRepository } from "../repositories/user.repository";
 import type { CreateAdminUserInput, ResetUserPasswordInput } from "../schemas/admin.schema";
 
 type ConfigValue = string | number | boolean | null;
@@ -72,14 +75,7 @@ const toUserResponse = (user: {
 
 export class AdminService {
   private async getPermanentDeleteState(userId: string) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        role: true,
-        deactivated: true,
-      },
-    });
+    const user = await userRepository.findDeletionState(userId);
 
     if (!user) {
       throw NotFound("User not found.");
@@ -89,29 +85,19 @@ export class AdminService {
       throw BadRequest("Admin account cannot be permanently deleted.");
     }
 
-    const [ownedRepositories, memberships, recordingSessionCount] = await Promise.all([
-      prisma.repository.findMany({
-        where: { ownerId: user.id },
-        select: { id: true },
-      }),
-      prisma.repoMember.findMany({
-        where: { userId: user.id },
-        select: { repositoryId: true },
-      }),
-      prisma.recordingSession.count({
-        where: {
-          OR: [{ userId: user.id }, { ownerId: user.id }],
-        },
-      }),
+    const [ownedRepositoryIds, memberRepositoryIds, recordingSessionCount] = await Promise.all([
+      repositoriesRepository.findRepositoryIdsByOwner(user.id),
+      repoMemberRepository.findRepositoryIdsByUser(user.id),
+      recordingSessionRepository.countByParticipantUserId(user.id),
     ]);
 
-    const ownedRepositoryIds = new Set(ownedRepositories.map((repository) => repository.id));
-    const repositoryMembershipCount = memberships.filter(
-      (membership) => !ownedRepositoryIds.has(membership.repositoryId),
+    const ownedRepositoryIdSet = new Set(ownedRepositoryIds);
+    const repositoryMembershipCount = memberRepositoryIds.filter(
+      (repositoryId) => !ownedRepositoryIdSet.has(repositoryId),
     ).length;
     const checks = {
       isDeactivated: user.deactivated,
-      ownedRepositoryCount: ownedRepositories.length,
+      ownedRepositoryCount: ownedRepositoryIds.length,
       repositoryMembershipCount,
       recordingSessionCount,
     };
@@ -233,10 +219,7 @@ export class AdminService {
   }
 
   async createUser(input: CreateAdminUserInput) {
-    const existingUser = await prisma.user.findUnique({
-      where: { id: input.id },
-      select: { id: true },
-    });
+    const existingUser = await userRepository.findUserId(input.id);
 
     if (existingUser) {
       throw Conflict("User id already exists.");
@@ -244,21 +227,10 @@ export class AdminService {
 
     const passwordHash = await bcrypt.hash(input.password, 10);
     const displayName = resolveDisplayName(input.id, input.displayName);
-    const user = await prisma.user.create({
-      data: {
-        id: input.id,
-        passwordHash,
-        role: UserRole.user,
-        deactivated: false,
-        displayName,
-      },
-      select: {
-        id: true,
-        role: true,
-        displayName: true,
-        createdAt: true,
-        deactivated: true,
-      },
+    const user = await userRepository.createAdminManagedUser({
+      id: input.id,
+      passwordHash,
+      displayName,
     });
 
     return {
@@ -267,16 +239,7 @@ export class AdminService {
   }
 
   async listUsers() {
-    const users = await prisma.user.findMany({
-      orderBy: [{ role: "asc" }, { createdAt: "asc" }],
-      select: {
-        id: true,
-        role: true,
-        displayName: true,
-        createdAt: true,
-        deactivated: true,
-      },
-    });
+    const users = await userRepository.findAllForAdmin();
 
     return {
       users: users.map(toUserResponse),
@@ -292,13 +255,7 @@ export class AdminService {
   }
 
   async deactivateUser(userId: string) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        role: true,
-      },
-    });
+    const user = await userRepository.findDeletionState(userId);
 
     if (!user) {
       throw NotFound("User not found.");
@@ -308,12 +265,7 @@ export class AdminService {
       throw BadRequest("Admin account cannot be deactivated.");
     }
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        deactivated: true,
-      },
-    });
+    await userRepository.markDeactivated(user.id);
 
     return {
       id: user.id,
@@ -353,9 +305,7 @@ export class AdminService {
       );
     }
 
-    await prisma.user.delete({
-      where: { id: state.user.id },
-    });
+    await userRepository.deleteUser(state.user.id);
 
     return {
       id: state.user.id,
@@ -364,22 +314,14 @@ export class AdminService {
   }
 
   async resetUserPassword(userId: string, input: ResetUserPasswordInput) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true },
-    });
+    const user = await userRepository.findUserId(userId);
 
     if (!user) {
       throw NotFound("User not found.");
     }
 
     const passwordHash = await bcrypt.hash(input.newPassword, 10);
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        passwordHash,
-      },
-    });
+    await userRepository.updatePasswordHash(user.id, passwordHash);
 
     return {
       id: user.id,

@@ -33,6 +33,15 @@ export class RepoMemberRepository {
     });
   }
 
+  async findRepositoryIdsByUser(userId: string): Promise<string[]> {
+    const memberships = await prisma.repoMember.findMany({
+      where: { userId },
+      select: { repositoryId: true },
+    });
+
+    return memberships.map((membership) => membership.repositoryId);
+  }
+
   async findAdminRepositoryIdsByUser(userId: string): Promise<string[]> {
     const memberships = await prisma.repoMember.findMany({
       where: {
