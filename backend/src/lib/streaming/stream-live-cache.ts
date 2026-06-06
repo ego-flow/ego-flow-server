@@ -1,5 +1,5 @@
-import { STREAM_ACTIVE_SET_KEY } from "../constants/stream/stream-constants";
-import { redis } from "./redis";
+import { STREAM_ACTIVE_SET_KEY } from "../../constants/stream/stream-constants";
+import { redis } from "../infra/redis";
 import { streamRecordingKey } from "./stream-keys";
 
 /**

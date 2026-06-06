@@ -1,4 +1,4 @@
-import { runtimeConfig as env } from "../config/runtime";
+import { runtimeConfig as env } from "../../config/runtime";
 
 export const getServerInfo = () => ({
   api_version: "v1",

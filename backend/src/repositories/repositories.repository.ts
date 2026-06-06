@@ -1,6 +1,6 @@
 import { Prisma, RepoVisibility } from "@prisma/client";
 
-import { prisma, type PrismaTransactionClient } from "../lib/prisma";
+import { prisma, type PrismaTransactionClient } from "../lib/infra/prisma";
 
 const repositorySummarySelect = {
   id: true,
@@ -194,8 +194,11 @@ export class RepositoriesRepository {
     });
   }
 
-  async findContributors(repositoryId: string): Promise<Prisma.JsonValue | null> {
-    const repository = await prisma.repository.findUnique({
+  async findContributors(
+    repositoryId: string,
+    client: PrismaTransactionClient | typeof prisma = prisma,
+  ): Promise<Prisma.JsonValue | null> {
+    const repository = await client.repository.findUnique({
       where: { id: repositoryId },
       select: {
         contributors: true,
@@ -203,6 +206,38 @@ export class RepositoriesRepository {
     });
 
     return repository?.contributors ?? null;
+  }
+
+  async findContributorsForUpdate(
+    repositoryId: string,
+    client: PrismaTransactionClient | typeof prisma = prisma,
+  ): Promise<Prisma.JsonValue | null> {
+    await client.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT id
+      FROM repositories
+      WHERE id = ${repositoryId}::uuid
+      FOR UPDATE
+    `);
+
+    const repository = await client.repository.findUnique({
+      where: { id: repositoryId },
+      select: {
+        contributors: true,
+      },
+    });
+
+    return repository?.contributors ?? null;
+  }
+
+  async updateContributors(
+    repositoryId: string,
+    contributors: Prisma.InputJsonValue,
+    client: PrismaTransactionClient | typeof prisma = prisma,
+  ): Promise<void> {
+    await client.repository.update({
+      where: { id: repositoryId },
+      data: { contributors },
+    });
   }
 
   async deleteRepository(

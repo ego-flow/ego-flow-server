@@ -1,8 +1,8 @@
 import jwt from "jsonwebtoken";
 import type { NextFunction, Request, Response } from "express";
 
-import { BadRequest, ErrorCode, Unauthorized } from "../lib/errors";
-import { verifySignedFileUrlToken } from "../lib/signed-file-url";
+import { BadRequest, ErrorCode, Unauthorized } from "../lib/core/errors";
+import { verifySignedFileUrlToken } from "../lib/storage/signed-file-url";
 
 const decodeSegment = (segment: string): string => {
   try {

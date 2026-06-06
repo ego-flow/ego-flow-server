@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { type Prisma, VideoStatus } from "@prisma/client";
 
-import { prisma, type PrismaTransactionClient } from "../lib/prisma";
+import { prisma, type PrismaTransactionClient } from "../lib/infra/prisma";
 
 const repositoryVideoSelect = {
   id: true,
@@ -190,6 +190,25 @@ export class VideosRepository {
         createdAt: true,
       },
     });
+  }
+
+  async findRecorderUserIdsByRepository(
+    repositoryId: string,
+    client: PrismaTransactionClient | typeof prisma = prisma,
+  ): Promise<string[]> {
+    const videos = await client.video.findMany({
+      where: {
+        repositoryId,
+        recorder: {
+          not: null,
+        },
+      },
+      select: {
+        recorder: true,
+      },
+    });
+
+    return videos.map((video) => video.recorder).filter((userId): userId is string => Boolean(userId));
   }
 
   async findRepositoryVideoPaths(repositoryId: string): Promise<RepositoryVideoPathRow[]> {

@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 
 import express from "express";
 
-import { AppError } from "../src/lib/errors";
+import { AppError } from "../src/lib/core/errors";
 import { errorMiddleware } from "../src/middleware/error.middleware";
 import { FakeRedis } from "./helpers/fake-redis";
 
@@ -22,7 +22,7 @@ const originalLoad = moduleLoader._load;
 const fakeRedisModule = { redis: new FakeRedis() };
 
 moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
-  if (request === "../lib/redis" || request.endsWith("/lib/redis")) {
+  if (request === "../lib/infra/redis" || request.endsWith("/lib/infra/redis")) {
     return fakeRedisModule;
   }
 
@@ -52,7 +52,7 @@ const mutablePythonToken = pythonToken as unknown as {
   verifyPythonToken: typeof pythonToken.verifyPythonToken;
 };
 const { repositoryAccessService } =
-  require("../src/services/repository-access.service") as typeof import("../src/services/repository-access.service");
+  require("../src/lib/repositories/repository-access") as typeof import("../src/lib/repositories/repository-access");
 const { repositoryService } =
   require("../src/services/repository.service") as typeof import("../src/services/repository.service");
 const { videosService } =

@@ -2,10 +2,10 @@ import fs from "fs/promises";
 
 import { VideoStatus, type Prisma } from "@prisma/client";
 
-import { Internal, NotFound } from "../lib/errors";
-import { isMissingFileError } from "../lib/file-system";
-import { toSignedFileUrl } from "../lib/signed-file-url";
-import { getTargetDirectory, toStorageRelativePath } from "../lib/storage";
+import { Internal, NotFound } from "../lib/core/errors";
+import { isMissingFileError } from "../lib/storage/file-system";
+import { toSignedFileUrl } from "../lib/storage/signed-file-url";
+import { getTargetDirectory, toStorageRelativePath } from "../lib/storage/storage";
 import {
   videosRepository,
   type RepositoryVideoRecord,
@@ -18,8 +18,8 @@ import {
   RECORDING_FINALIZE_COMPLETED_PROGRESS,
   type RecordingFinalizeProgress,
 } from "../types/processing";
-import { processingService } from "./processing.service";
-import { normalizeContributorUserIds, refreshRepositoryContributors } from "./repository-contributors.service";
+import { processingService } from "../lib/processing/processing-queue";
+import { normalizeContributorUserIds, refreshRepositoryContributors } from "../lib/repositories/repository-contributors";
 
 type VideoOrderQuery = {
   sort_by: "recorded_at" | "duration_sec" | "size_bytes";

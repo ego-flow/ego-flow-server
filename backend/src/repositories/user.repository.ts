@@ -1,4 +1,4 @@
-import { prisma } from "../lib/prisma";
+import { prisma } from "../lib/infra/prisma";
 import { toAuthenticatedUser } from "../mappers/user.mapper";
 import type { AppUserRole, AuthenticatedUser } from "../types/auth";
 

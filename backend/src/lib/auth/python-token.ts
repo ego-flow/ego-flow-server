@@ -8,8 +8,8 @@ import { toAppUserRole } from "../../mappers/user.mapper";
 import { pythonTokenRepository } from "../../repositories/python-token.repository";
 import type { CreatePythonTokenInput } from "../../schemas/python-token.schema";
 import type { AppUserRole } from "../../types/auth";
-import { createPrefixedRandomToken, hashValue } from "../crypto";
-import { Forbidden, NotFound } from "../errors";
+import { createPrefixedRandomToken, hashValue } from "./crypto";
+import { Forbidden, NotFound } from "../core/errors";
 
 export const createRawPythonToken = () => createPrefixedRandomToken(PYTHON_TOKEN_PREFIX, PYTHON_TOKEN_RANDOM_BYTES);
 

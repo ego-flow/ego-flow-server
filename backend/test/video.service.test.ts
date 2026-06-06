@@ -3,7 +3,7 @@ import path from "node:path";
 import { beforeEach, test } from "node:test";
 import { VideoStatus } from "@prisma/client";
 
-import { AppError } from "../src/lib/errors";
+import { AppError } from "../src/lib/core/errors";
 import type { RepositoryRecord } from "../src/types/repository";
 
 process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egoflow";
@@ -17,7 +17,7 @@ const originalLoad = moduleLoader._load;
 const fakeBullJobProgress = new Map<string, unknown>();
 
 moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
-  if (request === "../lib/redis" || request.endsWith("/lib/redis")) {
+  if (request === "../lib/infra/redis" || request.endsWith("/lib/infra/redis")) {
     return {
       redis: {
         get: async () => null,
@@ -196,8 +196,8 @@ const fakePrisma: any = {
 
 const { VideosService } = require("../src/services/videos.service") as typeof import("../src/services/videos.service");
 const { verifySignedFileUrlToken } =
-  require("../src/lib/signed-file-url") as typeof import("../src/lib/signed-file-url");
-const { getTargetDirectory } = require("../src/lib/storage") as typeof import("../src/lib/storage");
+  require("../src/lib/storage/signed-file-url") as typeof import("../src/lib/storage/signed-file-url");
+const { getTargetDirectory } = require("../src/lib/storage/storage") as typeof import("../src/lib/storage/storage");
 
 const service = new VideosService();
 const targetDirectory = getTargetDirectory();

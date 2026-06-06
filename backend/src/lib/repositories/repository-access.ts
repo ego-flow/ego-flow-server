@@ -1,17 +1,17 @@
 import { RepoVisibility } from "@prisma/client";
 
-import { BadRequest, Forbidden, NotFound } from "../lib/errors";
+import { BadRequest, Forbidden, NotFound } from "../core/errors";
 import {
   getRepositoryAccessPolicy,
   type RepositoryActiveAccessAction,
   type RepositoryAccessAction,
-} from "../lib/repository-access-policy";
-import { isRepoRoleAtLeast, toAppRepoRole } from "../lib/repository-roles";
-import { toRepositoryRecord } from "../mappers/repository.mapper";
-import { repoMemberRepository } from "../repositories/repo-member.repository";
-import { repositoriesRepository } from "../repositories/repositories.repository";
-import type { AppUserRole } from "../types/auth";
-import type { AppRepoRole, RepositoryAccessContext } from "../types/repository";
+} from "./access-policy";
+import { isRepoRoleAtLeast, toAppRepoRole } from "./roles";
+import { toRepositoryRecord } from "../../mappers/repository.mapper";
+import { repoMemberRepository } from "../../repositories/repo-member.repository";
+import { repositoriesRepository } from "../../repositories/repositories.repository";
+import type { AppUserRole } from "../../types/auth";
+import type { AppRepoRole, RepositoryAccessContext } from "../../types/repository";
 
 export type RepositoryStatusRequirement = "active" | "deactivated";
 

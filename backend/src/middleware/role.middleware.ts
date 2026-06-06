@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 
-import { Forbidden, Unauthorized } from "../lib/errors";
+import { Forbidden, Unauthorized } from "../lib/core/errors";
 import type { AppUserRole } from "../types/auth";
 
 export const requireRole =

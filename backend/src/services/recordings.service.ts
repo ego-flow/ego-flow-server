@@ -3,8 +3,8 @@ import {
   RecordingSessionStatus,
 } from "@prisma/client";
 
-import { BadRequest, Conflict, Forbidden, NotFound } from "../lib/errors";
-import { extractRepositoryNameFromStreamPath } from "../lib/stream-paths";
+import { BadRequest, Conflict, Forbidden, NotFound } from "../lib/core/errors";
+import { extractRepositoryNameFromStreamPath } from "../lib/streaming/stream-paths";
 import { recordingSessionRepository } from "../repositories/recording-session.repository";
 import type { RecordingCloseIntentInput } from "../schemas/stream.schema";
 

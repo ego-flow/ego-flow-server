@@ -10,15 +10,15 @@ process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 
 (globalThis as any).__egoflowPrisma = {} as any;
 
-const { AppError } = require("../src/lib/errors") as typeof import("../src/lib/errors");
+const { AppError } = require("../src/lib/core/errors") as typeof import("../src/lib/core/errors");
 const { getRepositoryAccessPolicy } =
-  require("../src/lib/repository-access-policy") as typeof import("../src/lib/repository-access-policy");
+  require("../src/lib/repositories/access-policy") as typeof import("../src/lib/repositories/access-policy");
 const { repoMemberRepository } =
   require("../src/repositories/repo-member.repository") as typeof import("../src/repositories/repo-member.repository");
 const { repositoriesRepository } =
   require("../src/repositories/repositories.repository") as typeof import("../src/repositories/repositories.repository");
 const { repositoryAccessService } =
-  require("../src/services/repository-access.service") as typeof import("../src/services/repository-access.service");
+  require("../src/lib/repositories/repository-access") as typeof import("../src/lib/repositories/repository-access");
 
 const repository: RepositoryResolveRow = {
   id: "repo-1",

@@ -1,6 +1,6 @@
 import Redis from "ioredis";
 
-import { runtimeConfig as env } from "../config/runtime";
+import { runtimeConfig as env } from "../../config/runtime";
 
 declare global {
   // eslint-disable-next-line no-var

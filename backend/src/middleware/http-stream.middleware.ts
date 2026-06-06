@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 
-import { BadRequest } from "../lib/errors";
+import { BadRequest } from "../lib/core/errors";
 import { httpStreamChunkHeadersSchema } from "../schemas/stream.schema";
 
 export const parseHttpStreamChunk = (req: Request, _res: Response, next: NextFunction) => {

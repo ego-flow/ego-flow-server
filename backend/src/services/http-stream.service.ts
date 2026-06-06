@@ -15,19 +15,19 @@ import {
   STREAM_ACTIVE_SET_KEY,
 } from "../constants/stream/stream-constants";
 import { runtimeConfig as env } from "../config/runtime";
-import { BadRequest, Conflict, Forbidden, NotFound, PreconditionFailed } from "../lib/errors";
-import { redis } from "../lib/redis";
+import { BadRequest, Conflict, Forbidden, NotFound, PreconditionFailed } from "../lib/core/errors";
+import { redis } from "../lib/infra/redis";
 import type { HttpStreamFinishInput, HttpStreamStartInput } from "../schemas/stream.schema";
 import type { HttpStreamChunkInput, RecordingSessionLiveCache } from "../types/stream";
-import { httpUploadLockKey, streamRecordingKey } from "../lib/stream-keys";
+import { httpUploadLockKey, streamRecordingKey } from "../lib/streaming/stream-keys";
 import {
   recordingSessionRepository,
   type RecordingSessionRecord,
 } from "../repositories/recording-session.repository";
 import { recordingSegmentRepository } from "../repositories/recording-segment.repository";
 import { videosRepository } from "../repositories/videos.repository";
-import { recordingSessionService } from "./recording-session.service";
-import { streamOwnershipService } from "./stream-ownership.service";
+import { recordingSessionService } from "../lib/streaming/recording-session";
+import { streamOwnershipService } from "../lib/streaming/stream-ownership";
 
 type HttpUploadCache = RecordingSessionLiveCache & {
   ingestType: "HTTP";

@@ -5,7 +5,7 @@ import {
   RecordingSessionStatus,
 } from "@prisma/client";
 
-import { prisma, type PrismaTransactionClient } from "../lib/prisma";
+import { prisma, type PrismaTransactionClient } from "../lib/infra/prisma";
 
 export type RecordingSessionRecord = Pick<
   RecordingSession,
@@ -16,6 +16,7 @@ export type RecordingSessionRecord = Pick<
   | "deviceType"
   | "ingestType"
   | "streamPath"
+  | "targetDirectory"
   | "status"
   | "readyAt"
   | "createdAt"
@@ -60,6 +61,7 @@ export class RecordingSessionRepository {
         deviceType: true,
         ingestType: true,
         streamPath: true,
+        targetDirectory: true,
         status: true,
         readyAt: true,
         createdAt: true,
@@ -166,6 +168,31 @@ export class RecordingSessionRepository {
         deviceType: true,
         ingestType: true,
         streamPath: true,
+        targetDirectory: true,
+        status: true,
+        readyAt: true,
+        createdAt: true,
+        closedAt: true,
+        endReason: true,
+      },
+    });
+  }
+
+  async findStreamingByIngestType(ingestType: RecordingSessionIngestType): Promise<RecordingSessionRecord[]> {
+    return prisma.recordingSession.findMany({
+      where: {
+        status: RecordingSessionStatus.STREAMING,
+        ingestType,
+      },
+      select: {
+        id: true,
+        repositoryId: true,
+        ownerId: true,
+        userId: true,
+        deviceType: true,
+        ingestType: true,
+        streamPath: true,
+        targetDirectory: true,
         status: true,
         readyAt: true,
         createdAt: true,

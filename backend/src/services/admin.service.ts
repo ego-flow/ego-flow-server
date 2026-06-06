@@ -14,10 +14,10 @@ import {
   FIXED_WEBRTC_UDP_PORT,
   FIXED_WHIP_PORT,
 } from "../constants/config/config-constants";
-import { BadRequest, Conflict, NotFound } from "../lib/errors";
+import { BadRequest, Conflict, NotFound } from "../lib/core/errors";
 import { listActivePythonTokensForAdmin } from "../lib/auth/python-token";
-import { prisma } from "../lib/prisma";
-import { getTargetDirectory } from "../lib/storage";
+import { prisma } from "../lib/infra/prisma";
+import { getTargetDirectory } from "../lib/storage/storage";
 import { toAppUserRole } from "../mappers/user.mapper";
 import type { CreateAdminUserInput, ResetUserPasswordInput } from "../schemas/admin.schema";
 

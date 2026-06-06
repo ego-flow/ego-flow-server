@@ -9,13 +9,13 @@ import {
   RECORDING_ACTIVE_TTL_SECONDS,
   STREAM_ACTIVE_SET_KEY,
 } from "../constants/stream/stream-constants";
-import { redis } from "../lib/redis";
-import { clearLivePointers } from "../lib/stream-live-cache";
+import { redis } from "../lib/infra/redis";
+import { clearLivePointers } from "../lib/streaming/stream-live-cache";
 import {
   extractRecordingSessionIdFromStreamPath,
   extractRepositoryNameFromStreamPath,
-} from "../lib/stream-paths";
-import { streamRecordingKey } from "../lib/stream-keys";
+} from "../lib/streaming/stream-paths";
+import { streamRecordingKey } from "../lib/streaming/stream-keys";
 import { recordingSegmentRepository } from "../repositories/recording-segment.repository";
 import { recordingSessionRepository } from "../repositories/recording-session.repository";
 import type {
@@ -25,8 +25,8 @@ import type {
   SegmentCompleteHookInput,
 } from "../schemas/stream.schema";
 import type { RecordingSessionLiveCache } from "../types/stream";
-import { recordingSessionService } from "./recording-session.service";
-import { streamOwnershipService } from "./stream-ownership.service";
+import { recordingSessionService } from "../lib/streaming/recording-session";
+import { streamOwnershipService } from "../lib/streaming/stream-ownership";
 
 /**
  * MediaMTX hook route use-case orchestration.

@@ -11,17 +11,19 @@ process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egof
 process.env.JWT_SECRET ??= "replace-this-in-tests-only";
 process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 
+const fakeRedis = new FakeRedis();
+
 (globalThis as any).__egoflowPrisma = {} as any;
-(globalThis as any).__egoflowRedis = new FakeRedis();
+(globalThis as any).__egoflowRedis = fakeRedis;
 
 const moduleLoader = require("node:module") as typeof import("node:module") & {
   _load: (request: string, parent: unknown, isMain: boolean) => unknown;
 };
 const originalLoad = moduleLoader._load;
-const fakeRedisModule = { redis: new FakeRedis() };
+const fakeRedisModule = { redis: fakeRedis };
 
 moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
-  if (request === "../lib/redis" || request.endsWith("/lib/redis")) {
+  if (request === "../lib/infra/redis" || request.endsWith("/lib/infra/redis")) {
     return fakeRedisModule;
   }
 

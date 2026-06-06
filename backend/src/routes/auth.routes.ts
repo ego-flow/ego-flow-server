@@ -1,8 +1,8 @@
 import { Router } from "express";
 
-import { asyncHandler } from "../lib/async-handler";
+import { asyncHandler } from "../lib/http/async-handler";
 import { clearDashboardSessionCookie, setDashboardSessionCookie } from "../lib/auth/dashboard-cookie";
-import { getAuthUser } from "../lib/request-context";
+import { getAuthUser } from "../lib/http/request-context";
 import { requireDashboardSession, requirePythonToken } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import type { PythonTokenIdParamInput } from "../schemas/python-token.schema";

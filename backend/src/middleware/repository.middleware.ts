@@ -1,8 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 
-import { BadRequest, Unauthorized } from "../lib/errors";
-import type { RepositoryAccessAction } from "../lib/repository-access-policy";
-import { repositoryAccessService, type RepositoryStatusRequirement } from "../services/repository-access.service";
+import { BadRequest, Unauthorized } from "../lib/core/errors";
+import type { RepositoryAccessAction } from "../lib/repositories/access-policy";
+import { repositoryAccessService, type RepositoryStatusRequirement } from "../lib/repositories/repository-access";
 
 type RepositoryIdResolver = (req: Request) => unknown;
 

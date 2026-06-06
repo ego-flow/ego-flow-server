@@ -1,8 +1,8 @@
 import express, { Router } from "express";
 
 import { HTTP_STREAM_CHUNK_MAX_BYTES } from "../constants/stream/stream-constants";
-import { asyncHandler } from "../lib/async-handler";
-import { getAuthUser, getHttpStreamChunk } from "../lib/request-context";
+import { asyncHandler } from "../lib/http/async-handler";
+import { getAuthUser, getHttpStreamChunk } from "../lib/http/request-context";
 import { requireAppJwt } from "../middleware/auth.middleware";
 import { parseHttpStreamChunk } from "../middleware/http-stream.middleware";
 import { validate } from "../middleware/validate.middleware";

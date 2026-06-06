@@ -9,7 +9,7 @@ import {
 import { verifyDashboardSession } from "../lib/auth/dashboard-session";
 import { extractBearerToken, extractCookie } from "../lib/auth/http-credentials";
 import { verifyPythonToken } from "../lib/auth/python-token";
-import { Unauthorized } from "../lib/errors";
+import { Unauthorized } from "../lib/core/errors";
 import { userRepository } from "../repositories/user.repository";
 import { AuthCredentialKind, type AuthContext, type AuthenticatedUser } from "../types/auth";
 

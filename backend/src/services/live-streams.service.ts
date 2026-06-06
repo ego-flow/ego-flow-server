@@ -2,19 +2,19 @@ import { RecordingSessionIngestType, RecordingSessionStatus } from "@prisma/clie
 
 import { STREAM_ACTIVE_SET_KEY } from "../constants/stream/stream-constants";
 import { runtimeConfig as env } from "../config/runtime";
-import { Conflict, NotFound } from "../lib/errors";
-import { redis } from "../lib/redis";
+import { Conflict, NotFound } from "../lib/core/errors";
+import { redis } from "../lib/infra/redis";
 import {
   extractRepositoryNameFromStreamPath,
   normalizeStreamPath,
-} from "../lib/stream-paths";
-import { streamRecordingKey } from "../lib/stream-keys";
+} from "../lib/streaming/stream-paths";
+import { streamRecordingKey } from "../lib/streaming/stream-keys";
 import { recordingSessionRepository } from "../repositories/recording-session.repository";
 import type { AppUserRole } from "../types/auth";
 import type { RecordingSessionLiveCache } from "../types/stream";
-import { repositoryAccessService } from "./repository-access.service";
+import { repositoryAccessService } from "../lib/repositories/repository-access";
 import { repositoryService } from "./repository.service";
-import { streamOwnershipService } from "./stream-ownership.service";
+import { streamOwnershipService } from "../lib/streaming/stream-ownership";
 
 /**
  * /live-streams route use-case orchestration.

@@ -13,7 +13,7 @@ process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 const { requireSignedFileAccess } =
   require("../src/middleware/signed-file-access.middleware") as typeof import("../src/middleware/signed-file-access.middleware");
 const { signFileUrlToken } =
-  require("../src/lib/signed-file-url") as typeof import("../src/lib/signed-file-url");
+  require("../src/lib/storage/signed-file-url") as typeof import("../src/lib/storage/signed-file-url");
 
 let server: import("node:http").Server | null = null;
 

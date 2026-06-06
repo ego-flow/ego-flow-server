@@ -1,7 +1,7 @@
 import { RecordingSessionIngestType } from "@prisma/client";
 
 import { AuthCredentialKind } from "../constants/auth/auth-constants";
-import { ErrorCode, Unauthorized } from "../lib/errors";
+import { ErrorCode, Unauthorized } from "../lib/core/errors";
 import { signAccessToken } from "../lib/auth/access-token";
 import { createDashboardSession, revokeDashboardSession } from "../lib/auth/dashboard-session";
 import { hashPassword, verifyPassword } from "../lib/auth/password";
@@ -15,7 +15,7 @@ import type { IssuePythonTokenInput, LoginInput, MediaMtxAuthInput } from "../sc
 import { mediaMtxAuthSchema } from "../schemas/auth.schema";
 import type { ChangeMyPasswordInput } from "../schemas/user.schema";
 import type { AppUserRole, AuthContext, AuthenticatedUser } from "../types/auth";
-import { streamOwnershipService } from "./stream-ownership.service";
+import { streamOwnershipService } from "../lib/streaming/stream-ownership";
 import { streamService } from "./stream.service";
 
 export class AuthService {

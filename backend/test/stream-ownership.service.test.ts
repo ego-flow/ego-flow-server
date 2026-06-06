@@ -13,7 +13,7 @@ const fakeRedis = new FakeRedis();
 (globalThis as any).__egoflowRedis = fakeRedis;
 
 const { StreamOwnershipService } =
-  require("../src/services/stream-ownership.service") as typeof import("../src/services/stream-ownership.service");
+  require("../src/lib/streaming/stream-ownership") as typeof import("../src/lib/streaming/stream-ownership");
 
 const service = new StreamOwnershipService();
 

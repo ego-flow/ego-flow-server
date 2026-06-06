@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 
 import express from "express";
 
-import { AppError } from "../src/lib/errors";
+import { AppError } from "../src/lib/core/errors";
 import { errorMiddleware } from "../src/middleware/error.middleware";
 import { FakeRedis } from "./helpers/fake-redis";
 
@@ -24,7 +24,7 @@ const originalLoad = moduleLoader._load;
 const fakeRedisModule = { redis: new FakeRedis() };
 
 moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
-  if (request === "../lib/redis" || request.endsWith("/lib/redis")) {
+  if (request === "../lib/infra/redis" || request.endsWith("/lib/infra/redis")) {
     return fakeRedisModule;
   }
 
@@ -59,11 +59,11 @@ const mutableDashboardSession = dashboardSession as unknown as {
   verifyDashboardSession: typeof dashboardSession.verifyDashboardSession;
 };
 const { toSignedFileUrl, verifySignedFileUrlToken } =
-  require("../src/lib/signed-file-url") as typeof import("../src/lib/signed-file-url");
+  require("../src/lib/storage/signed-file-url") as typeof import("../src/lib/storage/signed-file-url");
 const { getTargetDirectory } =
-  require("../src/lib/storage") as typeof import("../src/lib/storage");
+  require("../src/lib/storage/storage") as typeof import("../src/lib/storage/storage");
 const { repositoryAccessService } =
-  require("../src/services/repository-access.service") as typeof import("../src/services/repository-access.service");
+  require("../src/lib/repositories/repository-access") as typeof import("../src/lib/repositories/repository-access");
 const { videosService } =
   require("../src/services/videos.service") as typeof import("../src/services/videos.service");
 const { videosRoutes } =

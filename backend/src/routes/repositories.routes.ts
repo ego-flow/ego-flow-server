@@ -1,7 +1,7 @@
 import { Router } from "express";
 
-import { asyncHandler } from "../lib/async-handler";
-import { getAuthUser, getRepositoryAccess } from "../lib/request-context";
+import { asyncHandler } from "../lib/http/async-handler";
+import { getAuthUser, getRepositoryAccess } from "../lib/http/request-context";
 import { repoAccess, repoStatus } from "../middleware/repository.middleware";
 import {
   requireDashboardOrApp,

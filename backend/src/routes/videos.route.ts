@@ -1,8 +1,8 @@
 import { Router } from "express";
 
-import { asyncHandler } from "../lib/async-handler";
-import { NotFound } from "../lib/errors";
-import { getRepositoryAccess } from "../lib/request-context";
+import { asyncHandler } from "../lib/http/async-handler";
+import { NotFound } from "../lib/core/errors";
+import { getRepositoryAccess } from "../lib/http/request-context";
 import { requireDashboardOrPython, requireDashboardSession } from "../middleware/auth.middleware";
 import { repoAccess, repoStatus } from "../middleware/repository.middleware";
 import { validate } from "../middleware/validate.middleware";

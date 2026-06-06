@@ -5,7 +5,7 @@ import os from "os";
 import path from "path";
 import { test } from "node:test";
 
-import { computeFileDigestAndSize } from "../src/lib/file-utils";
+import { computeFileDigestAndSize } from "../src/lib/storage/file-utils";
 
 test("computeFileDigestAndSize returns SHA-256 and byte size in a single streaming pass", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "egoflow-file-utils-"));

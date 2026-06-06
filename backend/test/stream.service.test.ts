@@ -51,10 +51,10 @@ const { streamService } =
 const { liveStreamsService } =
   require("../src/services/live-streams.service") as typeof import("../src/services/live-streams.service");
 const { repositoryAccessService } =
-  require("../src/services/repository-access.service") as typeof import("../src/services/repository-access.service");
+  require("../src/lib/repositories/repository-access") as typeof import("../src/lib/repositories/repository-access");
 const { repositoryService } =
   require("../src/services/repository.service") as typeof import("../src/services/repository.service");
-const { Forbidden } = require("../src/lib/errors") as typeof import("../src/lib/errors");
+const { Forbidden } = require("../src/lib/core/errors") as typeof import("../src/lib/core/errors");
 
 const originalAssertAccess = repositoryAccessService.assertAction;
 const originalGetAccess = repositoryAccessService.getAccessForAction;

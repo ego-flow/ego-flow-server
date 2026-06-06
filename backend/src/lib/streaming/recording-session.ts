@@ -9,23 +9,23 @@ import {
 
 import {
   RECORDING_REGISTRATION_TTL_SECONDS,
-} from "../constants/stream/stream-constants";
-import { prisma } from "../lib/prisma";
-import { redis } from "../lib/redis";
-import { runtimeConfig as env } from "../config/runtime";
-import { processingService } from "./processing.service";
-import { streamRecordingKey } from "../lib/stream-keys";
-import { clearLivePointers } from "../lib/stream-live-cache";
+} from "../../constants/stream/stream-constants";
+import { redis } from "../infra/redis";
+import { runtimeConfig as env } from "../../config/runtime";
+import { processingService } from "../processing/processing-queue";
+import { streamRecordingKey } from "./stream-keys";
+import { clearLivePointers } from "./stream-live-cache";
 import {
   extractRecordingSessionIdFromStreamPath,
   extractRepositoryNameFromStreamPath,
   normalizeStreamPath,
-} from "../lib/stream-paths";
-import { recordingSessionRepository } from "../repositories/recording-session.repository";
+} from "./stream-paths";
+import { recordingSegmentRepository } from "../../repositories/recording-segment.repository";
+import { recordingSessionRepository } from "../../repositories/recording-session.repository";
 import type {
   RecordingSessionLiveCache,
   RecordingFinalizeJobData,
-} from "../types/stream";
+} from "../../types/stream";
 
 /**
  * RecordingSession 라이프사이클 전체를 관리하는 핵심 서비스.
@@ -125,17 +125,12 @@ export class RecordingSessionService {
    * 후처리 재시도 기준은 RecordingSession.status가 아니라 RecordingSegment.status=WRITE_DONE이다.
    */
   async tryEnqueueFinalize(recordingSessionId: string): Promise<boolean> {
-    const session = await prisma.recordingSession.findUnique({
-      where: { id: recordingSessionId },
-    });
+    const session = await recordingSessionRepository.findById(recordingSessionId);
     if (!session || session.status !== RecordingSessionStatus.CLOSED) {
       return false;
     }
 
-    const segment = await prisma.recordingSegment.findUnique({
-      where: { recordingSessionId },
-      select: { status: true, rawPath: true },
-    });
+    const segment = await recordingSegmentRepository.findFinalizeStateByRecordingSessionId(recordingSessionId);
 
     if (!segment) {
       console.info("[rtmp-finalize] no-recording-segment", {
@@ -194,14 +189,8 @@ export class RecordingSessionService {
    * - STREAMING: active path가 없거나 closedAt이 기록되어 있으면 CLOSED로 보정 후 segment complete 기반 enqueue 시도
    */
   async reconcileSessions() {
-    const activeSessions = await prisma.recordingSession.findMany({
-      where: {
-        status: RecordingSessionStatus.STREAMING,
-      },
-    });
-
-    const mediamtxSessions = activeSessions.filter(
-      (session) => session.ingestType === RecordingSessionIngestType.MEDIAMTX,
+    const mediamtxSessions = await recordingSessionRepository.findStreamingByIngestType(
+      RecordingSessionIngestType.MEDIAMTX,
     );
     const activeStreamPaths = mediamtxSessions.length > 0 ? await this.getActiveStreamPaths() : null;
 
@@ -266,13 +255,10 @@ export class RecordingSessionService {
     },
   ) {
     const closedAt = session.closedAt ?? new Date();
-    await prisma.recordingSession.update({
-      where: { id: session.id },
-      data: {
-        status: RecordingSessionStatus.CLOSED,
-        closedAt,
-        endReason: session.endReason ?? options.endReason,
-      },
+    await recordingSessionRepository.close({
+      recordingSessionId: session.id,
+      closedAt,
+      endReason: session.endReason ?? options.endReason,
     });
 
     const repoName = this.extractRepositoryName(session.streamPath);

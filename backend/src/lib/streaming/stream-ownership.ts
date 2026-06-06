@@ -2,16 +2,16 @@ import { v4 as uuidv4 } from "uuid";
 
 import { RecordingSessionIngestType } from "@prisma/client";
 
-import { HLS_PLAYBACK_TICKET_TTL_SECONDS } from "../constants/stream/stream-constants";
-import { PUBLISH_TICKET_TTL_SECONDS } from "../constants/stream/stream-ownership-constants";
-import { redis } from "../lib/redis";
+import { HLS_PLAYBACK_TICKET_TTL_SECONDS } from "../../constants/stream/stream-constants";
+import { PUBLISH_TICKET_TTL_SECONDS } from "../../constants/stream/stream-ownership-constants";
+import { redis } from "../infra/redis";
 import type {
   HlsPlaybackTicketRecord,
   PublishTicketRecord,
   RecordingSessionIngestTypeValue,
   RecordingSessionLiveCache,
-} from "../types/stream";
-import { hlsPlaybackTicketKey, streamRecordingKey, streamTicketKey } from "../lib/stream-keys";
+} from "../../types/stream";
+import { hlsPlaybackTicketKey, streamRecordingKey, streamTicketKey } from "./stream-keys";
 
 type PublishTicketValidationResult =
   | {

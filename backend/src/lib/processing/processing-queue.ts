@@ -1,11 +1,11 @@
 import { Queue } from "bullmq";
 
-import { buildBullConnection } from "../lib/bullmq";
+import { buildBullConnection } from "../infra/bullmq";
 import {
   parseRecordingFinalizeProgress,
   type RecordingFinalizeProgress,
-} from "../types/processing";
-import type { RecordingFinalizeJobData } from "../types/stream";
+} from "../../types/processing";
+import type { RecordingFinalizeJobData } from "../../types/stream";
 
 const recordingFinalizeQueue = new Queue<RecordingFinalizeJobData, void, "recording-finalize">(
   "recording-finalize",

@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { beforeEach, test } from "node:test";
 import { UserRole } from "@prisma/client";
 
-import { AppError } from "../src/lib/errors";
+import { AppError } from "../src/lib/core/errors";
 
 process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egoflow";
 process.env.JWT_SECRET ??= "replace-this-in-tests-only";

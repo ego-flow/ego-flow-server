@@ -3,11 +3,11 @@ import path from "path";
 
 import { RepoVisibility } from "@prisma/client";
 
-import { BadRequest, Conflict, ErrorCode, NotFound } from "../lib/errors";
-import { getRepositoryAccessPolicy, type RepositoryActiveAccessAction } from "../lib/repository-access-policy";
-import { isRepoRoleAtLeast, toAppRepoRole } from "../lib/repository-roles";
-import { runPrismaTransaction } from "../lib/prisma";
-import { getTargetDirectory } from "../lib/storage";
+import { BadRequest, Conflict, ErrorCode, NotFound } from "../lib/core/errors";
+import { getRepositoryAccessPolicy, type RepositoryActiveAccessAction } from "../lib/repositories/access-policy";
+import { isRepoRoleAtLeast, toAppRepoRole } from "../lib/repositories/roles";
+import { runPrismaTransaction } from "../lib/infra/prisma";
+import { getTargetDirectory } from "../lib/storage/storage";
 import { normalizeRepositoryTags, toRepositoryRecord } from "../mappers/repository.mapper";
 import {
   isUniqueConstraintError,
@@ -29,10 +29,10 @@ import type {
 } from "../schemas/repository.schema";
 import type { AppUserRole } from "../types/auth";
 import type { AppRepoRole, RepositoryAccessContext, RepositoryRecord } from "../types/repository";
-import { movePath, pathExists } from "../lib/file-system";
-import { remapPathWithinDirectory } from "../lib/path-mapping";
-import { repositoryAccessService } from "./repository-access.service";
-import { refreshRepositoryContributors } from "./repository-contributors.service";
+import { movePath, pathExists } from "../lib/storage/file-system";
+import { remapPathWithinDirectory } from "../lib/storage/path-mapping";
+import { repositoryAccessService } from "../lib/repositories/repository-access";
+import { refreshRepositoryContributors } from "../lib/repositories/repository-contributors";
 
 const toRepositoryResponse = (
   repository: RepositoryRecord,

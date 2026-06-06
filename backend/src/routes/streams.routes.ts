@@ -1,7 +1,7 @@
 import { Router } from "express";
 
-import { asyncHandler } from "../lib/async-handler";
-import { getAuthUser, getRepositoryAccess } from "../lib/request-context";
+import { asyncHandler } from "../lib/http/async-handler";
+import { getAuthUser, getRepositoryAccess } from "../lib/http/request-context";
 import { requireAppJwt } from "../middleware/auth.middleware";
 import { repoAccess, repoStatus } from "../middleware/repository.middleware";
 import { validate } from "../middleware/validate.middleware";

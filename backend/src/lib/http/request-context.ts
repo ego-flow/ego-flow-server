@@ -1,9 +1,9 @@
 import type { Request } from "express";
 
-import { Internal, Unauthorized } from "./errors";
-import type { AuthenticatedUser } from "../types/auth";
-import type { RepositoryAccessContext } from "../types/repository";
-import type { HttpStreamChunkInput } from "../types/stream";
+import { Internal, Unauthorized } from "../core/errors";
+import type { AuthenticatedUser } from "../../types/auth";
+import type { RepositoryAccessContext } from "../../types/repository";
+import type { HttpStreamChunkInput } from "../../types/stream";
 
 export const getAuthUser = (req: Request): AuthenticatedUser => {
   if (!req.user) {

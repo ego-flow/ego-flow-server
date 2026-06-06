@@ -8,9 +8,9 @@ process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 
 (globalThis as any).__egoflowPrisma = {} as any;
 
-const { AppError } = require("../src/lib/errors") as typeof import("../src/lib/errors");
+const { AppError } = require("../src/lib/core/errors") as typeof import("../src/lib/core/errors");
 const { repositoryAccessService } =
-  require("../src/services/repository-access.service") as typeof import("../src/services/repository-access.service");
+  require("../src/lib/repositories/repository-access") as typeof import("../src/lib/repositories/repository-access");
 const { repoAccess, repoStatus } =
   require("../src/middleware/repository.middleware") as typeof import("../src/middleware/repository.middleware");
 

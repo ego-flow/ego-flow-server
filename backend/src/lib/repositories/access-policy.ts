@@ -1,4 +1,4 @@
-import type { AppRepoRole } from "../types/repository";
+import type { AppRepoRole } from "../../types/repository";
 
 export type RepositoryAccessAction =
   | "repository.list"

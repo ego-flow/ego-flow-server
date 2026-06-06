@@ -6,15 +6,15 @@ import {
   RECORDING_REGISTRATION_TTL_SECONDS,
   STREAM_RECONCILE_INTERVAL_MS,
 } from "../constants/stream/stream-constants";
-import { Conflict, Forbidden, NotFound, PreconditionFailed } from "../lib/errors";
-import { redis } from "../lib/redis";
-import { getTargetDirectory } from "../lib/storage";
+import { Conflict, Forbidden, NotFound, PreconditionFailed } from "../lib/core/errors";
+import { redis } from "../lib/infra/redis";
+import { getTargetDirectory } from "../lib/storage/storage";
 import type { RepositoryRecord } from "../types/repository";
 import type { StreamRegisterInput } from "../schemas/stream.schema";
-import { streamRecordingKey } from "../lib/stream-keys";
+import { streamRecordingKey } from "../lib/streaming/stream-keys";
 import { recordingSessionRepository } from "../repositories/recording-session.repository";
-import { recordingSessionService } from "./recording-session.service";
-import { streamOwnershipService } from "./stream-ownership.service";
+import { recordingSessionService } from "../lib/streaming/recording-session";
+import { streamOwnershipService } from "../lib/streaming/stream-ownership";
 import { httpStreamService } from "./http-stream.service";
 
 /**

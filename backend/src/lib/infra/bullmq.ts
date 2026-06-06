@@ -1,4 +1,4 @@
-import { runtimeConfig as env } from "../config/runtime";
+import { runtimeConfig as env } from "../../config/runtime";
 
 export const buildBullConnection = () => {
   const url = new URL(env.REDIS_URL);

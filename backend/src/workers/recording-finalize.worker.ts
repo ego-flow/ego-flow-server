@@ -7,11 +7,11 @@ import {
   VideoStatus,
 } from "@prisma/client";
 
-import { buildBullConnection } from "../lib/bullmq";
-import { probeVideoMetadata } from "../lib/ffprobe";
-import { prisma } from "../lib/prisma";
+import { buildBullConnection } from "../lib/infra/bullmq";
+import { probeVideoMetadata } from "../lib/media/ffprobe";
+import { prisma } from "../lib/infra/prisma";
 import { runtimeConfig as env } from "../config/runtime";
-import { computeFileDigestAndSize, waitForStableFile, formatErrorMessage } from "../lib/file-utils";
+import { computeFileDigestAndSize, waitForStableFile, formatErrorMessage } from "../lib/storage/file-utils";
 import type { RecordingFinalizeJobData } from "../types/stream";
 import {
   buildOutputPaths,
@@ -20,7 +20,7 @@ import {
   encodeVlmVideo,
   ensureOutputDirectories,
 } from "./encoding";
-import { refreshRepositoryContributors } from "../services/repository-contributors.service";
+import { refreshRepositoryContributors } from "../lib/repositories/repository-contributors";
 import { buildRecordingFinalizeProgress } from "../types/processing";
 
 const hasFinalizeAttemptsRemaining = (job: Job<RecordingFinalizeJobData>) => {

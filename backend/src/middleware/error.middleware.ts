@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 
-import { AppError, ErrorCode } from "../lib/errors";
+import { AppError, ErrorCode } from "../lib/core/errors";
 
 const toAppError = (error: unknown): AppError => {
   if (error instanceof AppError) {

@@ -155,9 +155,9 @@ const { runtimeConfig } =
 const { httpStreamService } =
   require("../src/services/http-stream.service") as typeof import("../src/services/http-stream.service");
 const { streamOwnershipService } =
-  require("../src/services/stream-ownership.service") as typeof import("../src/services/stream-ownership.service");
+  require("../src/lib/streaming/stream-ownership") as typeof import("../src/lib/streaming/stream-ownership");
 const { recordingSessionService } =
-  require("../src/services/recording-session.service") as typeof import("../src/services/recording-session.service");
+  require("../src/lib/streaming/recording-session") as typeof import("../src/lib/streaming/recording-session");
 
 const originalConsumePublishTicket = streamOwnershipService.consumePublishTicket;
 const originalTryEnqueueFinalize = recordingSessionService.tryEnqueueFinalize;

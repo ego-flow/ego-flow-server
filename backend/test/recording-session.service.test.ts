@@ -72,15 +72,15 @@ const fakePrisma: any = {
 (globalThis as any).__egoflowPrisma = fakePrisma;
 
 const { recordingSessionService } =
-  require("../src/services/recording-session.service") as typeof import("../src/services/recording-session.service");
+  require("../src/lib/streaming/recording-session") as typeof import("../src/lib/streaming/recording-session");
 const { recordingsService } =
   require("../src/services/recordings.service") as typeof import("../src/services/recordings.service");
 const { hooksService } =
   require("../src/services/hooks.service") as typeof import("../src/services/hooks.service");
 const { streamOwnershipService } =
-  require("../src/services/stream-ownership.service") as typeof import("../src/services/stream-ownership.service");
+  require("../src/lib/streaming/stream-ownership") as typeof import("../src/lib/streaming/stream-ownership");
 const { processingService } =
-  require("../src/services/processing.service") as typeof import("../src/services/processing.service");
+  require("../src/lib/processing/processing-queue") as typeof import("../src/lib/processing/processing-queue");
 
 const originalGetLiveCacheByRecordingSessionId = recordingSessionService.getLiveCacheByRecordingSessionId;
 const originalTryEnqueueFinalize = recordingSessionService.tryEnqueueFinalize;

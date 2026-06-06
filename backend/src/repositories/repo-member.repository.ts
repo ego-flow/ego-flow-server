@@ -1,6 +1,6 @@
 import { Prisma, RepoRole } from "@prisma/client";
 
-import { prisma, type PrismaTransactionClient } from "../lib/prisma";
+import { prisma, type PrismaTransactionClient } from "../lib/infra/prisma";
 
 const repositoryMemberSelect = {
   userId: true,
@@ -43,6 +43,23 @@ export class RepoMemberRepository {
     });
 
     return memberships.map((membership) => membership.repositoryId);
+  }
+
+  async findAdminUserIdsByRepository(
+    repositoryId: string,
+    client: PrismaTransactionClient | typeof prisma = prisma,
+  ): Promise<string[]> {
+    const memberships = await client.repoMember.findMany({
+      where: {
+        repositoryId,
+        role: RepoRole.admin,
+      },
+      select: {
+        userId: true,
+      },
+    });
+
+    return memberships.map((membership) => membership.userId);
   }
 
   async findRepositoryMembers(repositoryId: string): Promise<RepositoryMemberRow[]> {

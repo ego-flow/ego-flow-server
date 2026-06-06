@@ -9,7 +9,7 @@ process.env.JWT_SECRET ??= "replace-this-in-tests-only";
 process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 
 const { errorMiddleware } = require("../src/middleware/error.middleware") as typeof import("../src/middleware/error.middleware");
-const { AppError, ErrorCode } = require("../src/lib/errors") as typeof import("../src/lib/errors");
+const { AppError, ErrorCode } = require("../src/lib/core/errors") as typeof import("../src/lib/core/errors");
 
 interface CapturedResponse {
   statusCode: number;

@@ -1,7 +1,7 @@
 import { Router } from "express";
 
-import { asyncHandler } from "../lib/async-handler";
-import { BadRequest } from "../lib/errors";
+import { asyncHandler } from "../lib/http/async-handler";
+import { BadRequest } from "../lib/core/errors";
 import {
   streamReadyHookSchema,
   streamNotReadyHookSchema,

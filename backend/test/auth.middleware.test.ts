@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
-import { AppError } from "../src/lib/errors";
+import { AppError } from "../src/lib/core/errors";
 import { FakeRedis } from "./helpers/fake-redis";
 
 process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egoflow";

@@ -36,7 +36,7 @@ const fakePrisma: any = {
 (globalThis as any).__egoflowPrisma = fakePrisma;
 
 const { computeRepositoryContributorUserIds, refreshRepositoryContributors } =
-  require("../src/services/repository-contributors.service") as typeof import("../src/services/repository-contributors.service");
+  require("../src/lib/repositories/repository-contributors") as typeof import("../src/lib/repositories/repository-contributors");
 
 beforeEach(() => {
   updatedContributors = null;

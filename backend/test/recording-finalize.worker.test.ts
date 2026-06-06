@@ -158,8 +158,8 @@ const fakePrisma: any = {
 (globalThis as any).__egoflowPrisma = fakePrisma;
 
 const encoding = require("../src/workers/encoding") as typeof import("../src/workers/encoding");
-const ffprobeLib = require("../src/lib/ffprobe") as typeof import("../src/lib/ffprobe");
-const fileUtils = require("../src/lib/file-utils") as typeof import("../src/lib/file-utils");
+const ffprobeLib = require("../src/lib/media/ffprobe") as typeof import("../src/lib/media/ffprobe");
+const fileUtils = require("../src/lib/storage/file-utils") as typeof import("../src/lib/storage/file-utils");
 const { createRecordingFinalizeWorker } =
   require("../src/workers/recording-finalize.worker") as typeof import("../src/workers/recording-finalize.worker");
 

@@ -1,7 +1,7 @@
 import { Router } from "express";
 
-import { asyncHandler } from "../lib/async-handler";
-import { getAuthUser } from "../lib/request-context";
+import { asyncHandler } from "../lib/http/async-handler";
+import { getAuthUser } from "../lib/http/request-context";
 import { requireDashboardOrAppOrPython, requireDashboardOrPython } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import {

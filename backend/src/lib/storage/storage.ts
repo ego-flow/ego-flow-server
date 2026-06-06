@@ -1,11 +1,11 @@
 import fs from "fs/promises";
 import path from "path";
 
-import { TARGET_DIRECTORY_SETTING_KEY } from "../constants/storage/storage-constants";
-import { runtimeConfig as env } from "../config/runtime";
+import { TARGET_DIRECTORY_SETTING_KEY } from "../../constants/storage/storage-constants";
+import { runtimeConfig as env } from "../../config/runtime";
 import { movePath, pathExists } from "./file-system";
 import { remapPathWithinDirectory } from "./path-mapping";
-import { prisma } from "./prisma";
+import { prisma } from "../infra/prisma";
 
 let activeTargetDirectory = path.resolve(env.TARGET_DIRECTORY);
 

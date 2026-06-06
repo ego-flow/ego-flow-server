@@ -7,10 +7,10 @@ import swaggerUi from "swagger-ui-express";
 
 import { runtimeConfig as env } from "./config/runtime";
 import { openApiDocument } from "./docs/openapi";
-import { NotFound } from "./lib/errors";
-import { redis } from "./lib/redis";
-import { getServerInfo } from "./lib/server-info";
-import { getTargetDirectory, initializeTargetDirectory } from "./lib/storage";
+import { NotFound } from "./lib/core/errors";
+import { redis } from "./lib/infra/redis";
+import { getServerInfo } from "./lib/server/server-info";
+import { getTargetDirectory, initializeTargetDirectory } from "./lib/storage/storage";
 import { errorMiddleware } from "./middleware/error.middleware";
 import { requireSignedFileAccess } from "./middleware/signed-file-access.middleware";
 import { authRoutes } from "./routes/auth.routes";

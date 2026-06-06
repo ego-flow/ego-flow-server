@@ -11,8 +11,8 @@ import {
 } from "../../constants/auth/auth-constants";
 import { userRepository } from "../../repositories/user.repository";
 import type { AuthenticatedUser } from "../../types/auth";
-import { createPrefixedRandomToken, hashValue } from "../crypto";
-import { redis } from "../redis";
+import { createPrefixedRandomToken, hashValue } from "./crypto";
+import { redis } from "../infra/redis";
 
 interface DashboardSessionRecord {
   sessionId: string;

@@ -1,11 +1,21 @@
 import { RecordingSegmentStatus } from "@prisma/client";
 
-import { prisma, type PrismaTransactionClient } from "../lib/prisma";
+import { prisma, type PrismaTransactionClient } from "../lib/infra/prisma";
 
 export const recordingSegmentRepository = {
   findByRecordingSessionId(recordingSessionId: string) {
     return prisma.recordingSegment.findUnique({
       where: { recordingSessionId },
+    });
+  },
+
+  findFinalizeStateByRecordingSessionId(recordingSessionId: string) {
+    return prisma.recordingSegment.findUnique({
+      where: { recordingSessionId },
+      select: {
+        status: true,
+        rawPath: true,
+      },
     });
   },
 

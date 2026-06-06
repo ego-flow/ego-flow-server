@@ -1,4 +1,4 @@
-import { BadRequest } from "./errors";
+import { BadRequest } from "../core/errors";
 
 export function normalizeStreamPath(streamPath: string): string {
   return streamPath.trim().replace(/^\/+|\/+$/g, "");
