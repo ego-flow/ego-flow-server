@@ -16,7 +16,7 @@ type UserRecord = {
   displayName: string;
 };
 
-type ApiTokenRecord = {
+type PythonTokenRecord = {
   id: string;
   userId: string;
   name: string;
@@ -26,7 +26,7 @@ type ApiTokenRecord = {
 };
 
 const users = new Map<string, UserRecord>();
-const tokens = new Map<string, ApiTokenRecord>();
+const tokens = new Map<string, PythonTokenRecord>();
 let tokenSequence = 0;
 
 const cloneDate = (value: Date | null) => (value ? new Date(value) : null);
@@ -49,7 +49,7 @@ const findToken = (where: { id?: string; userId?: string; tokenHash?: string }) 
   return null;
 };
 
-const toTokenResult = (token: ApiTokenRecord | null) => {
+const toTokenResult = (token: PythonTokenRecord | null) => {
   if (!token) {
     return null;
   }
@@ -75,7 +75,7 @@ const toTokenResult = (token: ApiTokenRecord | null) => {
 };
 
 const fakePrisma: any = {
-  apiToken: {
+  pythonToken: {
     findUnique: async ({ where }: { where: { id?: string; userId?: string; tokenHash?: string } }) =>
       toTokenResult(findToken(where)),
     findMany: async ({ where }: { where?: { userId?: string } }) =>
@@ -84,7 +84,7 @@ const fakePrisma: any = {
         .sort((left, right) => left.userId.localeCompare(right.userId) || right.createdAt.getTime() - left.createdAt.getTime())
         .map((token) => toTokenResult(token)),
     create: async ({ data }: { data: { userId: string; name: string; tokenHash: string } }) => {
-      const created: ApiTokenRecord = {
+      const created: PythonTokenRecord = {
         id: `token-${++tokenSequence}`,
         userId: data.userId,
         name: data.name,
@@ -126,18 +126,20 @@ const fakePrisma: any = {
           displayName: user.displayName,
         })),
   },
-  $transaction: async (callback: (tx: { apiToken: typeof fakePrisma.apiToken }) => Promise<unknown>) =>
-    callback({ apiToken: fakePrisma.apiToken }),
+  $transaction: async (callback: (tx: { pythonToken: typeof fakePrisma.pythonToken }) => Promise<unknown>) =>
+    callback({ pythonToken: fakePrisma.pythonToken }),
 };
 
 (globalThis as any).__egoflowPrisma = fakePrisma;
 
-const { PythonTokenService } =
-  require("../src/lib/auth/python-token.service") as typeof import("../src/lib/auth/python-token.service");
-const { verifyPythonToken } =
+const {
+  getCurrentPythonToken,
+  issuePythonToken,
+  listActivePythonTokensForAdmin,
+  revokePythonToken,
+  verifyPythonToken,
+} =
   require("../src/lib/auth/python-token") as typeof import("../src/lib/auth/python-token");
-
-const service = new PythonTokenService();
 
 beforeEach(() => {
   users.clear();
@@ -159,7 +161,7 @@ beforeEach(() => {
 });
 
 test("issueToken creates an ef_ token and stores only the SHA-256 hash", async () => {
-  const issued = await service.issueToken("alice", {
+  const issued = await issuePythonToken("alice", {
     name: "python-package",
   });
 
@@ -176,7 +178,7 @@ test("issueToken creates an ef_ token and stores only the SHA-256 hash", async (
   );
   assert.notEqual(stored.tokenHash, issued.token);
 
-  const current = await service.getCurrentToken("alice");
+  const current = await getCurrentPythonToken("alice");
   assert.deepEqual(current, {
     id: stored.id,
     name: "python-package",
@@ -186,10 +188,10 @@ test("issueToken creates an ef_ token and stores only the SHA-256 hash", async (
 });
 
 test("issuing a new token rotates the previous token and keeps only one active row", async () => {
-  const first = await service.issueToken("alice", {
+  const first = await issuePythonToken("alice", {
     name: "notebook",
   });
-  const second = await service.issueToken("alice", {
+  const second = await issuePythonToken("alice", {
     name: "trainer",
   });
 
@@ -208,19 +210,19 @@ test("issuing a new token rotates the previous token and keeps only one active r
 });
 
 test("revokeToken enforces ownership while admin listing returns metadata only", async () => {
-  const aliceToken = await service.issueToken("alice", {
+  const aliceToken = await issuePythonToken("alice", {
     name: "jupyter",
   });
 
   await assert.rejects(
-    () => service.revokeToken("someone-else", "user", aliceToken.id),
+    () => revokePythonToken("someone-else", "user", aliceToken.id),
     (error: unknown) =>
       error instanceof AppError &&
       error.statusCode === 403 &&
       error.code === "FORBIDDEN",
   );
 
-  const adminList = await service.listActiveTokensForAdmin();
+  const adminList = await listActivePythonTokensForAdmin();
   assert.deepEqual(adminList, [
     {
       id: aliceToken.id,
@@ -233,12 +235,12 @@ test("revokeToken enforces ownership while admin listing returns metadata only",
     },
   ]);
 
-  await service.revokeToken("admin", "admin", aliceToken.id);
+  await revokePythonToken("admin", "admin", aliceToken.id);
   assert.equal(tokens.size, 0);
 });
 
 test("verifyPythonToken rejects inactive users and throttles last_used_at updates", async () => {
-  const issued = await service.issueToken("alice", {
+  const issued = await issuePythonToken("alice", {
     name: "worker",
   });
   const stored = Array.from(tokens.values())[0];

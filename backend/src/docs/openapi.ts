@@ -634,7 +634,7 @@ export const openApiDocument = {
           newPassword: { type: "string" },
         },
       },
-      ApiTokenMetadata: {
+      PythonTokenMetadata: {
         type: "object",
         required: ["id", "name", "last_used_at", "created_at"],
         properties: {
@@ -644,7 +644,7 @@ export const openApiDocument = {
           created_at: { type: "string", format: "date-time" },
         },
       },
-      CreateApiTokenResponse: {
+      CreatePythonTokenResponse: {
         type: "object",
         required: ["id", "name", "token", "created_at", "rotated_previous"],
         properties: {
@@ -655,19 +655,19 @@ export const openApiDocument = {
           rotated_previous: { type: "boolean" },
         },
       },
-      CurrentApiTokenResponse: {
+      CurrentPythonTokenResponse: {
         type: "object",
         required: ["token"],
         properties: {
           token: {
             oneOf: [
-              { $ref: "#/components/schemas/ApiTokenMetadata" },
+              { $ref: "#/components/schemas/PythonTokenMetadata" },
               { type: "null" },
             ],
           },
         },
       },
-      RevokeApiTokenResponse: {
+      RevokePythonTokenResponse: {
         type: "object",
         required: ["id", "revoked"],
         properties: {
@@ -810,7 +810,7 @@ export const openApiDocument = {
           },
         },
       },
-      AdminApiToken: {
+      AdminPythonToken: {
         type: "object",
         required: ["id", "user_id", "user_role", "display_name", "name", "last_used_at", "created_at"],
         properties: {
@@ -823,13 +823,13 @@ export const openApiDocument = {
           created_at: { type: "string", format: "date-time" },
         },
       },
-      AdminApiTokensResponse: {
+      AdminPythonTokensResponse: {
         type: "object",
         required: ["tokens"],
         properties: {
           tokens: {
             type: "array",
-            items: { $ref: "#/components/schemas/AdminApiToken" },
+            items: { $ref: "#/components/schemas/AdminPythonToken" },
           },
         },
       },
@@ -1199,7 +1199,7 @@ export const openApiDocument = {
             description: "Python token issued",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/CreateApiTokenResponse" },
+                schema: { $ref: "#/components/schemas/CreatePythonTokenResponse" },
               },
             },
           },
@@ -1216,7 +1216,7 @@ export const openApiDocument = {
             description: "Current Python token status",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/CurrentApiTokenResponse" },
+                schema: { $ref: "#/components/schemas/CurrentPythonTokenResponse" },
               },
             },
           },
@@ -1253,7 +1253,7 @@ export const openApiDocument = {
             description: "Python token revoked",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/RevokeApiTokenResponse" },
+                schema: { $ref: "#/components/schemas/RevokePythonTokenResponse" },
               },
             },
           },
@@ -2262,7 +2262,7 @@ export const openApiDocument = {
             description: "Active Python token list",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/AdminApiTokensResponse" },
+                schema: { $ref: "#/components/schemas/AdminPythonTokensResponse" },
               },
             },
           },

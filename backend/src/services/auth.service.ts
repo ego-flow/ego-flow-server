@@ -1,14 +1,20 @@
-import bcrypt from "bcryptjs";
 import { RecordingSessionIngestType } from "@prisma/client";
 
+import { AuthCredentialKind } from "../constants/auth/auth-constants";
 import { ErrorCode, Unauthorized } from "../lib/errors";
 import { signAccessToken } from "../lib/auth/access-token";
-import { createDashboardSession } from "../lib/auth/dashboard-session";
-import { pythonTokenService } from "../lib/auth/python-token.service";
-import { prisma } from "../lib/prisma";
-import { toAppUserRole } from "../mappers/user.mapper";
+import { createDashboardSession, revokeDashboardSession } from "../lib/auth/dashboard-session";
+import { hashPassword, verifyPassword } from "../lib/auth/password";
+import {
+  getCurrentPythonToken as getCurrentPythonTokenCredential,
+  issuePythonToken as issuePythonTokenCredential,
+  revokePythonToken as revokePythonTokenCredential,
+} from "../lib/auth/python-token";
+import { userRepository } from "../repositories/user.repository";
 import type { IssuePythonTokenInput, LoginInput, MediaMtxAuthInput } from "../schemas/auth.schema";
+import { mediaMtxAuthSchema } from "../schemas/auth.schema";
 import type { ChangeMyPasswordInput } from "../schemas/user.schema";
+import type { AppUserRole, AuthContext, AuthenticatedUser } from "../types/auth";
 import { streamOwnershipService } from "./stream-ownership.service";
 import { streamService } from "./stream.service";
 
@@ -53,32 +59,41 @@ export class AuthService {
     return path.trim().replace(/^\/+|\/+$/g, "");
   }
 
-  private async authenticatePassword(input: LoginInput) {
-    const user = await prisma.user.findUnique({
-      where: { id: input.id },
-    });
+  private toCredentialUserResponse(user: { id: string; role: AppUserRole; displayName: string }) {
+    return {
+      id: user.id,
+      role: user.role,
+      displayName: user.displayName,
+    };
+  }
 
+  private toAuthenticatedUserResponse(user: AuthenticatedUser) {
+    return {
+      id: user.userId,
+      role: user.role,
+      display_name: user.displayName,
+    };
+  }
+
+  private async authenticatePassword(input: LoginInput) {
+    const user = await userRepository.findActivePasswordCredential(input.id);
     if (!user) {
       throw Unauthorized("Invalid id or password.", ErrorCode.INVALID_CREDENTIALS);
     }
 
-    if (user.deactivated) {
-      throw Unauthorized("Invalid id or password.", ErrorCode.INVALID_CREDENTIALS);
-    }
-
-    const isPasswordValid = await bcrypt.compare(input.password, user.passwordHash);
+    const isPasswordValid = await verifyPassword(input.password, user.passwordHash);
     if (!isPasswordValid) {
       throw Unauthorized("Invalid id or password.", ErrorCode.INVALID_CREDENTIALS);
     }
 
     return {
       id: user.id,
-      role: toAppUserRole(user.role),
+      role: user.role,
       displayName: user.displayName,
     };
   }
 
-  async login(input: LoginInput) {
+  async loginApp(input: LoginInput) {
     const user = await this.authenticatePassword(input);
     const token = signAccessToken({
       userId: user.id,
@@ -87,11 +102,7 @@ export class AuthService {
 
     return {
       token,
-      user: {
-        id: user.id,
-        role: user.role,
-        displayName: user.displayName,
-      },
+      user: this.toCredentialUserResponse(user),
     };
   }
 
@@ -101,29 +112,71 @@ export class AuthService {
 
     return {
       session,
-      user: {
-        id: user.id,
-        role: user.role,
-        displayName: user.displayName,
-      },
+      user: this.toCredentialUserResponse(user),
+    };
+  }
+
+  async logoutDashboard(auth: AuthContext | undefined) {
+    if (auth?.kind === AuthCredentialKind.Dashboard && auth.rawCredential) {
+      await revokeDashboardSession(auth.rawCredential);
+    }
+
+    return {
+      logged_out: true,
+    };
+  }
+
+  getDashboardSession(user: AuthenticatedUser) {
+    return {
+      user: this.toAuthenticatedUserResponse(user),
     };
   }
 
   async issuePythonToken(userId: string, input: IssuePythonTokenInput) {
-    return pythonTokenService.issueToken(userId, {
+    return issuePythonTokenCredential(userId, {
       name: input.name,
     });
   }
 
   async getCurrentPythonToken(userId: string) {
-    return pythonTokenService.getCurrentToken(userId);
+    return getCurrentPythonTokenCredential(userId);
   }
 
-  async revokePythonToken(userId: string, userRole: "admin" | "user", tokenId: string) {
-    await pythonTokenService.revokeToken(userId, userRole, tokenId);
+  validatePythonToken(user: AuthenticatedUser) {
+    return {
+      valid: true,
+      user: this.toAuthenticatedUserResponse(user),
+    };
   }
 
-  async verifyMediaMtxAuthorization(input: MediaMtxAuthInput): Promise<boolean> {
+  async revokePythonToken(userId: string, userRole: AppUserRole, tokenId: string) {
+    await revokePythonTokenCredential(userId, userRole, tokenId);
+  }
+
+  async authorizeMediaMtxRequest(payload: unknown): Promise<boolean> {
+    const parsed = mediaMtxAuthSchema.safeParse(payload);
+    if (!parsed.success) {
+      const input = typeof payload === "object" && payload !== null ? (payload as Partial<MediaMtxAuthInput>) : {};
+      console.warn("[mediamtx-auth] invalid payload", {
+        action: input.action,
+        path: input.path,
+        protocol: input.protocol,
+        user: input.user,
+        id: input.id,
+        ip: input.ip,
+        issues: parsed.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          code: issue.code,
+          message: issue.message,
+        })),
+      });
+      return false;
+    }
+
+    return this.authorizeMediaMtx(parsed.data);
+  }
+
+  private async authorizeMediaMtx(input: MediaMtxAuthInput): Promise<boolean> {
     if (input.action === "publish") {
       return this.verifyPublishAuthorization(input);
     }
@@ -254,31 +307,19 @@ export class AuthService {
     }
   }
 
-  async changeMyPassword(userId: string, input: ChangeMyPasswordInput) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    });
-
+  async changeDashboardPassword(userId: string, input: ChangeMyPasswordInput) {
+    const user = await userRepository.findActivePasswordCredential(userId);
     if (!user) {
       throw Unauthorized("Current password is incorrect.", ErrorCode.INVALID_CREDENTIALS);
     }
 
-    if (user.deactivated) {
-      throw Unauthorized("Current password is incorrect.", ErrorCode.INVALID_CREDENTIALS);
-    }
-
-    const isPasswordValid = await bcrypt.compare(input.currentPassword, user.passwordHash);
+    const isPasswordValid = await verifyPassword(input.currentPassword, user.passwordHash);
     if (!isPasswordValid) {
       throw Unauthorized("Current password is incorrect.", ErrorCode.INVALID_CREDENTIALS);
     }
 
-    const nextPasswordHash = await bcrypt.hash(input.newPassword, 10);
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        passwordHash: nextPasswordHash,
-      },
-    });
+    const nextPasswordHash = await hashPassword(input.newPassword);
+    await userRepository.updatePasswordHash(userId, nextPasswordHash);
 
     return {
       message: "Password changed successfully",

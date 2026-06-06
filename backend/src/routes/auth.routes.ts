@@ -1,15 +1,13 @@
 import { Router } from "express";
 
-import { AuthCredentialKind } from "../constants/auth/auth-constants";
 import { asyncHandler } from "../lib/async-handler";
 import { clearDashboardSessionCookie, setDashboardSessionCookie } from "../lib/auth/dashboard-cookie";
-import { revokeDashboardSession } from "../lib/auth/dashboard-session";
 import { getAuthUser } from "../lib/request-context";
 import { requireDashboardSession, requirePythonToken } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
-import type { ApiTokenIdParamInput } from "../schemas/api-token.schema";
-import { apiTokenIdParamSchema } from "../schemas/api-token.schema";
-import { dashboardLoginSchema, issuePythonTokenSchema, loginSchema, mediaMtxAuthSchema } from "../schemas/auth.schema";
+import type { PythonTokenIdParamInput } from "../schemas/python-token.schema";
+import { pythonTokenIdParamSchema } from "../schemas/python-token.schema";
+import { dashboardLoginSchema, issuePythonTokenSchema, loginSchema } from "../schemas/auth.schema";
 import { changeMyPasswordSchema } from "../schemas/user.schema";
 import { authService } from "../services/auth.service";
 
@@ -20,7 +18,7 @@ router.post(
   "/app/login",
   validate(loginSchema),
   asyncHandler(async (req, res) => {
-    const response = await authService.login(req.body);
+    const response = await authService.loginApp(req.body);
     res.status(200).json(response);
   }),
 );
@@ -42,13 +40,11 @@ router.post(
 // POST /api/v1/auth/dashboard/logout
 router.post(
   "/dashboard/logout",
-    requireDashboardSession,
-    asyncHandler(async (req, res) => {
-      if (req.auth?.kind === AuthCredentialKind.Dashboard && req.auth.rawCredential) {
-        await revokeDashboardSession(req.auth.rawCredential);
-      }
+  requireDashboardSession,
+  asyncHandler(async (req, res) => {
+    const response = await authService.logoutDashboard(req.auth);
     clearDashboardSessionCookie(req, res);
-    res.status(200).json({ logged_out: true });
+    res.status(200).json(response);
   }),
 );
 
@@ -57,14 +53,8 @@ router.get(
   "/dashboard/session",
   requireDashboardSession,
   asyncHandler(async (req, res) => {
-    const user = getAuthUser(req);
-    res.status(200).json({
-      user: {
-        id: user.userId,
-        role: user.role,
-        display_name: user.displayName,
-      },
-    });
+    const response = authService.getDashboardSession(getAuthUser(req));
+    res.status(200).json(response);
   }),
 );
 
@@ -75,7 +65,7 @@ router.put(
   validate(changeMyPasswordSchema),
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    const response = await authService.changeMyPassword(user.userId, req.body);
+    const response = await authService.changeDashboardPassword(user.userId, req.body);
     res.status(200).json(response);
   }),
 );
@@ -108,15 +98,8 @@ router.get(
   "/python/tokens/validate",
   requirePythonToken,
   asyncHandler(async (req, res) => {
-    const user = getAuthUser(req);
-    res.status(200).json({
-      valid: true,
-      user: {
-        id: user.userId,
-        role: user.role,
-        display_name: user.displayName,
-      },
-    });
+    const response = authService.validatePythonToken(getAuthUser(req));
+    res.status(200).json(response);
   }),
 );
 
@@ -124,10 +107,10 @@ router.get(
 router.delete(
   "/python/tokens/:tokenId",
   requireDashboardSession,
-  validate(apiTokenIdParamSchema, "params"),
+  validate(pythonTokenIdParamSchema, "params"),
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    const tokenId = (req.params as ApiTokenIdParamInput).tokenId;
+    const tokenId = (req.params as PythonTokenIdParamInput).tokenId;
     await authService.revokePythonToken(user.userId, user.role, tokenId);
     res.status(200).json({
       id: tokenId,
@@ -137,26 +120,7 @@ router.delete(
 );
 
 const handleMediaMtxAuth = asyncHandler(async (req, res) => {
-  const parsed = mediaMtxAuthSchema.safeParse(req.body);
-  if (!parsed.success) {
-    console.warn("[mediamtx-auth] invalid payload", {
-      action: req.body?.action,
-      path: req.body?.path,
-      protocol: req.body?.protocol,
-      user: req.body?.user,
-      id: req.body?.id,
-      ip: req.body?.ip,
-      issues: parsed.error.issues.map((issue) => ({
-        path: issue.path.join("."),
-        code: issue.code,
-        message: issue.message,
-      })),
-    });
-    res.status(401).end();
-    return;
-  }
-
-  const isAuthorized = await authService.verifyMediaMtxAuthorization(parsed.data);
+  const isAuthorized = await authService.authorizeMediaMtxRequest(req.body);
   if (!isAuthorized) {
     res.status(401).end();
     return;

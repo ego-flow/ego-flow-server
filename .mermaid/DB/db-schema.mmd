@@ -3,7 +3,7 @@ erDiagram
   %% Solid lines are Prisma-declared relations that create DB-level references.
   %% Dotted lines are logical references stored as id fields without Prisma @relation.
 
-  users ||--o| api_tokens : owns
+  users ||--o| python_tokens : owns
   recording_sessions ||--o| recording_segments : has
   recording_sessions |o--o| videos : produces
   videos ||--o| video_semantic_metadata : has
@@ -27,7 +27,7 @@ erDiagram
     timestamp updated_at "updatedAt"
   }
 
-  api_tokens {
+  python_tokens {
     uuid id PK "default uuid"
     varchar user_id FK "users.id, unique, varchar(64), cascade delete"
     varchar name "varchar(100)"
@@ -144,8 +144,8 @@ erDiagram
   %% RecordingSegmentStatus: WRITING, WRITE_DONE, PROCESSING, COMPLETED, FAILED
 
   %% Unique constraints:
-  %% api_tokens.user_id
-  %% api_tokens.token_hash
+  %% python_tokens.user_id
+  %% python_tokens.token_hash
   %% repositories(owner_id, name)
   %% repo_members(repository_id, user_id)
   %% recording_segments.recording_session_id

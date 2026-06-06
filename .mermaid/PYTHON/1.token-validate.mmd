@@ -11,7 +11,7 @@ sequenceDiagram
   Note over Dashboard,Backend: Headers<br/>Cookie: egoflow_session={dashboard_session}<br/>Content-Type: application/json<br/><br/>Body<br/>name: python_token_name
 
   Backend->>Backend: requireDashboardSession
-  Backend->>DB: api_tokens row 생성 또는 rotate
+  Backend->>DB: python_tokens row 생성 또는 rotate
   Note over Backend,DB: user_id = dashboard user id<br/>name = requested token name<br/>token_hash = hash(raw ef_ token)<br/>revoked_at = null
   Backend-->>Dashboard: 201 Created
   Note over Backend,Dashboard: Response Body<br/>id<br/>name<br/>token: ef_raw_python_static_token<br/>created_at<br/>rotated_previous
@@ -29,7 +29,7 @@ sequenceDiagram
   Backend->>Backend: requirePythonToken
   Note over Backend: Bearer token 추출<br/>ef_ prefix 확인<br/>token hash 계산
   Backend->>DB: active API token 조회
-  Note over Backend,DB: api_tokens.token_hash match<br/>revoked_at is null<br/>token owner user is not deactivated
+  Note over Backend,DB: python_tokens.token_hash match<br/>revoked_at is null<br/>token owner user is not deactivated
 
   alt token invalid, revoked, or user deactivated
     Backend-->>Python: 401 Unauthorized
