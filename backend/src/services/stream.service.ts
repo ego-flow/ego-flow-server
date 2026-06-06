@@ -9,11 +9,10 @@ import {
 import { Conflict, Forbidden, NotFound, PreconditionFailed } from "../lib/errors";
 import { redis } from "../lib/redis";
 import { getTargetDirectory } from "../lib/storage";
-import { prisma } from "../lib/prisma";
-import type { AppUserRole } from "../types/auth";
 import type { RepositoryRecord } from "../types/repository";
 import type { StreamRegisterInput } from "../schemas/stream.schema";
 import { streamRecordingKey } from "../lib/stream-keys";
+import { recordingSessionRepository } from "../repositories/recording-session.repository";
 import { recordingSessionService } from "./recording-session.service";
 import { streamOwnershipService } from "./stream-ownership.service";
 import { httpStreamService } from "./http-stream.service";
@@ -108,30 +107,18 @@ export class StreamService {
     deviceType: string | null,
     ingestType: RecordingSessionIngestType,
   ) {
-    const pendingSessions = await prisma.recordingSession.findMany({
-      where: {
-        repositoryId,
-        userId,
-        deviceType,
-        ingestType,
-        status: RecordingSessionStatus.PENDING,
-      },
-      orderBy: { createdAt: "desc" },
+    const reusableSession = await recordingSessionRepository.findReusablePendingSession({
+      repositoryId,
+      userId,
+      deviceType,
+      ingestType,
     });
 
-    if (pendingSessions.length === 0) {
+    if (!reusableSession) {
       return null;
     }
 
-    const reusableSession = pendingSessions[0]!;
-
-    const refreshedSession = await prisma.recordingSession.update({
-      where: { id: reusableSession.id },
-      data: {
-        status: RecordingSessionStatus.PENDING,
-        updatedAt: new Date(),
-      },
-    });
+    const refreshedSession = await recordingSessionRepository.refreshPendingSession(reusableSession.id);
     await recordingSessionService.cachePendingSession(
       refreshedSession,
       RECORDING_REGISTRATION_TTL_SECONDS,
@@ -141,12 +128,9 @@ export class StreamService {
 
   async issuePublishTicket(
     requestUserId: string,
-    _requestUserRole: AppUserRole,
     recordingSessionId: string,
   ) {
-    const session = await prisma.recordingSession.findUnique({
-      where: { id: recordingSessionId },
-    });
+    const session = await recordingSessionRepository.findById(recordingSessionId);
 
     if (!session) {
       throw NotFound("Recording session not found.");

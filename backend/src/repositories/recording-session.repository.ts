@@ -81,6 +81,36 @@ export class RecordingSessionRepository {
     });
   }
 
+  async findReusablePendingSession(input: {
+    repositoryId: string;
+    userId: string;
+    deviceType: string | null;
+    ingestType: RecordingSessionIngestType;
+  }): Promise<RecordingSession | null> {
+    const pendingSessions = await prisma.recordingSession.findMany({
+      where: {
+        repositoryId: input.repositoryId,
+        userId: input.userId,
+        deviceType: input.deviceType,
+        ingestType: input.ingestType,
+        status: RecordingSessionStatus.PENDING,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return pendingSessions[0] ?? null;
+  }
+
+  async refreshPendingSession(recordingSessionId: string): Promise<RecordingSession> {
+    return prisma.recordingSession.update({
+      where: { id: recordingSessionId },
+      data: {
+        status: RecordingSessionStatus.PENDING,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
   async markStreaming(recordingSessionId: string, readyAt: Date | null) {
     return prisma.recordingSession.update({
       where: { id: recordingSessionId },

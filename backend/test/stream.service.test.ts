@@ -270,7 +270,7 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
     status: "PENDING",
   } satisfies RecordingSessionLiveCache);
 
-  const response = await streamService.issuePublishTicket("maintainer-1", "user", pendingSession.id);
+  const response = await streamService.issuePublishTicket("maintainer-1", pendingSession.id);
 
   assert.equal(repositoryAccessChecked, false);
   assert.equal(response.stream_path, pendingSession.streamPath);
@@ -314,7 +314,7 @@ test("issuePublishTicket rejects a PENDING recording session without Redis regis
   fakePrisma.recordingSession.findUnique = async () => pendingSession;
 
   await assert.rejects(
-    () => streamService.issuePublishTicket("maintainer-1", "user", pendingSession.id),
+    () => streamService.issuePublishTicket("maintainer-1", pendingSession.id),
     (error: any) =>
       error?.statusCode === 412 &&
       error?.code === "PRECONDITION_FAILED" &&
@@ -345,7 +345,7 @@ test("issuePublishTicket only allows PENDING recording sessions", async () => {
   fakePrisma.recordingSession.findUnique = async () => streamingSession;
 
   await assert.rejects(
-    () => streamService.issuePublishTicket("maintainer-1", "user", streamingSession.id),
+    () => streamService.issuePublishTicket("maintainer-1", streamingSession.id),
     (error: any) =>
       error?.code === "CONFLICT" &&
       error?.message === "Recording session is already in STREAMING state.",
