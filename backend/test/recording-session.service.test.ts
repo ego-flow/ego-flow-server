@@ -73,6 +73,8 @@ const fakePrisma: any = {
 
 const { recordingSessionService } =
   require("../src/services/recording-session.service") as typeof import("../src/services/recording-session.service");
+const { hooksService } =
+  require("../src/services/hooks.service") as typeof import("../src/services/hooks.service");
 const { streamOwnershipService } =
   require("../src/services/stream-ownership.service") as typeof import("../src/services/stream-ownership.service");
 const { processingService } =
@@ -162,7 +164,7 @@ test("handleStreamReady ignores STREAMING sessions instead of reconnecting them"
     };
   };
 
-  await recordingSessionService.handleStreamReady({
+  await hooksService.handleStreamReady({
     path: "live/repo-name/session-1",
     ticket: ticketId,
   });
@@ -207,7 +209,7 @@ test("handleStreamReady leaves DB and Redis untouched when ticket consume is rej
     ticketId,
   });
 
-  await recordingSessionService.handleStreamReady({
+  await hooksService.handleStreamReady({
     path: "live/repo-name/session-1",
     ticket: ticketId,
   });
@@ -261,7 +263,7 @@ test("handleStreamReady accepts an explicit ticket field when hook query is empt
     };
   };
 
-  await recordingSessionService.handleStreamReady({
+  await hooksService.handleStreamReady({
     path: "live/repo-name/session-1",
     ticket: ticketId,
   });
@@ -321,7 +323,7 @@ test("handleStreamNotReady closes the streaming session and attempts finalize en
     status: "STREAMING",
   } satisfies RecordingSessionLiveCache);
 
-  await recordingSessionService.handleStreamNotReady({
+  await hooksService.handleStreamNotReady({
     path: "live/repo-name/session-1",
   });
 
@@ -371,7 +373,7 @@ test("recordCloseIntent stores NORMAL_DISCONNECT and stream-not-ready preserves 
     "user-1",
     RecordingSessionEndReason.NORMAL_DISCONNECT,
   );
-  await recordingSessionService.handleStreamNotReady({
+  await hooksService.handleStreamNotReady({
     path: "live/repo-name/session-1",
   });
 
@@ -454,7 +456,7 @@ test("handleSegmentComplete marks the segment WRITE_DONE and attempts finalize e
     return true;
   };
 
-  await recordingSessionService.handleSegmentComplete({
+  await hooksService.handleSegmentComplete({
     path: "live/repo-name/session-1",
     segment_path: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
   });
@@ -478,7 +480,7 @@ test("handleSegmentComplete does not create a segment when create hook was misse
     return true;
   };
 
-  await recordingSessionService.handleSegmentComplete({
+  await hooksService.handleSegmentComplete({
     path: "live/repo-name/session-1",
     segment_path: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
   });
@@ -539,7 +541,7 @@ test("handleSegmentCreate stores the single segment from stream path", async () 
     };
   };
 
-  await recordingSessionService.handleSegmentCreate({
+  await hooksService.handleSegmentCreate({
     path: "live/repo-name/session-1",
     segment_path: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
   });
@@ -566,7 +568,7 @@ test("handleSegmentCreate only requires an existing session", async () => {
     };
   };
 
-  await recordingSessionService.handleSegmentCreate({
+  await hooksService.handleSegmentCreate({
     path: "live/repo-name/session-1",
     segment_path: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
   });
@@ -598,7 +600,7 @@ test("handleSegmentCreate stores the segment without source metadata", async () 
     };
   };
 
-  await recordingSessionService.handleSegmentCreate({
+  await hooksService.handleSegmentCreate({
     path: "live/repo-name/session-1",
     segment_path: "/data/raw/live/repo-name/session-1/segment-0002.mp4",
   });
@@ -625,7 +627,7 @@ test("handleSegmentCreate ignores an additional segment for the same recording s
     };
   };
 
-  await recordingSessionService.handleSegmentCreate({
+  await hooksService.handleSegmentCreate({
     path: "live/repo-name/session-1",
     segment_path: "/data/raw/live/repo-name/session-1/segment-0002.mp4",
   });
@@ -751,7 +753,7 @@ test("handleSegmentComplete ignores late completion for a terminal segment", asy
     return true;
   };
 
-  await recordingSessionService.handleSegmentComplete({
+  await hooksService.handleSegmentComplete({
     path: "live/repo-name/session-1",
     segment_path: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
   });

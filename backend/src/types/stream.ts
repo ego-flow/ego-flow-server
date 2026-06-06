@@ -22,6 +22,12 @@ export interface RecordingFinalizeJobData {
   targetDirectory: string;
 }
 
+export interface HttpStreamChunkInput {
+  sequence: number;
+  offset: number;
+  chunk: Buffer;
+}
+
 export interface PublishTicketRecord {
   recordingSessionId: string;
   repositoryId: string;

@@ -8,7 +8,7 @@ import {
   segmentCreateHookSchema,
   segmentCompleteHookSchema,
 } from "../schemas/stream.schema";
-import { recordingSessionService } from "../services/recording-session.service";
+import { hooksService } from "../services/hooks.service";
 
 const router = Router();
 
@@ -27,7 +27,7 @@ router.post(
       throw BadRequest("Invalid stream-ready payload.");
     }
 
-    await recordingSessionService.handleStreamReady(parsed.data);
+    await hooksService.handleStreamReady(parsed.data);
     res.status(200).json({ ok: true });
   }),
 );
@@ -46,7 +46,7 @@ router.post(
       throw BadRequest("Invalid stream-not-ready payload.");
     }
 
-    await recordingSessionService.handleStreamNotReady(parsed.data);
+    await hooksService.handleStreamNotReady(parsed.data);
     res.status(200).json({ ok: true });
   }),
 );
@@ -65,7 +65,7 @@ router.post(
       throw BadRequest("Invalid segment-create payload.");
     }
 
-    await recordingSessionService.handleSegmentCreate(parsed.data);
+    await hooksService.handleSegmentCreate(parsed.data);
     res.status(200).json({ ok: true });
   }),
 );
@@ -85,7 +85,7 @@ router.post(
       throw BadRequest("Invalid segment-complete payload.");
     }
 
-    await recordingSessionService.handleSegmentComplete(parsed.data);
+    await hooksService.handleSegmentComplete(parsed.data);
     res.status(200).json({ ok: true });
   }),
 );

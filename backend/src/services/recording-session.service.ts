@@ -8,27 +8,25 @@ import {
 } from "@prisma/client";
 
 import {
-  RECORDING_ACTIVE_TTL_SECONDS,
   RECORDING_REGISTRATION_TTL_SECONDS,
-  STREAM_ACTIVE_SET_KEY,
 } from "../constants/stream/stream-constants";
 import { BadRequest, Conflict, Forbidden, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import { runtimeConfig as env } from "../config/runtime";
 import { processingService } from "./processing.service";
-import { streamOwnershipService } from "./stream-ownership.service";
 import { streamRecordingKey } from "../lib/stream-keys";
+import { clearLivePointers } from "../lib/stream-live-cache";
+import {
+  extractRecordingSessionIdFromStreamPath,
+  extractRepositoryNameFromStreamPath,
+  normalizeStreamPath,
+} from "../lib/stream-paths";
+import { recordingSessionRepository } from "../repositories/recording-session.repository";
 import type {
   RecordingSessionLiveCache,
   RecordingFinalizeJobData,
 } from "../types/stream";
-import type {
-  StreamReadyHookInput,
-  StreamNotReadyHookInput,
-  SegmentCreateHookInput,
-  SegmentCompleteHookInput,
-} from "../schemas/stream.schema";
 
 /**
  * RecordingSession 라이프사이클 전체를 관리하는 핵심 서비스.
@@ -41,7 +39,7 @@ import type {
  * raw segment 기록 및 후처리 상태는 RecordingSegment.status가 담당한다.
  *
  * Redis live/pending cache를 함께 관리하며,
- * MediaMTX hook 이벤트와 STREAMING reconcile 루프를 통해 상태를 진행시킨다.
+ * hook 서비스 및 STREAMING reconcile 루프와 협력해 상태를 진행시킨다.
  */
 export class RecordingSessionService {
   /**
@@ -60,19 +58,7 @@ export class RecordingSessionService {
     streamPath: string;
     targetDirectory: string;
   }) {
-    const session = await prisma.recordingSession.create({
-      data: {
-        ...(params.id ? { id: params.id } : {}),
-        repositoryId: params.repositoryId,
-        ownerId: params.ownerId,
-        userId: params.userId,
-        deviceType: params.deviceType ?? null,
-        ingestType: params.ingestType,
-        streamPath: params.streamPath,
-        status: RecordingSessionStatus.PENDING,
-        targetDirectory: params.targetDirectory,
-      },
-    });
+    const session = await recordingSessionRepository.create(params);
 
     await this.cachePendingSession(session, RECORDING_REGISTRATION_TTL_SECONDS);
 
@@ -130,187 +116,6 @@ export class RecordingSessionService {
   }
 
   /**
-   * [stream-ready hook 처리 - PENDING → STREAMING]
-   * MediaMTX가 실제 RTMP 송출 시작을 감지하면 호출.
-   * 1. hook wrapper가 추출한 publish ticket을 검증한다.
-   * 2. ticket가 가리키는 PENDING 세션만 DB에서 조회한다.
-   * 3. ticket를 consumed로 전환한다. 남은 TTL은 그대로 유지한다.
-   * 4. DB 상태를 갱신하고 Redis live cache 및 active set을 갱신한다.
-   */
-  async handleStreamReady(input: StreamReadyHookInput) {
-    const ticketValidation = await streamOwnershipService.validatePublishTicket(
-      input.path,
-      input.ticket,
-      { refreshTtl: false, expectedIngestType: RecordingSessionIngestType.MEDIAMTX },
-    );
-    if (!ticketValidation.ok) {
-      console.warn("[rtmp-ticket] stream-ready-validation-rejected", {
-        path: input.path,
-        reason: ticketValidation.reason,
-        ticketId: ticketValidation.ticketId,
-      });
-      return;
-    }
-
-    const recordingSessionId = ticketValidation.ticket.recordingSessionId;
-    const session = await prisma.recordingSession.findUnique({
-      where: { id: recordingSessionId },
-    });
-    if (!session || session.status !== RecordingSessionStatus.PENDING) {
-      console.warn("[rtmp-state] stream-ready-session-not-active", {
-        recordingSessionId,
-        path: input.path,
-        status: session?.status ?? null,
-      });
-      return;
-    }
-
-    if (
-      session.repositoryId !== ticketValidation.ticket.repositoryId ||
-      session.userId !== ticketValidation.ticket.userId ||
-      session.ingestType !== ticketValidation.ticket.ingestType ||
-      session.streamPath !== ticketValidation.ticket.streamPath
-    ) {
-      console.warn("[rtmp-ticket] stream-ready-session-metadata-mismatch", {
-        recordingSessionId,
-        sessionRepositoryId: session.repositoryId,
-        ticketRepositoryId: ticketValidation.ticket.repositoryId,
-        sessionUserId: session.userId,
-        ticketUserId: ticketValidation.ticket.userId,
-        sessionIngestType: session.ingestType,
-        ticketIngestType: ticketValidation.ticket.ingestType,
-        sessionStreamPath: session.streamPath,
-        ticketStreamPath: ticketValidation.ticket.streamPath,
-        ticketId: ticketValidation.ticketId,
-      });
-      return;
-    }
-
-    const consumedTicket = await streamOwnershipService.consumePublishTicket(input.path, input.ticket, {
-      expectedIngestType: RecordingSessionIngestType.MEDIAMTX,
-    });
-    if (!consumedTicket.ok) {
-      console.warn("[rtmp-ticket] consume-rejected", {
-        recordingSessionId,
-        path: input.path,
-        reason: consumedTicket.reason,
-        ticketId: consumedTicket.ticketId,
-      });
-      return;
-    }
-
-    const repoName = this.extractRepositoryName(session.streamPath);
-    const readyAt = session.readyAt ?? new Date();
-
-    await prisma.recordingSession.update({
-      where: { id: recordingSessionId },
-      data: {
-        status: RecordingSessionStatus.STREAMING,
-        ...(session.readyAt ? {} : { readyAt }),
-      },
-    });
-
-    const liveCache: RecordingSessionLiveCache = {
-      repositoryId: session.repositoryId,
-      repositoryName: repoName,
-      userId: session.userId,
-      ingestType: RecordingSessionIngestType.MEDIAMTX,
-      status: "STREAMING",
-    };
-    if (session.deviceType) {
-      liveCache.deviceType = session.deviceType;
-    }
-
-    await redis.multi()
-      .set(
-        streamRecordingKey(recordingSessionId),
-        JSON.stringify(liveCache),
-        "EX",
-        RECORDING_ACTIVE_TTL_SECONDS,
-      )
-      .sadd(STREAM_ACTIVE_SET_KEY, recordingSessionId)
-      .exec();
-
-    console.info("[rtmp-ticket] consumed", {
-      recordingSessionId: consumedTicket.ticket.recordingSessionId,
-      repositoryId: consumedTicket.ticket.repositoryId,
-      repositoryName: repoName,
-      userId: consumedTicket.ticket.userId,
-      ticketId: consumedTicket.ticketId,
-    });
-
-    console.info("[rtmp-state] pending-to-streaming", {
-      recordingSessionId,
-      repositoryId: session.repositoryId,
-      repositoryName: repoName,
-      userId: session.userId,
-    });
-  }
-
-  /**
-   * [stream-not-ready hook 처리]
-   * MediaMTX가 RTMP 연결 종료를 감지하면 호출.
-   * 1. stream path에서 recordingSessionId를 복원한다.
-   * 2. 종료 시각과 종료 사유를 기록하고 session을 CLOSED로 닫는다.
-   * 3. live pointer를 제거한다.
-   * 4. segment write가 이미 완료된 경우 후처리 job enqueue를 시도한다.
-   * 5. path/session miss는 no-op + 경고 로그로 처리한다.
-   */
-  async handleStreamNotReady(input: StreamNotReadyHookInput) {
-    const recordingSessionId = this.extractRecordingSessionId(input.path);
-    if (!recordingSessionId) {
-      console.warn("[rtmp-state] stream-not-ready-path-invalid", {
-        path: input.path,
-      });
-      return;
-    }
-
-    const session = await prisma.recordingSession.findUnique({
-      where: { id: recordingSessionId },
-    });
-    if (!session) {
-      console.warn("[rtmp-state] stream-not-ready-session-missing", {
-        recordingSessionId,
-        path: input.path,
-      });
-      return;
-    }
-
-    if (session.status !== RecordingSessionStatus.STREAMING) {
-      console.warn("[rtmp-state] stream-not-ready-session-skipped", {
-        recordingSessionId,
-        repositoryId: session.repositoryId,
-        repositoryName: this.extractRepositoryName(session.streamPath),
-        status: session.status,
-      });
-      return;
-    }
-
-    const endReason = session.endReason ?? RecordingSessionEndReason.UNEXPECTED_DISCONNECT;
-    const closedAt = session.closedAt ?? new Date();
-    await prisma.recordingSession.update({
-      where: { id: recordingSessionId },
-      data: {
-        status: RecordingSessionStatus.CLOSED,
-        closedAt,
-        endReason,
-      },
-    });
-
-    const repoName = this.extractRepositoryName(session.streamPath);
-    await this.clearLivePointers(recordingSessionId, session.repositoryId, repoName);
-
-    console.info("[rtmp-state] stream-closed", {
-      recordingSessionId,
-      repositoryId: session.repositoryId,
-      repositoryName: repoName,
-      endReason,
-    });
-
-    await this.tryEnqueueFinalize(recordingSessionId);
-  }
-
-  /**
    * [close-intent 기록]
    * App이 사용자 의도에 따라 RTMP socket을 닫기 직전에 호출한다.
    * 실제 연결 종료 확정과 CLOSED 전이는 stream-not-ready hook이 담당하므로,
@@ -350,118 +155,6 @@ export class RecordingSessionService {
     });
 
     return updated;
-  }
-
-  /**
-   * [segment-create hook 처리]
-   * MediaMTX가 새 녹화 세그먼트 파일 쓰기를 시작할 때 호출.
-   * stream-ready hook과 segment-create hook의 호출 순서는 보장되지 않으므로,
-   * stream path의 recordingSessionId에 해당하는 session 존재 여부만 검증한다.
-   * RecordingSegment를 WRITING 상태로 upsert한다.
-   */
-  async handleSegmentCreate(input: SegmentCreateHookInput) {
-    const session = await this.resolveSegmentSession(input.path);
-    if (!session) {
-      console.warn("[rtmp-segment] session-missing", {
-        path: input.path,
-        segmentPath: input.segment_path,
-      });
-      return;
-    }
-
-    const recordingSessionId = session.id;
-
-    const segment = await prisma.recordingSegment.upsert({
-      where: { recordingSessionId },
-      create: {
-        recordingSessionId,
-        rawPath: input.segment_path,
-        status: RecordingSegmentStatus.WRITING,
-      },
-      update: {},
-    });
-
-    if (segment.rawPath !== input.segment_path) {
-      console.warn("[rtmp-segment] additional-segment-ignored", {
-        recordingSessionId,
-        path: input.path,
-        existingSegmentPath: segment.rawPath,
-        ignoredSegmentPath: input.segment_path,
-      });
-      return;
-    }
-
-    console.info("[rtmp-segment] writing-created", {
-      recordingSessionId,
-      path: input.path,
-      segmentPath: input.segment_path,
-    });
-  }
-
-  /**
-   * [segment-complete hook 처리]
-   * MediaMTX가 세그먼트 파일 쓰기를 완료하면 호출.
-   * stream path의 recordingSessionId로 기존 RecordingSegment만 WRITE_DONE으로 전환한다.
-   * session 복구나 create hook 누락 복구는 하지 않는다.
-   */
-  async handleSegmentComplete(input: SegmentCompleteHookInput) {
-    const recordingSessionId = this.extractRecordingSessionId(input.path);
-    if (!recordingSessionId) {
-      console.warn("[rtmp-segment] complete-path-invalid", {
-        path: input.path,
-        segmentPath: input.segment_path,
-      });
-      return;
-    }
-
-    const segment = await prisma.recordingSegment.findUnique({
-      where: { recordingSessionId },
-    });
-
-    if (!segment) {
-      console.warn("[rtmp-segment] complete-segment-missing", {
-        recordingSessionId,
-        path: input.path,
-        segmentPath: input.segment_path,
-      });
-      return;
-    }
-
-    if (segment.rawPath !== input.segment_path) {
-      console.warn("[rtmp-segment] complete-path-mismatch", {
-        recordingSessionId,
-        path: input.path,
-        existingSegmentPath: segment.rawPath,
-        ignoredSegmentPath: input.segment_path,
-      });
-      return;
-    }
-
-    if (segment.status !== RecordingSegmentStatus.WRITING) {
-      console.info("[rtmp-segment] complete-ignored", {
-        recordingSessionId,
-        path: input.path,
-        segmentPath: input.segment_path,
-        segmentStatus: segment.status,
-      });
-      return;
-    }
-
-    await prisma.recordingSegment.update({
-      where: { id: segment.id },
-      data: {
-        status: RecordingSegmentStatus.WRITE_DONE,
-        completedAt: new Date(),
-      },
-    });
-
-    console.info("[rtmp-segment] write-done", {
-      recordingSessionId: segment.recordingSessionId,
-      path: input.path,
-      segmentPath: input.segment_path,
-    });
-
-    await this.tryEnqueueFinalize(segment.recordingSessionId);
   }
 
   /**
@@ -626,7 +319,7 @@ export class RecordingSessionService {
     });
 
     const repoName = this.extractRepositoryName(session.streamPath);
-    await this.clearLivePointers(session.id, session.repositoryId, repoName);
+    await clearLivePointers(session.id, session.repositoryId, repoName);
 
     const { logPrefix, endReason: _endReason, ...details } = options;
     console.info(logPrefix, {
@@ -639,69 +332,20 @@ export class RecordingSessionService {
   }
 
   /**
-   * [Redis live pointer 삭제]
-   * 스트림 종료(not-ready) 또는 reconcile 시 호출.
-   * active set 후보와 live/pending cache를 함께 제거한다.
-   */
-  private async clearLivePointers(
-    recordingSessionId: string,
-    repositoryId: string,
-    repositoryName: string,
-  ) {
-    const recordingKey = streamRecordingKey(recordingSessionId);
-    const results = await redis.multi()
-      .del(recordingKey)
-      .srem(STREAM_ACTIVE_SET_KEY, recordingSessionId)
-      .exec();
-    const deleted = Number(results?.[0]?.[1] ?? 0);
-    const removed = Number(results?.[1]?.[1] ?? 0);
-
-    if (deleted > 0 || removed > 0) {
-      console.info("[rtmp-state] live-pointers-cleared", {
-        recordingSessionId,
-        repositoryId,
-        repositoryName,
-        recordingKey,
-        activeSetKey: STREAM_ACTIVE_SET_KEY,
-      });
-    }
-  }
-
-  private async resolveSegmentSession(streamPath: string) {
-    const recordingSessionId = this.extractRecordingSessionId(streamPath);
-    if (!recordingSessionId) {
-      return null;
-    }
-    return prisma.recordingSession.findUnique({
-      where: { id: recordingSessionId },
-    });
-  }
-
-  /**
    * [stream path → repository 이름 추출]
    * "live/{repoName}/{recordingSessionId}" 형식의 stream path에서 repository 이름 부분을 추출한다.
    * 형식이 맞지 않으면 에러를 던진다.
    */
   extractRepositoryName(streamPath: string): string {
-    const normalized = this.normalizeStreamPath(streamPath);
-    const parts = normalized.split("/");
-    if (parts.length < 2 || parts[0] !== "live" || !parts[1]) {
-      throw BadRequest("Invalid stream path format.");
-    }
-    return parts[1];
+    return extractRepositoryNameFromStreamPath(streamPath);
   }
 
   private extractRecordingSessionId(streamPath: string): string | null {
-    const normalized = this.normalizeStreamPath(streamPath);
-    const parts = normalized.split("/");
-    if (parts.length < 3 || parts[0] !== "live" || !parts[2]) {
-      return null;
-    }
-    return parts[2];
+    return extractRecordingSessionIdFromStreamPath(streamPath);
   }
 
   private normalizeStreamPath(streamPath: string): string {
-    return streamPath.trim().replace(/^\/+|\/+$/g, "");
+    return normalizeStreamPath(streamPath);
   }
 
   /**

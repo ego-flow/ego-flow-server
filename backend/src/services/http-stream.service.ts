@@ -3,11 +3,9 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 import {
-  RecordingSegmentStatus,
   RecordingSessionEndReason,
   RecordingSessionIngestType,
   RecordingSessionStatus,
-  VideoStatus,
 } from "@prisma/client";
 
 import {
@@ -18,11 +16,14 @@ import {
 } from "../constants/stream/stream-constants";
 import { runtimeConfig as env } from "../config/runtime";
 import { BadRequest, Conflict, Forbidden, NotFound, PreconditionFailed } from "../lib/errors";
-import { prisma } from "../lib/prisma";
 import { redis } from "../lib/redis";
 import type { HttpStreamFinishInput, HttpStreamStartInput } from "../schemas/stream.schema";
-import type { RecordingSessionLiveCache } from "../types/stream";
+import type { HttpStreamChunkInput, RecordingSessionLiveCache } from "../types/stream";
 import { httpUploadLockKey, streamRecordingKey } from "../lib/stream-keys";
+import {
+  recordingSessionRepository,
+  type RecordingSessionRecord,
+} from "../repositories/recording-session.repository";
 import { recordingSessionService } from "./recording-session.service";
 import { streamOwnershipService } from "./stream-ownership.service";
 
@@ -35,18 +36,9 @@ type HttpUploadCache = RecordingSessionLiveCache & {
   lastChunkAt: number;
 };
 
-class HttpUploadTransitionRace extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "HttpUploadTransitionRace";
-  }
-}
-
 export class HttpStreamService {
   async start(recordingSessionId: string, requestUserId: string, input: HttpStreamStartInput) {
-    const session = await prisma.recordingSession.findUnique({
-      where: { id: recordingSessionId },
-    });
+    const session = await recordingSessionRepository.findById(recordingSessionId);
 
     if (!session) {
       throw NotFound("Recording session not found.");
@@ -93,30 +85,14 @@ export class HttpStreamService {
       lastChunkAt: now.getTime(),
     });
 
-    await prisma.$transaction(async (tx) => {
-      const sessionUpdate = await tx.recordingSession.updateMany({
-        where: {
-          id: session.id,
-          status: RecordingSessionStatus.PENDING,
-          ingestType: RecordingSessionIngestType.HTTP,
-        },
-        data: {
-          status: RecordingSessionStatus.STREAMING,
-          readyAt: session.readyAt ?? now,
-        },
-      });
-      if (sessionUpdate.count !== 1) {
-        throw Conflict("Recording session could not be started.");
-      }
-
-      await tx.recordingSegment.create({
-        data: {
-          recordingSessionId: session.id,
-          rawPath,
-          status: RecordingSegmentStatus.WRITING,
-        },
-      });
+    const started = await recordingSessionRepository.startHttpUpload({
+      recordingSessionId: session.id,
+      rawPath,
+      readyAt: session.readyAt ?? now,
     });
+    if (!started) {
+      throw Conflict("Recording session could not be started.");
+    }
 
     await redis.multi()
       .set(streamRecordingKey(session.id), JSON.stringify(cache), "EX", RECORDING_ACTIVE_TTL_SECONDS)
@@ -142,11 +118,7 @@ export class HttpStreamService {
   async appendChunk(
     recordingSessionId: string,
     requestUserId: string,
-    input: {
-      sequence: number;
-      offset: number;
-      chunk: Buffer;
-    },
+    input: HttpStreamChunkInput,
   ) {
     if (input.chunk.length === 0) {
       throw BadRequest("Chunk body must not be empty.");
@@ -209,39 +181,15 @@ export class HttpStreamService {
         throw PreconditionFailed("Stored raw file size does not match total bytes.");
       }
 
-      const closedAt = new Date();
-      await prisma.$transaction(async (tx) => {
-        const sessionUpdate = await tx.recordingSession.updateMany({
-          where: {
-            id: recordingSessionId,
-            userId: requestUserId,
-            status: RecordingSessionStatus.STREAMING,
-            ingestType: RecordingSessionIngestType.HTTP,
-          },
-          data: {
-            status: RecordingSessionStatus.CLOSED,
-            closedAt,
-            endReason: RecordingSessionEndReason.NORMAL_DISCONNECT,
-          },
-        });
-        if (sessionUpdate.count !== 1) {
-          throw Conflict("Recording session could not be closed.");
-        }
-
-        const segmentUpdate = await tx.recordingSegment.updateMany({
-          where: {
-            recordingSessionId,
-            status: RecordingSegmentStatus.WRITING,
-          },
-          data: {
-            status: RecordingSegmentStatus.WRITE_DONE,
-            completedAt: closedAt,
-          },
-        });
-        if (segmentUpdate.count !== 1) {
-          throw Conflict("Recording segment could not be completed.");
-        }
+      const completed = await recordingSessionRepository.closeHttpUploadAsWriteDone({
+        recordingSessionId,
+        userId: requestUserId,
+        closedAt: new Date(),
+        endReason: RecordingSessionEndReason.NORMAL_DISCONNECT,
       });
+      if (!completed) {
+        throw Conflict("Recording session could not be closed.");
+      }
 
       return {
         cache,
@@ -269,12 +217,7 @@ export class HttpStreamService {
   }
 
   async reconcileHttpUploads() {
-    const sessions = await prisma.recordingSession.findMany({
-      where: {
-        status: RecordingSessionStatus.STREAMING,
-        ingestType: RecordingSessionIngestType.HTTP,
-      },
-    });
+    const sessions = await recordingSessionRepository.findStreamingHttpUploads();
 
     const nowMs = Date.now();
     for (const session of sessions) {
@@ -439,136 +382,35 @@ export class HttpStreamService {
   }
 
   private async closeUnexpectedAndMarkWriteDone(recordingSessionId: string) {
-    const closedAt = new Date();
-    try {
-      await prisma.$transaction(async (tx) => {
-        const sessionUpdate = await tx.recordingSession.updateMany({
-          where: {
-            id: recordingSessionId,
-            status: RecordingSessionStatus.STREAMING,
-            ingestType: RecordingSessionIngestType.HTTP,
-          },
-          data: {
-            status: RecordingSessionStatus.CLOSED,
-            closedAt,
-            endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
-          },
-        });
-        if (sessionUpdate.count !== 1) {
-          throw new HttpUploadTransitionRace("HTTP upload session was already closed.");
-        }
-
-        const segmentUpdate = await tx.recordingSegment.updateMany({
-          where: {
-            recordingSessionId,
-            status: RecordingSegmentStatus.WRITING,
-          },
-          data: {
-            status: RecordingSegmentStatus.WRITE_DONE,
-            completedAt: closedAt,
-          },
-        });
-        if (segmentUpdate.count !== 1) {
-          throw new HttpUploadTransitionRace("HTTP upload segment was already finalized.");
-        }
-      });
-      return true;
-    } catch (error) {
-      if (error instanceof HttpUploadTransitionRace) {
-        return false;
-      }
-      throw error;
-    }
+    return recordingSessionRepository.closeHttpUploadAsWriteDone({
+      recordingSessionId,
+      closedAt: new Date(),
+      endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
+    });
   }
 
   private async failHttpUpload(
-    session: {
-      id: string;
-      repositoryId: string;
-      ownerId: string;
-      userId: string;
-      deviceType: string | null;
-      streamPath: string;
-    },
+    session: RecordingSessionRecord,
     cache: HttpUploadCache | null,
     errorMessage: string,
   ) {
-    const segment = await prisma.recordingSegment.findUnique({
-      where: { recordingSessionId: session.id },
-    });
+    const segment = await recordingSessionRepository.findSegmentRawPath(session.id);
     const rawPath = cache?.rawPath ?? segment?.rawPath ?? this.buildRawPath(session.streamPath, session.id);
-    const closedAt = new Date();
 
-    try {
-      await prisma.$transaction(async (tx) => {
-        const sessionUpdate = await tx.recordingSession.updateMany({
-          where: {
-            id: session.id,
-            status: RecordingSessionStatus.STREAMING,
-            ingestType: RecordingSessionIngestType.HTTP,
-          },
-          data: {
-            status: RecordingSessionStatus.CLOSED,
-            closedAt,
-            endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
-          },
-        });
-        if (sessionUpdate.count !== 1) {
-          throw new HttpUploadTransitionRace("HTTP upload session was already closed.");
-        }
-
-        const segmentUpdate = await tx.recordingSegment.updateMany({
-          where: {
-            recordingSessionId: session.id,
-            status: RecordingSegmentStatus.WRITING,
-          },
-          data: {
-            status: RecordingSegmentStatus.FAILED,
-            completedAt: closedAt,
-          },
-        });
-        if (segmentUpdate.count !== 1) {
-          throw new HttpUploadTransitionRace("HTTP upload segment was already finalized.");
-        }
-
-        await tx.video.upsert({
-          where: { recordingSessionId: session.id },
-          create: {
-            id: randomUUID(),
-            repositoryId: session.repositoryId,
-            recordingSessionId: session.id,
-            rawRecordingPath: rawPath,
-            streamPath: session.streamPath,
-            deviceType: session.deviceType,
-            recorder: session.userId,
-            status: VideoStatus.FAILED,
-            errorMessage,
-            processingStartedAt: closedAt,
-            processingCompletedAt: closedAt,
-          },
-          update: {
-            repositoryId: session.repositoryId,
-            rawRecordingPath: rawPath,
-            streamPath: session.streamPath,
-            deviceType: session.deviceType,
-            recorder: session.userId,
-            status: VideoStatus.FAILED,
-            errorMessage,
-            processingCompletedAt: closedAt,
-          },
-        });
+    const failed = await recordingSessionRepository.failHttpUpload({
+      session,
+      rawPath,
+      errorMessage,
+      closedAt: new Date(),
+    });
+    if (!failed) {
+      console.info("[http-stream] timeout-failed-skipped", {
+        recordingSessionId: session.id,
+        repositoryId: session.repositoryId,
+        repositoryName: recordingSessionService.extractRepositoryName(session.streamPath),
+        reason: "state-transition-not-claimed",
       });
-    } catch (error) {
-      if (error instanceof HttpUploadTransitionRace) {
-        console.info("[http-stream] timeout-failed-skipped", {
-          recordingSessionId: session.id,
-          repositoryId: session.repositoryId,
-          repositoryName: recordingSessionService.extractRepositoryName(session.streamPath),
-          reason: "state-transition-not-claimed",
-        });
-        return false;
-      }
-      throw error;
+      return false;
     }
 
     await this.clearHttpPointers(session.id);

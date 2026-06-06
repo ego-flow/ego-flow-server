@@ -2,12 +2,11 @@ import express, { Router } from "express";
 
 import { HTTP_STREAM_CHUNK_MAX_BYTES } from "../constants/stream/stream-constants";
 import { asyncHandler } from "../lib/async-handler";
-import { getAuthUser } from "../lib/request-context";
-import { BadRequest } from "../lib/errors";
+import { getAuthUser, getHttpStreamChunk } from "../lib/request-context";
 import { requireAppJwt } from "../middleware/auth.middleware";
+import { parseHttpStreamChunk } from "../middleware/http-stream.middleware";
 import { validate } from "../middleware/validate.middleware";
 import {
-  httpStreamChunkHeadersSchema,
   httpStreamFinishSchema,
   httpStreamStartSchema,
   recordingSessionIdParamsSchema,
@@ -39,19 +38,11 @@ router.post(
     type: "application/octet-stream",
     limit: HTTP_STREAM_CHUNK_MAX_BYTES,
   }),
+  parseHttpStreamChunk,
   asyncHandler(async (req, res) => {
-    const parsedHeaders = httpStreamChunkHeadersSchema.parse(req.headers);
-    if (!Buffer.isBuffer(req.body)) {
-      throw BadRequest("Chunk body must use application/octet-stream.");
-    }
-
     const user = getAuthUser(req);
     const { recordingSessionId } = req.params as { recordingSessionId: string };
-    const response = await httpStreamService.appendChunk(recordingSessionId, user.userId, {
-      sequence: parsedHeaders["x-chunk-sequence"],
-      offset: parsedHeaders["x-chunk-offset"],
-      chunk: req.body,
-    });
+    const response = await httpStreamService.appendChunk(recordingSessionId, user.userId, getHttpStreamChunk(req));
     res.status(200).json(response);
   }),
 );
