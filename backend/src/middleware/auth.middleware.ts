@@ -6,11 +6,11 @@ import {
   resolveRefreshedAccessToken,
   verifyAccessToken,
 } from "../lib/auth/access-token";
+import { verifyDashboardSession } from "../lib/auth/dashboard-session";
 import { extractBearerToken, extractCookie } from "../lib/auth/http-credentials";
+import { verifyPythonToken } from "../lib/auth/python-token";
 import { Unauthorized } from "../lib/errors";
-import { apiTokenService } from "../services/api-token.service";
 import { userRepository } from "../repositories/user.repository";
-import { dashboardSessionService } from "../services/dashboard-session.service";
 import { AuthCredentialKind, type AuthContext, type AuthenticatedUser } from "../types/auth";
 
 const setAuthContext = (req: Request, context: AuthContext) => {
@@ -28,7 +28,7 @@ const authenticateDashboardSession = async (req: Request): Promise<AuthContext |
     return null;
   }
 
-  const session = await dashboardSessionService.verifySession(sessionToken);
+  const session = await verifyDashboardSession(sessionToken);
   if (!session) {
     throw Unauthorized("Dashboard session is invalid or expired.");
   }
@@ -49,7 +49,7 @@ const authenticatePythonToken = async (req: Request): Promise<AuthContext | null
     return null;
   }
 
-  const payload = await apiTokenService.verifyPythonToken(token);
+  const payload = await verifyPythonToken(token);
   if (!payload) {
     throw Unauthorized("Invalid token.");
   }

@@ -13,16 +13,19 @@ process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 
 const accessTokenLib =
   require("../src/lib/auth/access-token") as typeof import("../src/lib/auth/access-token");
+const pythonToken =
+  require("../src/lib/auth/python-token") as typeof import("../src/lib/auth/python-token");
+const mutablePythonToken = pythonToken as unknown as {
+  verifyPythonToken: typeof pythonToken.verifyPythonToken;
+};
 const { userRepository } =
   require("../src/repositories/user.repository") as typeof import("../src/repositories/user.repository");
-const { apiTokenService } =
-  require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
 const { requireDashboardOrAppOrPython } =
   require("../src/middleware/auth.middleware") as typeof import("../src/middleware/auth.middleware");
 
 type HeaderMap = Record<string, string>;
 
-const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
+const originalVerifyPythonToken = pythonToken.verifyPythonToken;
 const originalFindActiveAuthenticatedUser = userRepository.findActiveAuthenticatedUser;
 const originalVerifyAccessToken = accessTokenLib.verifyAccessToken;
 const originalResolveRefreshedAccessToken = accessTokenLib.resolveRefreshedAccessToken;
@@ -39,7 +42,7 @@ const createResponse = () => {
 };
 
 beforeEach(() => {
-  apiTokenService.verifyPythonToken = originalVerifyPythonToken;
+  mutablePythonToken.verifyPythonToken = originalVerifyPythonToken;
   userRepository.findActiveAuthenticatedUser = originalFindActiveAuthenticatedUser;
   (accessTokenLib as any).verifyAccessToken = originalVerifyAccessToken;
   (accessTokenLib as any).resolveRefreshedAccessToken = originalResolveRefreshedAccessToken;
@@ -48,7 +51,7 @@ beforeEach(() => {
 test("requireDashboardOrAppOrPython accepts ef_ Python tokens without emitting a refreshed header", async () => {
   let jwtVerified = false;
 
-  apiTokenService.verifyPythonToken = async (token: string) => {
+  mutablePythonToken.verifyPythonToken = async (token: string) => {
     assert.equal(token, "ef_0123456789abcdef0123456789abcdef01234567");
     return {
       userId: "alice",
@@ -124,7 +127,7 @@ test("requireDashboardOrAppOrPython keeps JWT refresh behavior for non-Python be
 });
 
 test("requireDashboardOrAppOrPython rejects invalid Python tokens with 401", async () => {
-  apiTokenService.verifyPythonToken = async () => null;
+  mutablePythonToken.verifyPythonToken = async () => null;
 
   const req: any = {
     headers: {

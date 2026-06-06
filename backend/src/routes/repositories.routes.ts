@@ -3,8 +3,7 @@ import { Router } from "express";
 import { asyncHandler } from "../lib/async-handler";
 import { BadRequest, ErrorCode } from "../lib/errors";
 import { getAuthUser, getRepositoryAccess } from "../lib/request-context";
-import { repoAccess } from "../middleware/repo-access.middleware";
-import { repoStatus } from "../middleware/repo-status.middleware";
+import { repoAccess, repoStatus } from "../middleware/repository.middleware";
 import {
   requireDashboardOrApp,
   requireDashboardOrAppOrPython,

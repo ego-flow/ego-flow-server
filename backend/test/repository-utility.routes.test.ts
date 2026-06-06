@@ -46,8 +46,11 @@ moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
 const accessTokenLib = require("../src/lib/auth/access-token") as typeof import("../src/lib/auth/access-token");
 const { userRepository } =
   require("../src/repositories/user.repository") as typeof import("../src/repositories/user.repository");
-const { apiTokenService } =
-  require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
+const pythonToken =
+  require("../src/lib/auth/python-token") as typeof import("../src/lib/auth/python-token");
+const mutablePythonToken = pythonToken as unknown as {
+  verifyPythonToken: typeof pythonToken.verifyPythonToken;
+};
 const { repositoryAccessService } =
   require("../src/services/repository-access.service") as typeof import("../src/services/repository-access.service");
 const { repositoryService } =
@@ -59,7 +62,7 @@ const { repositoriesRoutes } =
 
 const originalVerifyAccessToken = accessTokenLib.verifyAccessToken;
 const originalFindActiveAuthenticatedUser = userRepository.findActiveAuthenticatedUser;
-const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
+const originalVerifyPythonToken = pythonToken.verifyPythonToken;
 const originalAssertRepositoryAccess = repositoryAccessService.assertAction;
 const originalAssertRepositoryStatus = repositoryAccessService.assertRepositoryStatus;
 const originalResolveRepository = repositoryService.resolveRepository;
@@ -85,7 +88,7 @@ const startServer = async () => {
 beforeEach(() => {
   (accessTokenLib as any).verifyAccessToken = originalVerifyAccessToken;
   userRepository.findActiveAuthenticatedUser = originalFindActiveAuthenticatedUser;
-  apiTokenService.verifyPythonToken = originalVerifyPythonToken;
+  mutablePythonToken.verifyPythonToken = originalVerifyPythonToken;
   repositoryAccessService.assertAction = originalAssertRepositoryAccess;
   repositoryAccessService.assertRepositoryStatus = async (repositoryId: string, required: "active" | "deactivated") => ({
     id: repositoryId,
@@ -124,7 +127,7 @@ test("GET /repositories/resolve supports slug and owner_id/name forms", async ()
     role: "user",
     displayName: "Alice Kim",
   });
-  apiTokenService.verifyPythonToken = async () => ({
+  mutablePythonToken.verifyPythonToken = async () => ({
     userId: "alice",
     role: "user",
   });
@@ -209,7 +212,7 @@ test("GET /repositories/resolve accepts Python static tokens", async () => {
   const baseUrl = await startServer();
   let called = false;
 
-  apiTokenService.verifyPythonToken = async () => ({
+  mutablePythonToken.verifyPythonToken = async () => ({
     userId: "alice",
     role: "user",
   });
@@ -259,7 +262,7 @@ test("GET /repositories/:repoId/manifest uses repoAccess context and validated q
     role: "user",
     displayName: "Alice Kim",
   });
-  apiTokenService.verifyPythonToken = async () => ({
+  mutablePythonToken.verifyPythonToken = async () => ({
     userId: "alice",
     role: "user",
   });
@@ -348,7 +351,7 @@ test("GET /repositories/:repoId/manifest rejects invalid queries and missing aut
     role: "user",
     displayName: "Alice Kim",
   });
-  apiTokenService.verifyPythonToken = async () => ({
+  mutablePythonToken.verifyPythonToken = async () => ({
     userId: "alice",
     role: "user",
   });
@@ -388,7 +391,7 @@ test("GET /repositories/:repoId/manifest applies default page and limit", async 
     role: "user",
     displayName: "Alice Kim",
   });
-  apiTokenService.verifyPythonToken = async () => ({
+  mutablePythonToken.verifyPythonToken = async () => ({
     userId: "alice",
     role: "user",
   });

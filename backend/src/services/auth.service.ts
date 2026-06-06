@@ -3,6 +3,7 @@ import { RecordingSessionIngestType } from "@prisma/client";
 
 import { ErrorCode, Unauthorized } from "../lib/errors";
 import { signAccessToken } from "../lib/auth/access-token";
+import { createDashboardSession } from "../lib/auth/dashboard-session";
 import { prisma } from "../lib/prisma";
 import { toAppUserRole } from "../mappers/user.mapper";
 import type { IssuePythonTokenInput, LoginInput, MediaMtxAuthInput } from "../schemas/auth.schema";
@@ -10,7 +11,6 @@ import type { ChangeMyPasswordInput } from "../schemas/user.schema";
 import { apiTokenService } from "./api-token.service";
 import { streamOwnershipService } from "./stream-ownership.service";
 import { streamService } from "./stream.service";
-import { dashboardSessionService } from "./dashboard-session.service";
 
 export class AuthService {
   private logMediaMtxAuthDecision(
@@ -97,7 +97,7 @@ export class AuthService {
 
   async loginDashboard(input: LoginInput & { remember_me?: boolean }) {
     const user = await this.authenticatePassword(input);
-    const session = await dashboardSessionService.createSession(user.id, Boolean(input.remember_me));
+    const session = await createDashboardSession(user.id, Boolean(input.remember_me));
 
     return {
       session,

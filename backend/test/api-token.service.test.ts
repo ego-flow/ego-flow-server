@@ -134,6 +134,8 @@ const fakePrisma: any = {
 
 const { ApiTokenService } =
   require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
+const { verifyPythonToken } =
+  require("../src/lib/auth/python-token") as typeof import("../src/lib/auth/python-token");
 
 const service = new ApiTokenService();
 
@@ -198,8 +200,8 @@ test("issuing a new token rotates the previous token and keeps only one active r
   assert.ok(stored);
   assert.equal(stored.name, "trainer");
 
-  assert.equal(await service.verifyPythonToken(first.token), null);
-  assert.deepEqual(await service.verifyPythonToken(second.token), {
+  assert.equal(await verifyPythonToken(first.token), null);
+  assert.deepEqual(await verifyPythonToken(second.token), {
     userId: "alice",
     role: "user",
   });
@@ -245,7 +247,7 @@ test("verifyPythonToken rejects inactive users and throttles last_used_at update
   stored.lastUsedAt = new Date();
   const firstLastUsedAt = stored.lastUsedAt.toISOString();
 
-  assert.deepEqual(await service.verifyPythonToken(issued.token), {
+  assert.deepEqual(await verifyPythonToken(issued.token), {
     userId: "alice",
     role: "user",
   });
@@ -256,5 +258,5 @@ test("verifyPythonToken rejects inactive users and throttles last_used_at update
     deactivated: true,
   });
 
-  assert.equal(await service.verifyPythonToken(issued.token), null);
+  assert.equal(await verifyPythonToken(issued.token), null);
 });

@@ -44,10 +44,16 @@ moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
 
 const { userRepository } =
   require("../src/repositories/user.repository") as typeof import("../src/repositories/user.repository");
-const { apiTokenService } =
-  require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
-const { dashboardSessionService } =
-  require("../src/services/dashboard-session.service") as typeof import("../src/services/dashboard-session.service");
+const pythonToken =
+  require("../src/lib/auth/python-token") as typeof import("../src/lib/auth/python-token");
+const mutablePythonToken = pythonToken as unknown as {
+  verifyPythonToken: typeof pythonToken.verifyPythonToken;
+};
+const dashboardSession =
+  require("../src/lib/auth/dashboard-session") as typeof import("../src/lib/auth/dashboard-session");
+const mutableDashboardSession = dashboardSession as unknown as {
+  verifyDashboardSession: typeof dashboardSession.verifyDashboardSession;
+};
 const { authService } =
   require("../src/services/auth.service") as typeof import("../src/services/auth.service");
 const { authRoutes } =
@@ -55,10 +61,10 @@ const { authRoutes } =
 const { DASHBOARD_SESSION_COOKIE_NAME } =
   require("../src/constants/auth/auth-constants") as typeof import("../src/constants/auth/auth-constants");
 
-const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
+const originalVerifyPythonToken = pythonToken.verifyPythonToken;
 const originalFindActiveAuthenticatedUser = userRepository.findActiveAuthenticatedUser;
 const originalIssuePythonToken = authService.issuePythonToken;
-const originalVerifyDashboardSession = dashboardSessionService.verifySession;
+const originalVerifyDashboardSession = dashboardSession.verifyDashboardSession;
 
 let server: import("node:http").Server | null = null;
 
@@ -78,10 +84,10 @@ const startServer = async () => {
 
 beforeEach(() => {
   fakeRedisModule.redis.clear();
-  apiTokenService.verifyPythonToken = originalVerifyPythonToken;
+  mutablePythonToken.verifyPythonToken = originalVerifyPythonToken;
   userRepository.findActiveAuthenticatedUser = originalFindActiveAuthenticatedUser;
   authService.issuePythonToken = originalIssuePythonToken;
-  dashboardSessionService.verifySession = originalVerifyDashboardSession;
+  mutableDashboardSession.verifyDashboardSession = originalVerifyDashboardSession;
 });
 
 afterEach(async () => {
@@ -102,7 +108,7 @@ afterEach(async () => {
 test("POST /auth/python/tokens issues a Python static token for a dashboard session", async () => {
   const baseUrl = await startServer();
 
-  dashboardSessionService.verifySession = async (rawToken: string) => {
+  mutableDashboardSession.verifyDashboardSession = async (rawToken: string) => {
     assert.equal(rawToken, "dashboard-token");
     return {
       sessionId: "session-1",
@@ -168,7 +174,7 @@ test("GET /auth/python/tokens/validate returns the Python token owner", async ()
   const baseUrl = await startServer();
   const rawToken = "ef_0123456789abcdef0123456789abcdef01234567";
 
-  apiTokenService.verifyPythonToken = async (token: string) => {
+  mutablePythonToken.verifyPythonToken = async (token: string) => {
     assert.equal(token, rawToken);
     return {
       userId: "alice",
@@ -204,7 +210,7 @@ test("GET /auth/python/tokens/validate returns the Python token owner", async ()
 test("GET /auth/python/tokens/validate rejects invalid Python tokens", async () => {
   const baseUrl = await startServer();
 
-  apiTokenService.verifyPythonToken = async () => null;
+  mutablePythonToken.verifyPythonToken = async () => null;
 
   const response = await fetch(`${baseUrl}/api/v1/auth/python/tokens/validate`, {
     headers: {

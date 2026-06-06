@@ -3,6 +3,7 @@ import { Router } from "express";
 import { AuthCredentialKind } from "../constants/auth/auth-constants";
 import { asyncHandler } from "../lib/async-handler";
 import { clearDashboardSessionCookie, setDashboardSessionCookie } from "../lib/auth/dashboard-cookie";
+import { revokeDashboardSession } from "../lib/auth/dashboard-session";
 import { getAuthUser } from "../lib/request-context";
 import { requireDashboardSession, requirePythonToken } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
@@ -12,7 +13,6 @@ import { dashboardLoginSchema, issuePythonTokenSchema, loginSchema, mediaMtxAuth
 import { changeMyPasswordSchema } from "../schemas/user.schema";
 import { apiTokenService } from "../services/api-token.service";
 import { authService } from "../services/auth.service";
-import { dashboardSessionService } from "../services/dashboard-session.service";
 
 const router = Router();
 
@@ -43,11 +43,11 @@ router.post(
 // POST /api/v1/auth/dashboard/logout
 router.post(
   "/dashboard/logout",
-  requireDashboardSession,
-  asyncHandler(async (req, res) => {
-    if (req.auth?.kind === AuthCredentialKind.Dashboard && req.auth.rawCredential) {
-      await dashboardSessionService.revokeSession(req.auth.rawCredential);
-    }
+    requireDashboardSession,
+    asyncHandler(async (req, res) => {
+      if (req.auth?.kind === AuthCredentialKind.Dashboard && req.auth.rawCredential) {
+        await revokeDashboardSession(req.auth.rawCredential);
+      }
     clearDashboardSessionCookie(req, res);
     res.status(200).json({ logged_out: true });
   }),

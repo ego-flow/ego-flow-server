@@ -48,10 +48,16 @@ moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
 const accessTokenLib = require("../src/lib/auth/access-token") as typeof import("../src/lib/auth/access-token");
 const { userRepository } =
   require("../src/repositories/user.repository") as typeof import("../src/repositories/user.repository");
-const { apiTokenService } =
-  require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
-const { dashboardSessionService } =
-  require("../src/services/dashboard-session.service") as typeof import("../src/services/dashboard-session.service");
+const pythonToken =
+  require("../src/lib/auth/python-token") as typeof import("../src/lib/auth/python-token");
+const mutablePythonToken = pythonToken as unknown as {
+  verifyPythonToken: typeof pythonToken.verifyPythonToken;
+};
+const dashboardSession =
+  require("../src/lib/auth/dashboard-session") as typeof import("../src/lib/auth/dashboard-session");
+const mutableDashboardSession = dashboardSession as unknown as {
+  verifyDashboardSession: typeof dashboardSession.verifyDashboardSession;
+};
 const { verifySignedFileUrlToken } =
   require("../src/lib/signed-file-url") as typeof import("../src/lib/signed-file-url");
 const { getTargetDirectory } =
@@ -65,8 +71,8 @@ const { repositoryVideosRoutes } =
 
 const originalVerifyAccessToken = accessTokenLib.verifyAccessToken;
 const originalFindActiveAuthenticatedUser = userRepository.findActiveAuthenticatedUser;
-const originalVerifyPythonToken = apiTokenService.verifyPythonToken;
-const originalVerifyDashboardSession = dashboardSessionService.verifySession;
+const originalVerifyPythonToken = pythonToken.verifyPythonToken;
+const originalVerifyDashboardSession = dashboardSession.verifyDashboardSession;
 const originalAssertRepositoryAccess = repositoryAccessService.assertAction;
 const originalAssertRepositoryStatus = repositoryAccessService.assertRepositoryStatus;
 const originalListRepositoryVideos = videoService.listRepositoryVideos;
@@ -115,14 +121,14 @@ beforeEach(() => {
     role: "user",
     displayName: "Alice Kim",
   });
-  apiTokenService.verifyPythonToken = async (token: string) =>
+  mutablePythonToken.verifyPythonToken = async (token: string) =>
     token === "ef_python-token"
       ? {
           userId: "alice",
           role: "user",
         }
       : null;
-  dashboardSessionService.verifySession = async (token: string) =>
+  mutableDashboardSession.verifyDashboardSession = async (token: string) =>
     token === "dashboard-session"
       ? {
           sessionId: "session-1",
@@ -168,8 +174,8 @@ beforeEach(() => {
 afterEach(async () => {
   (accessTokenLib as any).verifyAccessToken = originalVerifyAccessToken;
   userRepository.findActiveAuthenticatedUser = originalFindActiveAuthenticatedUser;
-  apiTokenService.verifyPythonToken = originalVerifyPythonToken;
-  dashboardSessionService.verifySession = originalVerifyDashboardSession;
+  mutablePythonToken.verifyPythonToken = originalVerifyPythonToken;
+  mutableDashboardSession.verifyDashboardSession = originalVerifyDashboardSession;
   repositoryAccessService.assertAction = originalAssertRepositoryAccess;
   repositoryAccessService.assertRepositoryStatus = originalAssertRepositoryStatus;
   videoService.listRepositoryVideos = originalListRepositoryVideos;

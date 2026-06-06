@@ -1,29 +1,16 @@
-import {
-  PYTHON_TOKEN_HASH_ALGORITHM,
-  PYTHON_TOKEN_LAST_USED_UPDATE_INTERVAL_MS,
-  PYTHON_TOKEN_PREFIX,
-  PYTHON_TOKEN_RANDOM_BYTES,
-} from "../constants/auth/auth-constants";
 import { Forbidden, NotFound } from "../lib/errors";
 import { prisma } from "../lib/prisma";
+import { createRawPythonToken, hashPythonToken } from "../lib/auth/python-token";
 import { toAppUserRole } from "../mappers/user.mapper";
 import type { CreateApiTokenInput } from "../schemas/api-token.schema";
 import type { AppUserRole } from "../types/auth";
-import { createPrefixedRandomToken, hashValue } from "../lib/crypto";
 
 const toIsoString = (value: Date | null) => value?.toISOString() ?? null;
 
-const createRawToken = () => createPrefixedRandomToken(PYTHON_TOKEN_PREFIX, PYTHON_TOKEN_RANDOM_BYTES);
-
-const hashToken = (rawToken: string) => hashValue(rawToken, PYTHON_TOKEN_HASH_ALGORITHM);
-
-const shouldUpdateLastUsedAt = (lastUsedAt: Date | null) =>
-  !lastUsedAt || Date.now() - lastUsedAt.getTime() >= PYTHON_TOKEN_LAST_USED_UPDATE_INTERVAL_MS;
-
 export class ApiTokenService {
   async issueToken(userId: string, input: CreateApiTokenInput) {
-    const rawToken = createRawToken();
-    const tokenHash = hashToken(rawToken);
+    const rawToken = createRawPythonToken();
+    const tokenHash = hashPythonToken(rawToken);
     const { created, rotatedPrevious } = await prisma.$transaction(async (tx) => {
       const existing = await tx.apiToken.findUnique({
         where: { userId },
@@ -159,59 +146,6 @@ export class ApiTokenService {
     await prisma.apiToken.delete({
       where: { id: token.id },
     });
-  }
-
-  async verifyPythonToken(rawToken: string): Promise<{ userId: string; role: AppUserRole } | null> {
-    if (
-      !rawToken.startsWith(PYTHON_TOKEN_PREFIX) ||
-      rawToken.length !== PYTHON_TOKEN_PREFIX.length + PYTHON_TOKEN_RANDOM_BYTES * 2
-    ) {
-      return null;
-    }
-
-    const token = await prisma.apiToken.findUnique({
-      where: {
-        tokenHash: hashToken(rawToken),
-      },
-      select: {
-        id: true,
-        userId: true,
-        lastUsedAt: true,
-        user: {
-          select: {
-            id: true,
-            role: true,
-            deactivated: true,
-          },
-        },
-      },
-    });
-
-    if (!token?.user || token.user.deactivated) {
-      return null;
-    }
-
-    if (shouldUpdateLastUsedAt(token.lastUsedAt)) {
-      void prisma.apiToken
-        .update({
-          where: { id: token.id },
-          data: {
-            lastUsedAt: new Date(),
-          },
-        })
-        .catch((error) => {
-          console.warn("[api-token] failed to update last_used_at", {
-            tokenId: token.id,
-            userId: token.userId,
-            error,
-          });
-        });
-    }
-
-    return {
-      userId: token.user.id,
-      role: toAppUserRole(token.user.role),
-    };
   }
 }
 
