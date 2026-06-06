@@ -15,6 +15,7 @@ import {
   FIXED_WHIP_PORT,
 } from "../constants/config/config-constants";
 import { BadRequest, Conflict, NotFound } from "../lib/errors";
+import { pythonTokenService } from "../lib/auth/python-token.service";
 import { prisma } from "../lib/prisma";
 import { getTargetDirectory } from "../lib/storage";
 import { toAppUserRole } from "../mappers/user.mapper";
@@ -279,6 +280,14 @@ export class AdminService {
 
     return {
       users: users.map(toUserResponse),
+    };
+  }
+
+  async listPythonTokens() {
+    const tokens = await pythonTokenService.listActiveTokensForAdmin();
+
+    return {
+      tokens,
     };
   }
 

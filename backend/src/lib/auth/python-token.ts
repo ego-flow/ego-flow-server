@@ -55,7 +55,7 @@ export const verifyPythonToken = async (rawToken: string): Promise<{ userId: str
         },
       })
       .catch((error) => {
-        console.warn("[api-token] failed to update last_used_at", {
+        console.warn("[python-token] failed to update last_used_at", {
           tokenId: token.id,
           userId: token.userId,
           error,

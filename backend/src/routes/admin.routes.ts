@@ -6,7 +6,6 @@ import { requireRole } from "../middleware/role.middleware";
 import { validate } from "../middleware/validate.middleware";
 import type { AdminUserIdParamInput } from "../schemas/admin.schema";
 import { adminUserIdParamSchema, createAdminUserSchema, resetUserPasswordSchema } from "../schemas/admin.schema";
-import { apiTokenService } from "../services/api-token.service";
 import { adminService } from "../services/admin.service";
 
 const router = Router();
@@ -36,8 +35,8 @@ router.get(
 router.get(
   "/python/tokens",
   asyncHandler(async (_req, res) => {
-    const tokens = await apiTokenService.listActiveTokensForAdmin();
-    res.status(200).json({ tokens });
+    const response = await adminService.listPythonTokens();
+    res.status(200).json(response);
   }),
 );
 

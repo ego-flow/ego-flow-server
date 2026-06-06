@@ -132,12 +132,12 @@ const fakePrisma: any = {
 
 (globalThis as any).__egoflowPrisma = fakePrisma;
 
-const { ApiTokenService } =
-  require("../src/services/api-token.service") as typeof import("../src/services/api-token.service");
+const { PythonTokenService } =
+  require("../src/lib/auth/python-token.service") as typeof import("../src/lib/auth/python-token.service");
 const { verifyPythonToken } =
   require("../src/lib/auth/python-token") as typeof import("../src/lib/auth/python-token");
 
-const service = new ApiTokenService();
+const service = new PythonTokenService();
 
 beforeEach(() => {
   users.clear();

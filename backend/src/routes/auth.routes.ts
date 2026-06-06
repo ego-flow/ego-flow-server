@@ -11,7 +11,6 @@ import type { ApiTokenIdParamInput } from "../schemas/api-token.schema";
 import { apiTokenIdParamSchema } from "../schemas/api-token.schema";
 import { dashboardLoginSchema, issuePythonTokenSchema, loginSchema, mediaMtxAuthSchema } from "../schemas/auth.schema";
 import { changeMyPasswordSchema } from "../schemas/user.schema";
-import { apiTokenService } from "../services/api-token.service";
 import { authService } from "../services/auth.service";
 
 const router = Router();
@@ -99,7 +98,7 @@ router.get(
   requireDashboardSession,
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    const token = await apiTokenService.getCurrentToken(user.userId);
+    const token = await authService.getCurrentPythonToken(user.userId);
     res.status(200).json({ token });
   }),
 );
@@ -129,7 +128,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
     const tokenId = (req.params as ApiTokenIdParamInput).tokenId;
-    await apiTokenService.revokeToken(user.userId, user.role, tokenId);
+    await authService.revokePythonToken(user.userId, user.role, tokenId);
     res.status(200).json({
       id: tokenId,
       revoked: true,

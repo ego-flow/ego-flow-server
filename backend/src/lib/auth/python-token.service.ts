@@ -1,13 +1,13 @@
-import { Forbidden, NotFound } from "../lib/errors";
-import { prisma } from "../lib/prisma";
-import { createRawPythonToken, hashPythonToken } from "../lib/auth/python-token";
-import { toAppUserRole } from "../mappers/user.mapper";
-import type { CreateApiTokenInput } from "../schemas/api-token.schema";
-import type { AppUserRole } from "../types/auth";
+import { Forbidden, NotFound } from "../errors";
+import { prisma } from "../prisma";
+import { toAppUserRole } from "../../mappers/user.mapper";
+import type { CreateApiTokenInput } from "../../schemas/api-token.schema";
+import type { AppUserRole } from "../../types/auth";
+import { createRawPythonToken, hashPythonToken } from "./python-token";
 
 const toIsoString = (value: Date | null) => value?.toISOString() ?? null;
 
-export class ApiTokenService {
+export class PythonTokenService {
   async issueToken(userId: string, input: CreateApiTokenInput) {
     const rawToken = createRawPythonToken();
     const tokenHash = hashPythonToken(rawToken);
@@ -149,4 +149,4 @@ export class ApiTokenService {
   }
 }
 
-export const apiTokenService = new ApiTokenService();
+export const pythonTokenService = new PythonTokenService();

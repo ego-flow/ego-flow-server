@@ -4,11 +4,11 @@ import { RecordingSessionIngestType } from "@prisma/client";
 import { ErrorCode, Unauthorized } from "../lib/errors";
 import { signAccessToken } from "../lib/auth/access-token";
 import { createDashboardSession } from "../lib/auth/dashboard-session";
+import { pythonTokenService } from "../lib/auth/python-token.service";
 import { prisma } from "../lib/prisma";
 import { toAppUserRole } from "../mappers/user.mapper";
 import type { IssuePythonTokenInput, LoginInput, MediaMtxAuthInput } from "../schemas/auth.schema";
 import type { ChangeMyPasswordInput } from "../schemas/user.schema";
-import { apiTokenService } from "./api-token.service";
 import { streamOwnershipService } from "./stream-ownership.service";
 import { streamService } from "./stream.service";
 
@@ -110,9 +110,17 @@ export class AuthService {
   }
 
   async issuePythonToken(userId: string, input: IssuePythonTokenInput) {
-    return apiTokenService.issueToken(userId, {
+    return pythonTokenService.issueToken(userId, {
       name: input.name,
     });
+  }
+
+  async getCurrentPythonToken(userId: string) {
+    return pythonTokenService.getCurrentToken(userId);
+  }
+
+  async revokePythonToken(userId: string, userRole: "admin" | "user", tokenId: string) {
+    await pythonTokenService.revokeToken(userId, userRole, tokenId);
   }
 
   async verifyMediaMtxAuthorization(input: MediaMtxAuthInput): Promise<boolean> {
