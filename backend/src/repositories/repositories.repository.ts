@@ -11,18 +11,18 @@ const repositorySummarySelect = {
   tags: true,
   createdAt: true,
   updatedAt: true,
-} satisfies Prisma.RepositorySelect;
+} satisfies Prisma.RepositoriesSelect;
 
 const repositoryResolveSelect = {
   ...repositorySummarySelect,
   deactivated: true,
-} satisfies Prisma.RepositorySelect;
+} satisfies Prisma.RepositoriesSelect;
 
-export type RepositorySummaryRow = Prisma.RepositoryGetPayload<{
+export type RepositorySummaryRow = Prisma.RepositoriesGetPayload<{
   select: typeof repositorySummarySelect;
 }>;
 
-export type RepositoryResolveRow = Prisma.RepositoryGetPayload<{
+export type RepositoryResolveRow = Prisma.RepositoriesGetPayload<{
   select: typeof repositoryResolveSelect;
 }>;
 
@@ -31,7 +31,7 @@ export const isUniqueConstraintError = (error: unknown): boolean =>
 
 export class RepositoriesRepository {
   async findActiveRepositoryIds(): Promise<string[]> {
-    const repositories = await prisma.repository.findMany({
+    const repositories = await prisma.repositories.findMany({
       where: { deactivated: false },
       select: { id: true },
     });
@@ -40,7 +40,7 @@ export class RepositoriesRepository {
   }
 
   async findRepositoryIdsByOwner(ownerId: string): Promise<string[]> {
-    const repositories = await prisma.repository.findMany({
+    const repositories = await prisma.repositories.findMany({
       where: { ownerId },
       select: { id: true },
     });
@@ -53,7 +53,7 @@ export class RepositoriesRepository {
       return [];
     }
 
-    const repositories = await prisma.repository.findMany({
+    const repositories = await prisma.repositories.findMany({
       where: {
         id: { in: repositoryIds },
         deactivated: false,
@@ -65,7 +65,7 @@ export class RepositoriesRepository {
   }
 
   async findActivePublicRepositoryIds(): Promise<string[]> {
-    const repositories = await prisma.repository.findMany({
+    const repositories = await prisma.repositories.findMany({
       where: {
         visibility: RepoVisibility.public,
         deactivated: false,
@@ -77,7 +77,7 @@ export class RepositoriesRepository {
   }
 
   async findActiveRepositorySummaries(): Promise<RepositorySummaryRow[]> {
-    return prisma.repository.findMany({
+    return prisma.repositories.findMany({
       where: { deactivated: false },
       orderBy: [{ ownerId: "asc" }, { name: "asc" }],
       select: repositorySummarySelect,
@@ -88,7 +88,7 @@ export class RepositoriesRepository {
     memberRepositoryIds: string[];
     includePublic: boolean;
   }): Promise<RepositorySummaryRow[]> {
-    const accessWhere: Prisma.RepositoryWhereInput = input.includePublic
+    const accessWhere: Prisma.RepositoriesWhereInput = input.includePublic
       ? {
           OR: [
             { visibility: RepoVisibility.public },
@@ -99,7 +99,7 @@ export class RepositoriesRepository {
           id: { in: input.memberRepositoryIds },
         };
 
-    return prisma.repository.findMany({
+    return prisma.repositories.findMany({
       where: {
         AND: [
           { deactivated: false },
@@ -112,7 +112,7 @@ export class RepositoriesRepository {
   }
 
   async findRepositoryByOwnerAndName(ownerId: string, name: string): Promise<RepositoryResolveRow | null> {
-    return prisma.repository.findUnique({
+    return prisma.repositories.findUnique({
       where: {
         ownerId_name: {
           ownerId,
@@ -124,14 +124,14 @@ export class RepositoriesRepository {
   }
 
   async findRepositoryById(repositoryId: string): Promise<RepositoryResolveRow | null> {
-    return prisma.repository.findUnique({
+    return prisma.repositories.findUnique({
       where: { id: repositoryId },
       select: repositoryResolveSelect,
     });
   }
 
   async findRepositoryState(repositoryId: string): Promise<{ id: string; deactivated: boolean } | null> {
-    return prisma.repository.findUnique({
+    return prisma.repositories.findUnique({
       where: { id: repositoryId },
       select: {
         id: true,
@@ -148,7 +148,7 @@ export class RepositoriesRepository {
     tags: Prisma.InputJsonValue;
     contributors: Prisma.InputJsonValue;
   }): Promise<RepositorySummaryRow> {
-    return prisma.repository.create({
+    return prisma.repositories.create({
       data: input,
       select: repositorySummarySelect,
     });
@@ -161,7 +161,7 @@ export class RepositoriesRepository {
     description: string | null;
     tags: Prisma.InputJsonValue;
   }): Promise<RepositorySummaryRow> {
-    return prisma.repository.update({
+    return prisma.repositories.update({
       where: { id: input.repositoryId },
       data: {
         name: input.name,
@@ -174,14 +174,14 @@ export class RepositoriesRepository {
   }
 
   async markRepositoryDeactivated(repositoryId: string): Promise<void> {
-    await prisma.repository.update({
+    await prisma.repositories.update({
       where: { id: repositoryId },
       data: { deactivated: true },
     });
   }
 
   async findDeactivatedRepositorySummariesForSystemAdmin(): Promise<RepositorySummaryRow[]> {
-    return prisma.repository.findMany({
+    return prisma.repositories.findMany({
       where: { deactivated: true },
       orderBy: [{ ownerId: "asc" }, { name: "asc" }],
       select: repositorySummarySelect,
@@ -193,7 +193,7 @@ export class RepositoriesRepository {
       return [];
     }
 
-    return prisma.repository.findMany({
+    return prisma.repositories.findMany({
       where: {
         id: { in: repositoryIds },
         deactivated: true,
@@ -207,7 +207,7 @@ export class RepositoriesRepository {
     repositoryId: string,
     client: PrismaTransactionClient | typeof prisma = prisma,
   ): Promise<Prisma.JsonValue | null> {
-    const repository = await client.repository.findUnique({
+    const repository = await client.repositories.findUnique({
       where: { id: repositoryId },
       select: {
         contributors: true,
@@ -228,7 +228,7 @@ export class RepositoriesRepository {
       FOR UPDATE
     `);
 
-    const repository = await client.repository.findUnique({
+    const repository = await client.repositories.findUnique({
       where: { id: repositoryId },
       select: {
         contributors: true,
@@ -243,7 +243,7 @@ export class RepositoriesRepository {
     contributors: Prisma.InputJsonValue,
     client: PrismaTransactionClient | typeof prisma = prisma,
   ): Promise<void> {
-    await client.repository.update({
+    await client.repositories.update({
       where: { id: repositoryId },
       data: { contributors },
     });
@@ -253,7 +253,7 @@ export class RepositoriesRepository {
     repositoryId: string,
     client: PrismaTransactionClient | typeof prisma = prisma,
   ): Promise<void> {
-    await client.repository.delete({ where: { id: repositoryId } });
+    await client.repositories.delete({ where: { id: repositoryId } });
   }
 }
 

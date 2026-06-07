@@ -10,15 +10,15 @@ let updatedContributors: unknown = null;
 const lockCalls: string[] = [];
 
 const fakePrisma: any = {
-  repoMember: {
+  repoMembers: {
     findMany: async () => [
       { userId: "alice", role: RepoRole.admin },
     ],
   },
-  video: {
+  videos: {
     findMany: async () => [{ recorder: "bob" }],
   },
-  repository: {
+  repositories: {
     findUnique: async () => ({
       contributors: [],
     }),
@@ -41,17 +41,17 @@ const { computeRepositoryContributorUserIds, refreshRepositoryContributors } =
 beforeEach(() => {
   updatedContributors = null;
   lockCalls.length = 0;
-  fakePrisma.repoMember.findMany = async () => [
+  fakePrisma.repoMembers.findMany = async () => [
     { userId: "alice", role: RepoRole.admin },
   ];
-  fakePrisma.video.findMany = async () => [{ recorder: "bob" }];
-  fakePrisma.repository.findUnique = async () => ({
+  fakePrisma.videos.findMany = async () => [{ recorder: "bob" }];
+  fakePrisma.repositories.findUnique = async () => ({
     contributors: [],
   });
 });
 
 test("repository contributors include existing contributors, admins, and recorders", async () => {
-  fakePrisma.repository.findUnique = async () => ({
+  fakePrisma.repositories.findUnique = async () => ({
     contributors: ["carol"],
   });
 
@@ -65,11 +65,11 @@ test("repository contributors include existing contributors, admins, and recorde
 });
 
 test("repository contributors keep existing contributors after role changes and video removal", async () => {
-  fakePrisma.repository.findUnique = async () => ({
+  fakePrisma.repositories.findUnique = async () => ({
     contributors: ["bob", "carol"],
   });
-  fakePrisma.video.findMany = async () => [];
-  fakePrisma.repoMember.findMany = async () => [{ userId: "alice", role: RepoRole.admin }];
+  fakePrisma.videos.findMany = async () => [];
+  fakePrisma.repoMembers.findMany = async () => [{ userId: "alice", role: RepoRole.admin }];
 
   const contributors = await computeRepositoryContributorUserIds("repo-1");
 
@@ -77,11 +77,11 @@ test("repository contributors keep existing contributors after role changes and 
 });
 
 test("repository contributors keep admin-default contributors after demotion", async () => {
-  fakePrisma.repository.findUnique = async () => ({
+  fakePrisma.repositories.findUnique = async () => ({
     contributors: ["dave"],
   });
-  fakePrisma.repoMember.findMany = async () => [{ userId: "alice", role: RepoRole.admin }];
-  fakePrisma.video.findMany = async () => [];
+  fakePrisma.repoMembers.findMany = async () => [{ userId: "alice", role: RepoRole.admin }];
+  fakePrisma.videos.findMany = async () => [];
 
   const contributors = await computeRepositoryContributorUserIds("repo-1");
 

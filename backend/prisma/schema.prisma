@@ -23,7 +23,7 @@ enum RepoRole {
   admin
 }
 
-model User {
+model Users {
   id           String   @id @db.VarChar(64)
   passwordHash String   @map("password_hash") @db.VarChar(255)
   role         UserRole @default(user)
@@ -31,12 +31,12 @@ model User {
   displayName  String   @map("display_name") @db.VarChar(255)
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
-  pythonToken     PythonToken?
+  pythonToken     PythonTokens?
 
   @@map("users")
 }
 
-model PythonToken {
+model PythonTokens {
   id         String    @id @default(uuid()) @db.Uuid
   userId     String    @unique @map("user_id") @db.VarChar(64)
   name       String    @db.VarChar(100)
@@ -44,12 +44,12 @@ model PythonToken {
   lastUsedAt DateTime? @map("last_used_at")
   createdAt  DateTime  @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user Users @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("python_tokens")
 }
 
-model Setting {
+model Settings {
   key       String   @id @db.VarChar(255)
   value     String   @db.Text
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -97,7 +97,7 @@ enum RecordingSegmentStatus {
   FAILED
 }
 
-model Repository {
+model Repositories {
   id                 String         @id @default(uuid()) @db.Uuid
   name               String         @db.VarChar(64)
   ownerId            String         @map("owner_id") @db.VarChar(64)
@@ -116,7 +116,7 @@ model Repository {
   @@map("repositories")
 }
 
-model RepoMember {
+model RepoMembers {
   id           String   @id @default(uuid()) @db.Uuid
   repositoryId String   @map("repository_id") @db.Uuid
   userId       String   @map("user_id") @db.VarChar(64)
@@ -129,7 +129,7 @@ model RepoMember {
   @@map("repo_members")
 }
 
-model RecordingSession {
+model RecordingSessions {
   id              String                    @id @default(uuid()) @db.Uuid
   repositoryId    String                    @map("repository_id") @db.Uuid
   ownerId         String                    @map("owner_id") @db.VarChar(64)
@@ -145,15 +145,15 @@ model RecordingSession {
   createdAt       DateTime                  @default(now()) @map("created_at")
   updatedAt       DateTime                  @updatedAt @map("updated_at")
 
-  segment  RecordingSegment?
-  video    Video?
+  segment  RecordingSegments?
+  video    Videos?
 
   @@index([repositoryId, status], map: "idx_recording_sessions_repo_status")
   @@index([userId, createdAt], map: "idx_recording_sessions_user_created_at")
   @@map("recording_sessions")
 }
 
-model RecordingSegment {
+model RecordingSegments {
   id                 String                 @id @default(uuid()) @db.Uuid
   recordingSessionId String                 @unique @map("recording_session_id") @db.Uuid
   rawPath            String                 @map("raw_path") @db.VarChar(1024)
@@ -161,13 +161,13 @@ model RecordingSegment {
   createdAt          DateTime               @default(now()) @map("created_at")
   completedAt        DateTime?              @map("completed_at")
 
-  recordingSession RecordingSession @relation(fields: [recordingSessionId], references: [id])
+  recordingSession RecordingSessions @relation(fields: [recordingSessionId], references: [id])
 
   @@index([status], map: "idx_recording_segments_status")
   @@map("recording_segments")
 }
 
-model Video {
+model Videos {
   id                    String      @id @default(uuid()) @db.Uuid
   repositoryId          String      @map("repository_id") @db.Uuid
   recordingSessionId    String?     @unique @map("recording_session_id") @db.Uuid
@@ -193,7 +193,7 @@ model Video {
   createdAt             DateTime    @default(now()) @map("created_at")
   updatedAt             DateTime    @updatedAt @map("updated_at")
 
-  recordingSession RecordingSession? @relation(fields: [recordingSessionId], references: [id])
+  recordingSession RecordingSessions? @relation(fields: [recordingSessionId], references: [id])
   semanticMetadata VideoSemanticMetadata?
 
   @@index([status])
@@ -217,7 +217,7 @@ model VideoSemanticMetadata {
   createdAt             DateTime                    @default(now()) @map("created_at")
   updatedAt             DateTime                    @updatedAt @map("updated_at")
 
-  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  video Videos @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
   @@index([status], map: "idx_video_semantic_metadata_status")
   @@map("video_semantic_metadata")

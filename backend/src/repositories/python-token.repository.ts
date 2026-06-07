@@ -32,18 +32,18 @@ export interface AdminPythonTokenRecord extends PythonTokenSummaryRecord {
 export class PythonTokenRepository {
   async rotateForUser(input: { userId: string; name: string; tokenHash: string }) {
     return prisma.$transaction(async (tx) => {
-      const existing = await tx.pythonToken.findUnique({
+      const existing = await tx.pythonTokens.findUnique({
         where: { userId: input.userId },
         select: { id: true },
       });
 
       if (existing) {
-        await tx.pythonToken.delete({
+        await tx.pythonTokens.delete({
           where: { id: existing.id },
         });
       }
 
-      const created = await tx.pythonToken.create({
+      const created = await tx.pythonTokens.create({
         data: {
           userId: input.userId,
           name: input.name,
@@ -64,7 +64,7 @@ export class PythonTokenRepository {
   }
 
   async findCurrentByUserId(userId: string): Promise<PythonTokenSummaryRecord | null> {
-    return prisma.pythonToken.findUnique({
+    return prisma.pythonTokens.findUnique({
       where: { userId },
       select: {
         id: true,
@@ -76,7 +76,7 @@ export class PythonTokenRepository {
   }
 
   async findActiveForAdmin(): Promise<AdminPythonTokenRecord[]> {
-    return prisma.pythonToken.findMany({
+    return prisma.pythonTokens.findMany({
       orderBy: [{ userId: "asc" }, { createdAt: "desc" }],
       select: {
         id: true,
@@ -96,7 +96,7 @@ export class PythonTokenRepository {
   }
 
   async findOwnerById(tokenId: string): Promise<{ id: string; userId: string } | null> {
-    return prisma.pythonToken.findUnique({
+    return prisma.pythonTokens.findUnique({
       where: { id: tokenId },
       select: {
         id: true,
@@ -106,13 +106,13 @@ export class PythonTokenRepository {
   }
 
   async deleteById(tokenId: string) {
-    await prisma.pythonToken.delete({
+    await prisma.pythonTokens.delete({
       where: { id: tokenId },
     });
   }
 
   async findByHashForVerification(tokenHash: string): Promise<PythonTokenVerificationRecord | null> {
-    return prisma.pythonToken.findUnique({
+    return prisma.pythonTokens.findUnique({
       where: {
         tokenHash,
       },
@@ -132,7 +132,7 @@ export class PythonTokenRepository {
   }
 
   async updateLastUsedAt(tokenId: string, lastUsedAt: Date) {
-    await prisma.pythonToken.update({
+    await prisma.pythonTokens.update({
       where: { id: tokenId },
       data: {
         lastUsedAt,

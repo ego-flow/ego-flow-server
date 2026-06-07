@@ -4,13 +4,13 @@ import { prisma, type PrismaTransactionClient } from "../lib/infra/prisma";
 
 export const recordingSegmentRepository = {
   findByRecordingSessionId(recordingSessionId: string) {
-    return prisma.recordingSegment.findUnique({
+    return prisma.recordingSegments.findUnique({
       where: { recordingSessionId },
     });
   },
 
   findFinalizeStateByRecordingSessionId(recordingSessionId: string) {
-    return prisma.recordingSegment.findUnique({
+    return prisma.recordingSegments.findUnique({
       where: { recordingSessionId },
       select: {
         status: true,
@@ -20,7 +20,7 @@ export const recordingSegmentRepository = {
   },
 
   upsertWriting(input: { recordingSessionId: string; rawPath: string }) {
-    return prisma.recordingSegment.upsert({
+    return prisma.recordingSegments.upsert({
       where: { recordingSessionId: input.recordingSessionId },
       create: {
         recordingSessionId: input.recordingSessionId,
@@ -32,7 +32,7 @@ export const recordingSegmentRepository = {
   },
 
   createWriting(input: { recordingSessionId: string; rawPath: string }) {
-    return prisma.recordingSegment.create({
+    return prisma.recordingSegments.create({
       data: {
         recordingSessionId: input.recordingSessionId,
         rawPath: input.rawPath,
@@ -42,7 +42,7 @@ export const recordingSegmentRepository = {
   },
 
   markWriteDone(id: string, completedAt: Date) {
-    return prisma.recordingSegment.update({
+    return prisma.recordingSegments.update({
       where: { id },
       data: {
         status: RecordingSegmentStatus.WRITE_DONE,
@@ -52,7 +52,7 @@ export const recordingSegmentRepository = {
   },
 
   async claimProcessing(id: string): Promise<boolean> {
-    const claim = await prisma.recordingSegment.updateMany({
+    const claim = await prisma.recordingSegments.updateMany({
       where: {
         id,
         status: RecordingSegmentStatus.WRITE_DONE,
@@ -64,7 +64,7 @@ export const recordingSegmentRepository = {
   },
 
   async resetProcessingToWriteDone(id: string): Promise<boolean> {
-    const reset = await prisma.recordingSegment.updateMany({
+    const reset = await prisma.recordingSegments.updateMany({
       where: {
         id,
         status: RecordingSegmentStatus.PROCESSING,
@@ -79,7 +79,7 @@ export const recordingSegmentRepository = {
     id: string,
     client: PrismaTransactionClient | typeof prisma = prisma,
   ): Promise<boolean> {
-    const segmentUpdate = await client.recordingSegment.updateMany({
+    const segmentUpdate = await client.recordingSegments.updateMany({
       where: {
         id,
         status: RecordingSegmentStatus.PROCESSING,
@@ -91,7 +91,7 @@ export const recordingSegmentRepository = {
   },
 
   async markWriteDoneByRecordingSessionId(recordingSessionId: string, completedAt: Date): Promise<boolean> {
-    const segmentUpdate = await prisma.recordingSegment.updateMany({
+    const segmentUpdate = await prisma.recordingSegments.updateMany({
       where: {
         recordingSessionId,
         status: RecordingSegmentStatus.WRITING,
@@ -106,7 +106,7 @@ export const recordingSegmentRepository = {
   },
 
   async markFailedByRecordingSessionId(recordingSessionId: string, completedAt: Date): Promise<boolean> {
-    const segmentUpdate = await prisma.recordingSegment.updateMany({
+    const segmentUpdate = await prisma.recordingSegments.updateMany({
       where: {
         recordingSessionId,
         status: RecordingSegmentStatus.WRITING,
@@ -124,7 +124,7 @@ export const recordingSegmentRepository = {
     recordingSessionId: string,
     client: PrismaTransactionClient | typeof prisma = prisma,
   ): Promise<boolean> {
-    const segmentUpdate = await client.recordingSegment.updateMany({
+    const segmentUpdate = await client.recordingSegments.updateMany({
       where: { recordingSessionId },
       data: { status: RecordingSegmentStatus.FAILED },
     });
@@ -133,7 +133,7 @@ export const recordingSegmentRepository = {
   },
 
   async findRawPathByRecordingSessionId(recordingSessionId: string): Promise<{ rawPath: string } | null> {
-    return prisma.recordingSegment.findUnique({
+    return prisma.recordingSegments.findUnique({
       where: { recordingSessionId },
       select: {
         rawPath: true,
@@ -142,7 +142,7 @@ export const recordingSegmentRepository = {
   },
 
   countFinalizingByRepositoryId(repositoryId: string) {
-    return prisma.recordingSegment.count({
+    return prisma.recordingSegments.count({
       where: {
         status: {
           in: [
@@ -158,7 +158,7 @@ export const recordingSegmentRepository = {
   },
 
   async hasFinalizingByRepositoryId(repositoryId: string): Promise<boolean> {
-    const finalizingSegment = await prisma.recordingSegment.findFirst({
+    const finalizingSegment = await prisma.recordingSegments.findFirst({
       where: {
         status: {
           in: [
@@ -180,7 +180,7 @@ export const recordingSegmentRepository = {
     repositoryId: string,
     client: PrismaTransactionClient | typeof prisma = prisma,
   ): Promise<void> {
-    await client.recordingSegment.deleteMany({
+    await client.recordingSegments.deleteMany({
       where: { recordingSession: { repositoryId } },
     });
   },

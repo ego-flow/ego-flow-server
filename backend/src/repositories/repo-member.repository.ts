@@ -6,15 +6,15 @@ const repositoryMemberSelect = {
   userId: true,
   role: true,
   createdAt: true,
-} satisfies Prisma.RepoMemberSelect;
+} satisfies Prisma.RepoMembersSelect;
 
-export type RepositoryMemberRow = Prisma.RepoMemberGetPayload<{
+export type RepositoryMemberRow = Prisma.RepoMembersGetPayload<{
   select: typeof repositoryMemberSelect;
 }>;
 
 export class RepoMemberRepository {
   async createAdminMember(repositoryId: string, userId: string): Promise<void> {
-    await prisma.repoMember.create({
+    await prisma.repoMembers.create({
       data: {
         repositoryId,
         userId,
@@ -24,7 +24,7 @@ export class RepoMemberRepository {
   }
 
   async findMembershipRolesByUser(userId: string): Promise<Array<{ repositoryId: string; role: RepoRole }>> {
-    return prisma.repoMember.findMany({
+    return prisma.repoMembers.findMany({
       where: { userId },
       select: {
         repositoryId: true,
@@ -34,7 +34,7 @@ export class RepoMemberRepository {
   }
 
   async findRepositoryIdsByUser(userId: string): Promise<string[]> {
-    const memberships = await prisma.repoMember.findMany({
+    const memberships = await prisma.repoMembers.findMany({
       where: { userId },
       select: { repositoryId: true },
     });
@@ -43,7 +43,7 @@ export class RepoMemberRepository {
   }
 
   async findAdminRepositoryIdsByUser(userId: string): Promise<string[]> {
-    const memberships = await prisma.repoMember.findMany({
+    const memberships = await prisma.repoMembers.findMany({
       where: {
         userId,
         role: RepoRole.admin,
@@ -58,7 +58,7 @@ export class RepoMemberRepository {
     repositoryId: string,
     client: PrismaTransactionClient | typeof prisma = prisma,
   ): Promise<string[]> {
-    const memberships = await client.repoMember.findMany({
+    const memberships = await client.repoMembers.findMany({
       where: {
         repositoryId,
         role: RepoRole.admin,
@@ -72,7 +72,7 @@ export class RepoMemberRepository {
   }
 
   async findRepositoryMembers(repositoryId: string): Promise<RepositoryMemberRow[]> {
-    return prisma.repoMember.findMany({
+    return prisma.repoMembers.findMany({
       where: { repositoryId },
       orderBy: [{ role: "desc" }, { userId: "asc" }],
       select: repositoryMemberSelect,
@@ -80,7 +80,7 @@ export class RepoMemberRepository {
   }
 
   async findMembershipRole(repositoryId: string, userId: string): Promise<RepoRole | null> {
-    const membership = await prisma.repoMember.findUnique({
+    const membership = await prisma.repoMembers.findUnique({
       where: {
         repositoryId_userId: {
           repositoryId,
@@ -96,7 +96,7 @@ export class RepoMemberRepository {
   }
 
   async findRepositoryMembership(repositoryId: string, userId: string): Promise<{ userId: string } | null> {
-    return prisma.repoMember.findUnique({
+    return prisma.repoMembers.findUnique({
       where: {
         repositoryId_userId: {
           repositoryId,
@@ -112,7 +112,7 @@ export class RepoMemberRepository {
     userId: string;
     role: RepoRole;
   }): Promise<void> {
-    await prisma.repoMember.upsert({
+    await prisma.repoMembers.upsert({
       where: {
         repositoryId_userId: {
           repositoryId: input.repositoryId,
@@ -135,7 +135,7 @@ export class RepoMemberRepository {
     userId: string;
     role: RepoRole;
   }): Promise<void> {
-    await prisma.repoMember.update({
+    await prisma.repoMembers.update({
       where: {
         repositoryId_userId: {
           repositoryId: input.repositoryId,
@@ -149,7 +149,7 @@ export class RepoMemberRepository {
   }
 
   async deleteRepositoryMember(repositoryId: string, userId: string): Promise<void> {
-    await prisma.repoMember.delete({
+    await prisma.repoMembers.delete({
       where: {
         repositoryId_userId: {
           repositoryId,
@@ -163,7 +163,7 @@ export class RepoMemberRepository {
     repositoryId: string,
     client: PrismaTransactionClient | typeof prisma = prisma,
   ): Promise<void> {
-    await client.repoMember.deleteMany({ where: { repositoryId } });
+    await client.repoMembers.deleteMany({ where: { repositoryId } });
   }
 }
 

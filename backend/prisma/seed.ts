@@ -6,7 +6,7 @@ import { runtimeConfig as env } from "../src/config/runtime";
 const prisma = new PrismaClient();
 
 async function main() {
-  const existingAdmin = await prisma.user.findUnique({
+  const existingAdmin = await prisma.users.findUnique({
     where: { id: "admin" },
     select: { id: true },
   });
@@ -14,7 +14,7 @@ async function main() {
   if (!existingAdmin) {
     const adminPasswordHash = await bcrypt.hash(env.ADMIN_DEFAULT_PASSWORD, 10);
 
-    await prisma.user.create({
+    await prisma.users.create({
       data: {
         id: "admin",
         passwordHash: adminPasswordHash,
@@ -25,12 +25,12 @@ async function main() {
     });
   }
 
-  const existingTargetDirectorySetting = await prisma.setting.findUnique({
+  const existingTargetDirectorySetting = await prisma.settings.findUnique({
     where: { key: "target_directory" },
   });
 
   if (!existingTargetDirectorySetting) {
-    await prisma.setting.create({
+    await prisma.settings.create({
       data: {
         key: "target_directory",
         value: env.TARGET_DIRECTORY,

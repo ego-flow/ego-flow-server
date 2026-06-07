@@ -45,12 +45,12 @@ const fakePrisma: any = {
     }
     return Promise.all(callbackOrQueries as Array<Promise<unknown>>);
   },
-  recordingSession: {
+  recordingSessions: {
     findUnique: async (_args?: unknown) => null,
     update: async (_args?: unknown) => null,
     updateMany: async (_args?: unknown) => ({ count: 0 }),
   },
-  recordingSegment: {
+  recordingSegments: {
     count: async (_args?: unknown) => 0,
     findMany: async (_args?: unknown) => [],
     findUnique: async (_args?: unknown) => null,
@@ -60,7 +60,7 @@ const fakePrisma: any = {
     update: async (_args?: unknown) => null,
     updateMany: async (_args?: unknown) => ({ count: 0 }),
   },
-  video: {
+  videos: {
     upsert: async (_args?: unknown) => ({ id: "video-1" }),
     findUnique: async (_args?: unknown) => null,
     create: async (_args?: unknown) => ({ id: "video-1" }),
@@ -102,21 +102,21 @@ const ticket: PublishTicketRecord = {
 beforeEach(() => {
   fakeRedis.clear();
 
-  fakePrisma.recordingSession.findUnique = async () => null;
-  fakePrisma.recordingSession.update = async () => null;
-  fakePrisma.recordingSession.updateMany = async () => ({ count: 0 });
-  fakePrisma.recordingSegment.count = async () => 0;
-  fakePrisma.recordingSegment.findMany = async () => [];
-  fakePrisma.recordingSegment.findUnique = async () => null;
-  fakePrisma.recordingSegment.findFirst = async () => null;
-  fakePrisma.recordingSegment.upsert = async () => null;
-  fakePrisma.recordingSegment.create = async () => null;
-  fakePrisma.recordingSegment.update = async () => null;
-  fakePrisma.recordingSegment.updateMany = async () => ({ count: 0 });
-  fakePrisma.video.upsert = async () => ({ id: "video-1" });
-  fakePrisma.video.findUnique = async () => null;
-  fakePrisma.video.create = async () => ({ id: "video-1" });
-  fakePrisma.video.findMany = async () => [];
+  fakePrisma.recordingSessions.findUnique = async () => null;
+  fakePrisma.recordingSessions.update = async () => null;
+  fakePrisma.recordingSessions.updateMany = async () => ({ count: 0 });
+  fakePrisma.recordingSegments.count = async () => 0;
+  fakePrisma.recordingSegments.findMany = async () => [];
+  fakePrisma.recordingSegments.findUnique = async () => null;
+  fakePrisma.recordingSegments.findFirst = async () => null;
+  fakePrisma.recordingSegments.upsert = async () => null;
+  fakePrisma.recordingSegments.create = async () => null;
+  fakePrisma.recordingSegments.update = async () => null;
+  fakePrisma.recordingSegments.updateMany = async () => ({ count: 0 });
+  fakePrisma.videos.upsert = async () => ({ id: "video-1" });
+  fakePrisma.videos.findUnique = async () => null;
+  fakePrisma.videos.create = async () => ({ id: "video-1" });
+  fakePrisma.videos.findMany = async () => [];
 
   recordingSessionService.getLiveCacheByRecordingSessionId = originalGetLiveCacheByRecordingSessionId;
   recordingSessionService.tryEnqueueFinalize = originalTryEnqueueFinalize;
@@ -143,8 +143,8 @@ test("handleStreamReady ignores STREAMING sessions instead of reconnecting them"
   const updateCalls: Array<unknown> = [];
   let consumeCalled = false;
 
-  fakePrisma.recordingSession.findUnique = async () => session;
-  fakePrisma.recordingSession.update = async (args: unknown) => {
+  fakePrisma.recordingSessions.findUnique = async () => session;
+  fakePrisma.recordingSessions.update = async (args: unknown) => {
     updateCalls.push(args);
     return session;
   };
@@ -193,8 +193,8 @@ test("handleStreamReady leaves DB and Redis untouched when ticket consume is rej
   };
   const updateCalls: Array<unknown> = [];
 
-  fakePrisma.recordingSession.findUnique = async () => session;
-  fakePrisma.recordingSession.update = async (args: unknown) => {
+  fakePrisma.recordingSessions.findUnique = async () => session;
+  fakePrisma.recordingSessions.update = async (args: unknown) => {
     updateCalls.push(args);
     return session;
   };
@@ -238,8 +238,8 @@ test("handleStreamReady accepts an explicit ticket field when hook query is empt
   const validationTicketIds: Array<string | null | undefined> = [];
   const consumeTicketIds: Array<string | null | undefined> = [];
 
-  fakePrisma.recordingSession.findUnique = async () => session;
-  fakePrisma.recordingSession.update = async (args: unknown) => {
+  fakePrisma.recordingSessions.findUnique = async () => session;
+  fakePrisma.recordingSessions.update = async (args: unknown) => {
     updateCalls.push(args);
     return session;
   };
@@ -302,8 +302,8 @@ test("handleStreamNotReady closes the streaming session and attempts finalize en
   const updateCalls: Array<Record<string, unknown>> = [];
   let enqueueCalled = false;
 
-  fakePrisma.recordingSession.findUnique = async () => session;
-  fakePrisma.recordingSession.update = async (args: { data: Record<string, unknown> }) => {
+  fakePrisma.recordingSessions.findUnique = async () => session;
+  fakePrisma.recordingSessions.update = async (args: { data: Record<string, unknown> }) => {
     updateCalls.push(args.data);
     return {
       ...session,
@@ -358,8 +358,8 @@ test("recordCloseIntent stores NORMAL_DISCONNECT and stream-not-ready preserves 
   const updateCalls: Array<Record<string, unknown>> = [];
   let currentSession: any = session;
 
-  fakePrisma.recordingSession.findUnique = async () => currentSession;
-  fakePrisma.recordingSession.update = async (args: { data: Record<string, unknown> }) => {
+  fakePrisma.recordingSessions.findUnique = async () => currentSession;
+  fakePrisma.recordingSessions.update = async (args: { data: Record<string, unknown> }) => {
     updateCalls.push(args.data);
     currentSession = {
       ...currentSession,
@@ -387,7 +387,7 @@ test("recordCloseIntent stores NORMAL_DISCONNECT and stream-not-ready preserves 
 });
 
 test("recordCloseIntent rejects non-owner requests", async () => {
-  fakePrisma.recordingSession.findUnique = async () => ({
+  fakePrisma.recordingSessions.findUnique = async () => ({
     id: "session-1",
     repositoryId: "repo-1",
     ownerId: "owner-1",
@@ -437,12 +437,12 @@ test("handleSegmentComplete marks the segment WRITE_DONE and attempts finalize e
   const segmentUpdateCalls: Array<Record<string, unknown>> = [];
   const finalizeCalls: Array<string> = [];
 
-  fakePrisma.recordingSession.findUnique = async () => closedSession;
-  fakePrisma.recordingSegment.findUnique = async () => ({
+  fakePrisma.recordingSessions.findUnique = async () => closedSession;
+  fakePrisma.recordingSegments.findUnique = async () => ({
     ...segment,
     status: RecordingSegmentStatus.WRITING,
   });
-  fakePrisma.recordingSegment.update = async (args: Record<string, unknown>) => {
+  fakePrisma.recordingSegments.update = async (args: Record<string, unknown>) => {
     segmentUpdateCalls.push(args);
     return {
       ...segment,
@@ -468,8 +468,8 @@ test("handleSegmentComplete does not create a segment when create hook was misse
   const createCalls: Array<Record<string, unknown>> = [];
   let finalizeCalled = false;
 
-  fakePrisma.recordingSegment.findUnique = async () => null;
-  fakePrisma.recordingSegment.create = async (args: Record<string, unknown>) => {
+  fakePrisma.recordingSegments.findUnique = async () => null;
+  fakePrisma.recordingSegments.create = async (args: Record<string, unknown>) => {
     createCalls.push(args);
     return args;
   };
@@ -491,7 +491,7 @@ test("tryEnqueueFinalize waits for stream-not-ready to close the session", async
   let status: RecordingSessionStatus = RecordingSessionStatus.STREAMING;
   const enqueuePayloads: Array<{ recordingSessionId: string }> = [];
 
-  fakePrisma.recordingSession.findUnique = async () => ({
+  fakePrisma.recordingSessions.findUnique = async () => ({
     id: "session-1",
     repositoryId: "repo-1",
     ownerId: "owner-1",
@@ -501,7 +501,7 @@ test("tryEnqueueFinalize waits for stream-not-ready to close the session", async
     targetDirectory: "/data/raw",
     endReason: null,
   });
-  fakePrisma.recordingSegment.findUnique = async () => ({
+  fakePrisma.recordingSegments.findUnique = async () => ({
     status: RecordingSegmentStatus.WRITE_DONE,
     rawPath: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
   });
@@ -523,13 +523,13 @@ test("tryEnqueueFinalize waits for stream-not-ready to close the session", async
 test("handleSegmentCreate stores the single segment from stream path", async () => {
   const upsertCalls: Array<Record<string, unknown>> = [];
 
-  fakePrisma.recordingSession.findUnique = async () => ({
+  fakePrisma.recordingSessions.findUnique = async () => ({
     id: "session-1",
     repositoryId: "repo-1",
     streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.STREAMING,
   });
-  fakePrisma.recordingSegment.upsert = async (args: Record<string, unknown>) => {
+  fakePrisma.recordingSegments.upsert = async (args: Record<string, unknown>) => {
     upsertCalls.push(args);
     return {
       id: "segment-1",
@@ -550,13 +550,13 @@ test("handleSegmentCreate stores the single segment from stream path", async () 
 test("handleSegmentCreate only requires an existing session", async () => {
   const upsertCalls: Array<Record<string, unknown>> = [];
 
-  fakePrisma.recordingSession.findUnique = async () => ({
+  fakePrisma.recordingSessions.findUnique = async () => ({
     id: "session-1",
     repositoryId: "repo-1",
     streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.CLOSED,
   });
-  fakePrisma.recordingSegment.upsert = async (args: Record<string, unknown>) => {
+  fakePrisma.recordingSegments.upsert = async (args: Record<string, unknown>) => {
     upsertCalls.push(args);
     return {
       id: "segment-1",
@@ -582,13 +582,13 @@ test("handleSegmentCreate only requires an existing session", async () => {
 test("handleSegmentCreate stores the segment without source metadata", async () => {
   const upsertCalls: Array<Record<string, unknown>> = [];
 
-  fakePrisma.recordingSession.findUnique = async () => ({
+  fakePrisma.recordingSessions.findUnique = async () => ({
     id: "session-1",
     repositoryId: "repo-1",
     streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.STREAMING,
   });
-  fakePrisma.recordingSegment.upsert = async (args: Record<string, unknown>) => {
+  fakePrisma.recordingSegments.upsert = async (args: Record<string, unknown>) => {
     upsertCalls.push(args);
     return {
       id: "segment-1",
@@ -609,13 +609,13 @@ test("handleSegmentCreate stores the segment without source metadata", async () 
 test("handleSegmentCreate ignores an additional segment for the same recording session", async () => {
   const upsertCalls: Array<Record<string, unknown>> = [];
 
-  fakePrisma.recordingSession.findUnique = async () => ({
+  fakePrisma.recordingSessions.findUnique = async () => ({
     id: "session-1",
     repositoryId: "repo-1",
     streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.STREAMING,
   });
-  fakePrisma.recordingSegment.upsert = async (args: Record<string, unknown>) => {
+  fakePrisma.recordingSegments.upsert = async (args: Record<string, unknown>) => {
     upsertCalls.push(args);
     return {
       id: "segment-1",
@@ -652,9 +652,9 @@ test("reconcile closes a broken streaming session when active path is missing", 
   const updateCalls: Array<Record<string, unknown>> = [];
   let enqueueCalled = false;
 
-  fakePrisma.recordingSession.findMany = async () => [session];
-  fakePrisma.recordingSession.findUnique = async () => null;
-  fakePrisma.recordingSession.update = async (args: { data: Record<string, unknown> }) => {
+  fakePrisma.recordingSessions.findMany = async () => [session];
+  fakePrisma.recordingSessions.findUnique = async () => null;
+  fakePrisma.recordingSessions.update = async (args: { data: Record<string, unknown> }) => {
     updateCalls.push(args.data);
     return {
       ...session,
@@ -706,16 +706,16 @@ test("reconcile closes a streaming session that already has a closed marker", as
     closedAt: new Date(Date.now() - 40_000),
     video: null,
   };
-  fakePrisma.recordingSession.findMany = async () => [session];
-  fakePrisma.recordingSession.findUnique = async () => session;
-  fakePrisma.recordingSession.update = async (args: {
+  fakePrisma.recordingSessions.findMany = async () => [session];
+  fakePrisma.recordingSessions.findUnique = async () => session;
+  fakePrisma.recordingSessions.update = async (args: {
     where: { id: string };
     data: Record<string, unknown>;
   }) => {
     updateCalls.push(args);
     return args;
   };
-  fakePrisma.recordingSegment.findUnique = async () => null;
+  fakePrisma.recordingSegments.findUnique = async () => null;
   (recordingSessionService as any).getActiveStreamPaths = async () => null;
 
   await recordingSessionService.reconcileSessions();
@@ -730,19 +730,19 @@ test("handleSegmentComplete ignores late completion for a terminal segment", asy
   const updateCalls: Array<Record<string, unknown>> = [];
   let finalizeCalled = false;
 
-  fakePrisma.recordingSession.findUnique = async () => ({
+  fakePrisma.recordingSessions.findUnique = async () => ({
     id: "session-1",
     repositoryId: "repo-1",
     streamPath: "live/repo-name/session-1",
     status: RecordingSessionStatus.CLOSED,
   });
-  fakePrisma.recordingSegment.findUnique = async () => ({
+  fakePrisma.recordingSegments.findUnique = async () => ({
     id: "segment-1",
     recordingSessionId: "session-1",
     rawPath: "/data/raw/live/repo-name/session-1/segment-0001.mp4",
     status: RecordingSegmentStatus.FAILED,
   });
-  fakePrisma.recordingSegment.update = async (args: Record<string, unknown>) => {
+  fakePrisma.recordingSegments.update = async (args: Record<string, unknown>) => {
     updateCalls.push(args);
     return args;
   };

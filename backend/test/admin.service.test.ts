@@ -9,7 +9,7 @@ process.env.JWT_SECRET ??= "replace-this-in-tests-only";
 process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 
 const fakePrisma: any = {
-  user: {
+  users: {
     findUnique: async () => null,
     create: async () => ({
       id: "alice",
@@ -21,13 +21,13 @@ const fakePrisma: any = {
     update: async () => ({ id: "alice" }),
     delete: async () => ({ id: "alice" }),
   },
-  repository: {
+  repositories: {
     findMany: async () => [],
   },
-  repoMember: {
+  repoMembers: {
     findMany: async () => [],
   },
-  recordingSession: {
+  recordingSessions: {
     count: async () => 0,
   },
 };
@@ -39,23 +39,23 @@ const { AdminService } = require("../src/services/admin.service") as typeof impo
 const service = new AdminService();
 
 beforeEach(() => {
-  fakePrisma.user.findUnique = async () => null;
-  fakePrisma.user.create = async () => ({
+  fakePrisma.users.findUnique = async () => null;
+  fakePrisma.users.create = async () => ({
     id: "alice",
     role: UserRole.user,
     displayName: "Alice Kim",
     createdAt: new Date("2026-04-25T00:00:00.000Z"),
     deactivated: false,
   });
-  fakePrisma.user.update = async () => ({ id: "alice" });
-  fakePrisma.user.delete = async () => ({ id: "alice" });
-  fakePrisma.repository.findMany = async () => [];
-  fakePrisma.repoMember.findMany = async () => [];
-  fakePrisma.recordingSession.count = async () => 0;
+  fakePrisma.users.update = async () => ({ id: "alice" });
+  fakePrisma.users.delete = async () => ({ id: "alice" });
+  fakePrisma.repositories.findMany = async () => [];
+  fakePrisma.repoMembers.findMany = async () => [];
+  fakePrisma.recordingSessions.count = async () => 0;
 });
 
 test("createUser returns 409 when the id already exists before create", async () => {
-  fakePrisma.user.findUnique = async () => ({ id: "alice" });
+  fakePrisma.users.findUnique = async () => ({ id: "alice" });
 
   await assert.rejects(
     service.createUser({
@@ -73,7 +73,7 @@ test("createUser returns 409 when the id already exists before create", async ()
 
 test("createUser defaults a blank displayName to the user id", async () => {
   let createdDisplayName: string | null = null;
-  fakePrisma.user.create = async ({ data }: { data: { displayName: string } }) => {
+  fakePrisma.users.create = async ({ data }: { data: { displayName: string } }) => {
     createdDisplayName = data.displayName;
     return {
       id: "alice",
@@ -95,7 +95,7 @@ test("createUser defaults a blank displayName to the user id", async () => {
 });
 
 test("createUser lets Prisma unique-constraint races surface to the error middleware", async () => {
-  fakePrisma.user.create = async () => {
+  fakePrisma.users.create = async () => {
     throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed on the fields: (`id`)", {
       code: "P2002",
       clientVersion: "test",
@@ -115,7 +115,7 @@ test("createUser lets Prisma unique-constraint races surface to the error middle
 });
 
 test("getUserDeleteReadiness returns can_delete=true for a clean deactivated user", async () => {
-  fakePrisma.user.findUnique = async () => ({
+  fakePrisma.users.findUnique = async () => ({
     id: "alice",
     role: UserRole.user,
     deactivated: true,
@@ -137,11 +137,11 @@ test("getUserDeleteReadiness returns can_delete=true for a clean deactivated use
 
 test("deactivateUser marks the user deactivated", async () => {
   let updateInput: { where: { id: string }; data: { deactivated: boolean } } | null = null;
-  fakePrisma.user.findUnique = async () => ({
+  fakePrisma.users.findUnique = async () => ({
     id: "alice",
     role: UserRole.user,
   });
-  fakePrisma.user.update = async (input: { where: { id: string }; data: { deactivated: boolean } }) => {
+  fakePrisma.users.update = async (input: { where: { id: string }; data: { deactivated: boolean } }) => {
     updateInput = input;
     return { id: input.where.id };
   };
@@ -159,7 +159,7 @@ test("deactivateUser marks the user deactivated", async () => {
 });
 
 test("permanentlyDeleteUser rejects active users", async () => {
-  fakePrisma.user.findUnique = async () => ({
+  fakePrisma.users.findUnique = async () => ({
     id: "alice",
     role: UserRole.user,
     deactivated: false,
@@ -176,12 +176,12 @@ test("permanentlyDeleteUser rejects active users", async () => {
 });
 
 test("permanentlyDeleteUser rejects users with remaining blockers", async () => {
-  fakePrisma.user.findUnique = async () => ({
+  fakePrisma.users.findUnique = async () => ({
     id: "alice",
     role: UserRole.user,
     deactivated: true,
   });
-  fakePrisma.repository.findMany = async () => [{ id: "repo-1" }];
+  fakePrisma.repositories.findMany = async () => [{ id: "repo-1" }];
 
   await assert.rejects(
     service.permanentlyDeleteUser("alice"),
@@ -196,12 +196,12 @@ test("permanentlyDeleteUser rejects users with remaining blockers", async () => 
 test("permanentlyDeleteUser deletes a clean deactivated user", async () => {
   let deletedUserId: string | null = null;
 
-  fakePrisma.user.findUnique = async () => ({
+  fakePrisma.users.findUnique = async () => ({
     id: "alice",
     role: UserRole.user,
     deactivated: true,
   });
-  fakePrisma.user.delete = async ({ where }: { where: { id: string } }) => {
+  fakePrisma.users.delete = async ({ where }: { where: { id: string } }) => {
     deletedUserId = where.id;
     return { id: where.id };
   };

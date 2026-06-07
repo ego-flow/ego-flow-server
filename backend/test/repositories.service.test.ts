@@ -38,7 +38,7 @@ const repositoryAccess = (): RepositoryAccessContext => ({
 });
 
 const fakePrisma: any = {
-  repository: {
+  repositories: {
     findUnique: async () => repository,
     findMany: async () => [],
     update: (args: unknown) => {
@@ -50,14 +50,14 @@ const fakePrisma: any = {
       return { model: "repository", method: "delete" };
     },
   },
-  repoMember: {
+  repoMembers: {
     findMany: async () => [],
     deleteMany: (args: unknown) => {
       operationCalls.push({ model: "repoMember", method: "deleteMany", args });
       return { model: "repoMember", method: "deleteMany" };
     },
   },
-  video: {
+  videos: {
     findMany: async () => [],
     groupBy: async () => [],
     deleteMany: (args: unknown) => {
@@ -65,7 +65,7 @@ const fakePrisma: any = {
       return { model: "video", method: "deleteMany" };
     },
   },
-  recordingSession: {
+  recordingSessions: {
     findFirst: async () => null,
     count: async () => 0,
     deleteMany: (args: unknown) => {
@@ -73,7 +73,7 @@ const fakePrisma: any = {
       return { model: "recordingSession", method: "deleteMany" };
     },
   },
-  recordingSegment: {
+  recordingSegments: {
     findFirst: async () => null,
     count: async () => 0,
     deleteMany: (args: unknown) => {
@@ -99,22 +99,22 @@ const { repositoriesService } =
 beforeEach(() => {
   transactionOperations.length = 0;
   operationCalls.length = 0;
-  fakePrisma.repository.findUnique = async () => repository;
-  fakePrisma.repository.findMany = async () => [];
-  fakePrisma.repoMember.findMany = async () => [];
-  fakePrisma.video.findMany = async () => [];
-  fakePrisma.video.groupBy = async () => [];
-  fakePrisma.recordingSession.findFirst = async () => null;
-  fakePrisma.recordingSession.count = async () => 0;
-  fakePrisma.recordingSegment.findFirst = async () => null;
-  fakePrisma.recordingSegment.count = async () => 0;
+  fakePrisma.repositories.findUnique = async () => repository;
+  fakePrisma.repositories.findMany = async () => [];
+  fakePrisma.repoMembers.findMany = async () => [];
+  fakePrisma.videos.findMany = async () => [];
+  fakePrisma.videos.groupBy = async () => [];
+  fakePrisma.recordingSessions.findFirst = async () => null;
+  fakePrisma.recordingSessions.count = async () => 0;
+  fakePrisma.recordingSegments.findFirst = async () => null;
+  fakePrisma.recordingSegments.count = async () => 0;
 });
 
 test("deactivateRepository marks repository deactivated without blocking active work", async () => {
-  fakePrisma.recordingSession.findFirst = async () => {
+  fakePrisma.recordingSessions.findFirst = async () => {
     throw new Error("deactivateRepository should not check active sessions");
   };
-  fakePrisma.recordingSegment.findFirst = async () => {
+  fakePrisma.recordingSegments.findFirst = async () => {
     throw new Error("deactivateRepository should not check recording segments");
   };
 
@@ -130,10 +130,10 @@ test("deactivateRepository marks repository deactivated without blocking active 
 });
 
 test("getRepositoryDeleteReadiness uses prevalidated deactivated repository access", async () => {
-  fakePrisma.repository.findUnique = async () => {
+  fakePrisma.repositories.findUnique = async () => {
     throw new Error("getRepositoryDeleteReadiness should not recheck repository status");
   };
-  fakePrisma.recordingSession.count = async () => 1;
+  fakePrisma.recordingSessions.count = async () => 1;
 
   const result = await repositoriesService.getRepositoryDeleteReadiness(repositoryAccess());
 
@@ -149,7 +149,7 @@ test("getRepositoryDeleteReadiness uses prevalidated deactivated repository acce
 });
 
 test("getRepositoryDeleteReadiness returns delete checks for deactivated repositories", async () => {
-  fakePrisma.recordingSession.count = async () => 1;
+  fakePrisma.recordingSessions.count = async () => 1;
 
   const result = await repositoriesService.getRepositoryDeleteReadiness(repositoryAccess());
 
@@ -169,15 +169,15 @@ test("listDeactivatedAdminRepositories returns deactivated repositories where us
   const repositoryFindCalls: unknown[] = [];
   const groupByCalls: unknown[] = [];
 
-  fakePrisma.repoMember.findMany = async (args: unknown) => {
+  fakePrisma.repoMembers.findMany = async (args: unknown) => {
     memberFindCalls.push(args);
     return [{ repositoryId: repository.id }];
   };
-  fakePrisma.repository.findMany = async (args: unknown) => {
+  fakePrisma.repositories.findMany = async (args: unknown) => {
     repositoryFindCalls.push(args);
     return [{ ...repository, deactivated: true }];
   };
-  fakePrisma.video.groupBy = async (args: unknown) => {
+  fakePrisma.videos.groupBy = async (args: unknown) => {
     groupByCalls.push(args);
     return [{ repositoryId: repository.id, _count: { _all: 2 } }];
   };
@@ -215,7 +215,7 @@ test("listDeactivatedAdminRepositories returns deactivated repositories where us
 });
 
 test("permanentlyDeleteRepository rejects active repository work after route validation", async () => {
-  fakePrisma.recordingSession.count = async () => 1;
+  fakePrisma.recordingSessions.count = async () => 1;
 
   await assert.rejects(
     () => repositoriesService.permanentlyDeleteRepository(repositoryAccess()),

@@ -34,7 +34,7 @@ moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
 
 const fakeRedis = new FakeRedis();
 const fakePrisma: any = {
-  recordingSession: {
+  recordingSessions: {
     create: async (_args?: unknown) => null,
     findMany: async (_args?: unknown) => [],
     findUnique: async (_args?: unknown) => null,
@@ -89,12 +89,12 @@ const createSessionFromArgs = (args: { data: Record<string, any> }) => ({
 beforeEach(() => {
   fakeRedis.clear();
 
-  fakePrisma.recordingSession.create = async (args: { data: Record<string, any> }) =>
+  fakePrisma.recordingSessions.create = async (args: { data: Record<string, any> }) =>
     createSessionFromArgs(args);
-  fakePrisma.recordingSession.findMany = async () => [];
-  fakePrisma.recordingSession.findUnique = async () => null;
-  fakePrisma.recordingSession.update = async () => null;
-  fakePrisma.recordingSession.updateMany = async () => ({ count: 0 });
+  fakePrisma.recordingSessions.findMany = async () => [];
+  fakePrisma.recordingSessions.findUnique = async () => null;
+  fakePrisma.recordingSessions.update = async () => null;
+  fakePrisma.recordingSessions.updateMany = async () => ({ count: 0 });
 
   repositoryAccessService.assertAction = async () => ({
     repository,
@@ -111,7 +111,7 @@ beforeEach(() => {
 
 test("registerSession creates a unique MediaMTX path and caches pending metadata", async () => {
   const createCalls: Array<{ data: Record<string, any> }> = [];
-  fakePrisma.recordingSession.create = async (args: { data: Record<string, any> }) => {
+  fakePrisma.recordingSessions.create = async (args: { data: Record<string, any> }) => {
     createCalls.push(args);
     return createSessionFromArgs(args);
   };
@@ -155,12 +155,12 @@ test("registerSession reuses a non-expired pending session for the same user rep
   let createCalled = false;
   const updateCalls: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
 
-  fakePrisma.recordingSession.findMany = async () => [existingSession];
-  fakePrisma.recordingSession.create = async (args: { data: Record<string, any> }) => {
+  fakePrisma.recordingSessions.findMany = async () => [existingSession];
+  fakePrisma.recordingSessions.create = async (args: { data: Record<string, any> }) => {
     createCalled = true;
     return createSessionFromArgs(args);
   };
-  fakePrisma.recordingSession.update = async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+  fakePrisma.recordingSessions.update = async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
     updateCalls.push(args);
     return {
       ...existingSession,
@@ -208,15 +208,15 @@ test("registerSession reuses pending sessions regardless of age and refreshes Re
   const updateCalls: Array<Record<string, unknown>> = [];
   const updateManyCalls: Array<Record<string, unknown>> = [];
 
-  fakePrisma.recordingSession.findMany = async () => [stalePendingSession];
-  fakePrisma.recordingSession.update = async (args: Record<string, unknown>) => {
+  fakePrisma.recordingSessions.findMany = async () => [stalePendingSession];
+  fakePrisma.recordingSessions.update = async (args: Record<string, unknown>) => {
     updateCalls.push(args);
     return {
       ...stalePendingSession,
       ...((args as any).data as Record<string, unknown>),
     };
   };
-  fakePrisma.recordingSession.updateMany = async (args: Record<string, unknown>) => {
+  fakePrisma.recordingSessions.updateMany = async (args: Record<string, unknown>) => {
     updateManyCalls.push(args);
     return { count: 1 };
   };
@@ -254,7 +254,7 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
   };
   let repositoryAccessChecked = false;
 
-  fakePrisma.recordingSession.findUnique = async () => pendingSession;
+  fakePrisma.recordingSessions.findUnique = async () => pendingSession;
   repositoryAccessService.assertAction = async () => {
     repositoryAccessChecked = true;
     throw Forbidden("Repository access should not be rechecked.");
@@ -309,7 +309,7 @@ test("issuePublishTicket rejects a PENDING recording session without Redis regis
     updatedAt: new Date(Date.now() - 10 * 60_000),
   };
 
-  fakePrisma.recordingSession.findUnique = async () => pendingSession;
+  fakePrisma.recordingSessions.findUnique = async () => pendingSession;
 
   await assert.rejects(
     () => streamService.issuePublishTicket("maintainer-1", pendingSession.id),
@@ -340,7 +340,7 @@ test("issuePublishTicket only allows PENDING recording sessions", async () => {
     updatedAt: new Date(),
   };
 
-  fakePrisma.recordingSession.findUnique = async () => streamingSession;
+  fakePrisma.recordingSessions.findUnique = async () => streamingSession;
 
   await assert.rejects(
     () => streamService.issuePublishTicket("maintainer-1", streamingSession.id),
@@ -354,7 +354,7 @@ test("issuePublishTicket only allows PENDING recording sessions", async () => {
 });
 
 test("listLiveStreams reads active ids and live metadata from Redis", async () => {
-  fakePrisma.recordingSession.findMany = async () => {
+  fakePrisma.recordingSessions.findMany = async () => {
     throw new Error("listLiveStreams should not query recording_sessions");
   };
   repositoryAccessService.listAccessibleActiveRepositoryIds = async () => new Set([repository.id]);
@@ -395,7 +395,7 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
 
 test("getLiveStreamDetail exposes HTTP upload progress from Redis cache", async () => {
   const lastChunkAt = Date.parse("2026-05-29T01:02:03.000Z");
-  fakePrisma.recordingSession.findUnique = async () => ({
+  fakePrisma.recordingSessions.findUnique = async () => ({
     id: "session-http",
     repositoryId: repository.id,
     ownerId: repository.ownerId,

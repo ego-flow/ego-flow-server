@@ -75,7 +75,7 @@ const toTokenResult = (token: PythonTokenRecord | null) => {
 };
 
 const fakePrisma: any = {
-  pythonToken: {
+  pythonTokens: {
     findUnique: async ({ where }: { where: { id?: string; userId?: string; tokenHash?: string } }) =>
       toTokenResult(findToken(where)),
     findMany: async ({ where }: { where?: { userId?: string } }) =>
@@ -115,7 +115,7 @@ const fakePrisma: any = {
       return toTokenResult(existing);
     },
   },
-  user: {
+  users: {
     findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
       where.id.in
         .map((userId) => users.get(userId))
@@ -126,8 +126,8 @@ const fakePrisma: any = {
           displayName: user.displayName,
         })),
   },
-  $transaction: async (callback: (tx: { pythonToken: typeof fakePrisma.pythonToken }) => Promise<unknown>) =>
-    callback({ pythonToken: fakePrisma.pythonToken }),
+  $transaction: async (callback: (tx: { pythonTokens: typeof fakePrisma.pythonTokens }) => Promise<unknown>) =>
+    callback({ pythonTokens: fakePrisma.pythonTokens }),
 };
 
 (globalThis as any).__egoflowPrisma = fakePrisma;

@@ -87,7 +87,7 @@ const fakePrisma: any = {
     }
     return Promise.all(callbackOrQueries as Array<Promise<unknown>>);
   },
-  recordingSession: {
+  recordingSessions: {
     findUnique: async (args?: unknown) => {
       prismaCalls.sessionFindUnique.push(args);
       return currentSession;
@@ -111,7 +111,7 @@ const fakePrisma: any = {
       return { count: 1 };
     },
   },
-  recordingSegment: {
+  recordingSegments: {
     create: async (args: { data: Record<string, unknown> }) => {
       prismaCalls.segmentCreate.push(args);
       currentSegment = {
@@ -139,7 +139,7 @@ const fakePrisma: any = {
       return { count: 1 };
     },
   },
-  video: {
+  videos: {
     upsert: async (args: unknown) => {
       prismaCalls.videoUpsert.push(args);
       return { id: "video-1" };

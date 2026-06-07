@@ -105,7 +105,7 @@ const matchesWhere = (
       : Boolean(video.recorder && where.recorder.in.includes(video.recorder))));
 
 const fakePrisma: any = {
-  video: {
+  videos: {
     count: async ({ where }: { where: Parameters<typeof matchesWhere>[1] }) =>
       Array.from(videos.values()).filter((video) => matchesWhere(video, where)).length,
     findMany: async ({
@@ -176,11 +176,11 @@ const fakePrisma: any = {
       return video ? pickFields(video, select) : null;
     },
   },
-  user: {
+  users: {
     findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
       where.id.in.map((id) => users.get(id)).filter(Boolean),
   },
-  repository: {
+  repositories: {
     findUnique: async ({ where }: { where: { id: string } }) =>
       where.id === "repo-1"
         ? {

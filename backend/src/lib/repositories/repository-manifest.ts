@@ -41,7 +41,7 @@ export const loadRepositoryManifest = async (
 ): Promise<RepositoryManifestResponse> => {
   const targetDirectory = getTargetDirectory();
   const repository = access.repository;
-  const where: Prisma.VideoWhereInput = {
+  const where: Prisma.VideosWhereInput = {
     repositoryId: repository.id,
     status: VideoStatus.COMPLETED,
   };

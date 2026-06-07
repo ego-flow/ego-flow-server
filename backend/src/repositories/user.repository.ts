@@ -41,7 +41,7 @@ export type UserDeletionStateRecord = {
 
 export class UserRepository {
   async findActiveAuthenticatedUser(userId: string): Promise<AuthenticatedUser | null> {
-    const user = await prisma.user.findUnique({
+    const user = await prisma.users.findUnique({
       where: { id: userId },
       select: {
         id: true,
@@ -59,7 +59,7 @@ export class UserRepository {
   }
 
   async findActivePasswordCredential(userId: string): Promise<UserPasswordCredential | null> {
-    const user = await prisma.user.findUnique({
+    const user = await prisma.users.findUnique({
       where: { id: userId },
       select: {
         id: true,
@@ -85,7 +85,7 @@ export class UserRepository {
   }
 
   async updatePasswordHash(userId: string, passwordHash: string) {
-    await prisma.user.update({
+    await prisma.users.update({
       where: { id: userId },
       data: {
         passwordHash,
@@ -98,7 +98,7 @@ export class UserRepository {
       return [];
     }
 
-    return prisma.user.findMany({
+    return prisma.users.findMany({
       where: {
         id: {
           in: userIds,
@@ -113,7 +113,7 @@ export class UserRepository {
   }
 
   async findActiveState(userId: string): Promise<{ id: string; deactivated: boolean } | null> {
-    return prisma.user.findUnique({
+    return prisma.users.findUnique({
       where: { id: userId },
       select: {
         id: true,
@@ -123,14 +123,14 @@ export class UserRepository {
   }
 
   async findUserId(userId: string): Promise<{ id: string } | null> {
-    return prisma.user.findUnique({
+    return prisma.users.findUnique({
       where: { id: userId },
       select: { id: true },
     });
   }
 
   async findDeletionState(userId: string): Promise<UserDeletionStateRecord | null> {
-    return prisma.user.findUnique({
+    return prisma.users.findUnique({
       where: { id: userId },
       select: {
         id: true,
@@ -145,7 +145,7 @@ export class UserRepository {
     passwordHash: string;
     displayName: string;
   }): Promise<AdminUserRecord> {
-    return prisma.user.create({
+    return prisma.users.create({
       data: {
         id: input.id,
         passwordHash: input.passwordHash,
@@ -158,14 +158,14 @@ export class UserRepository {
   }
 
   async findAllForAdmin(): Promise<AdminUserRecord[]> {
-    return prisma.user.findMany({
+    return prisma.users.findMany({
       orderBy: [{ role: "asc" }, { createdAt: "asc" }],
       select: adminUserSelect,
     });
   }
 
   async markDeactivated(userId: string): Promise<void> {
-    await prisma.user.update({
+    await prisma.users.update({
       where: { id: userId },
       data: {
         deactivated: true,
@@ -174,7 +174,7 @@ export class UserRepository {
   }
 
   async deleteUser(userId: string): Promise<void> {
-    await prisma.user.delete({
+    await prisma.users.delete({
       where: { id: userId },
     });
   }

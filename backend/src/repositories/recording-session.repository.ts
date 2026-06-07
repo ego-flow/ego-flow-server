@@ -1,5 +1,5 @@
 import {
-  type RecordingSession,
+  type RecordingSessions,
   RecordingSessionEndReason,
   RecordingSessionIngestType,
   RecordingSessionStatus,
@@ -8,7 +8,7 @@ import {
 import { prisma, type PrismaTransactionClient } from "../lib/infra/prisma";
 
 export type RecordingSessionRecord = Pick<
-  RecordingSession,
+  RecordingSessions,
   | "id"
   | "repositoryId"
   | "ownerId"
@@ -35,7 +35,7 @@ export class RecordingSessionRepository {
     streamPath: string;
     targetDirectory: string;
   }) {
-    return prisma.recordingSession.create({
+    return prisma.recordingSessions.create({
       data: {
         ...(input.id ? { id: input.id } : {}),
         repositoryId: input.repositoryId,
@@ -51,7 +51,7 @@ export class RecordingSessionRepository {
   }
 
   async findById(recordingSessionId: string): Promise<RecordingSessionRecord | null> {
-    return prisma.recordingSession.findUnique({
+    return prisma.recordingSessions.findUnique({
       where: { id: recordingSessionId },
       select: {
         id: true,
@@ -76,8 +76,8 @@ export class RecordingSessionRepository {
     userId: string;
     deviceType: string | null;
     ingestType: RecordingSessionIngestType;
-  }): Promise<RecordingSession | null> {
-    const pendingSessions = await prisma.recordingSession.findMany({
+  }): Promise<RecordingSessions | null> {
+    const pendingSessions = await prisma.recordingSessions.findMany({
       where: {
         repositoryId: input.repositoryId,
         userId: input.userId,
@@ -91,8 +91,8 @@ export class RecordingSessionRepository {
     return pendingSessions[0] ?? null;
   }
 
-  async refreshPendingSession(recordingSessionId: string): Promise<RecordingSession> {
-    return prisma.recordingSession.update({
+  async refreshPendingSession(recordingSessionId: string): Promise<RecordingSessions> {
+    return prisma.recordingSessions.update({
       where: { id: recordingSessionId },
       data: {
         status: RecordingSessionStatus.PENDING,
@@ -102,7 +102,7 @@ export class RecordingSessionRepository {
   }
 
   async markStreaming(recordingSessionId: string, readyAt: Date | null) {
-    return prisma.recordingSession.update({
+    return prisma.recordingSessions.update({
       where: { id: recordingSessionId },
       data: {
         status: RecordingSessionStatus.STREAMING,
@@ -116,7 +116,7 @@ export class RecordingSessionRepository {
     closedAt: Date;
     endReason: RecordingSessionEndReason;
   }) {
-    return prisma.recordingSession.update({
+    return prisma.recordingSessions.update({
       where: { id: input.recordingSessionId },
       data: {
         status: RecordingSessionStatus.CLOSED,
@@ -127,7 +127,7 @@ export class RecordingSessionRepository {
   }
 
   async recordCloseIntent(recordingSessionId: string, endReason: RecordingSessionEndReason) {
-    return prisma.recordingSession.update({
+    return prisma.recordingSessions.update({
       where: { id: recordingSessionId },
       data: {
         endReason,
@@ -139,7 +139,7 @@ export class RecordingSessionRepository {
     recordingSessionId: string;
     readyAt: Date;
   }): Promise<boolean> {
-    const sessionUpdate = await prisma.recordingSession.updateMany({
+    const sessionUpdate = await prisma.recordingSessions.updateMany({
       where: {
         id: input.recordingSessionId,
         status: RecordingSessionStatus.PENDING,
@@ -155,7 +155,7 @@ export class RecordingSessionRepository {
   }
 
   async findStreamingHttpUploads(): Promise<RecordingSessionRecord[]> {
-    return prisma.recordingSession.findMany({
+    return prisma.recordingSessions.findMany({
       where: {
         status: RecordingSessionStatus.STREAMING,
         ingestType: RecordingSessionIngestType.HTTP,
@@ -179,7 +179,7 @@ export class RecordingSessionRepository {
   }
 
   async findStreamingByIngestType(ingestType: RecordingSessionIngestType): Promise<RecordingSessionRecord[]> {
-    return prisma.recordingSession.findMany({
+    return prisma.recordingSessions.findMany({
       where: {
         status: RecordingSessionStatus.STREAMING,
         ingestType,
@@ -203,7 +203,7 @@ export class RecordingSessionRepository {
   }
 
   async countStreamingByRepositoryId(repositoryId: string): Promise<number> {
-    return prisma.recordingSession.count({
+    return prisma.recordingSessions.count({
       where: {
         repositoryId,
         status: RecordingSessionStatus.STREAMING,
@@ -212,7 +212,7 @@ export class RecordingSessionRepository {
   }
 
   async countByParticipantUserId(userId: string): Promise<number> {
-    return prisma.recordingSession.count({
+    return prisma.recordingSessions.count({
       where: {
         OR: [{ userId }, { ownerId: userId }],
       },
@@ -232,7 +232,7 @@ export class RecordingSessionRepository {
         }
       : RecordingSessionStatus.STREAMING;
 
-    const activeSession = await prisma.recordingSession.findFirst({
+    const activeSession = await prisma.recordingSessions.findFirst({
       where: {
         repositoryId: input.repositoryId,
         status: sessionStatusFilter,
@@ -247,7 +247,7 @@ export class RecordingSessionRepository {
     repositoryId: string,
     client: PrismaTransactionClient | typeof prisma = prisma,
   ): Promise<void> {
-    await client.recordingSession.deleteMany({ where: { repositoryId } });
+    await client.recordingSessions.deleteMany({ where: { repositoryId } });
   }
 
   async closeStreamingHttpUpload(input: {
@@ -256,7 +256,7 @@ export class RecordingSessionRepository {
     closedAt: Date;
     endReason: RecordingSessionEndReason;
   }): Promise<boolean> {
-    const sessionUpdate = await prisma.recordingSession.updateMany({
+    const sessionUpdate = await prisma.recordingSessions.updateMany({
       where: {
         id: input.recordingSessionId,
         ...(input.userId ? { userId: input.userId } : {}),

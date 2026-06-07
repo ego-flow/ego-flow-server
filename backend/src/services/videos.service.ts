@@ -32,7 +32,7 @@ import type {
   RepositoryVideoStatusResponse,
 } from "../types/videos/response";
 
-const buildOrderBy = (query: RepoVideoOrderQuery): Prisma.VideoOrderByWithRelationInput => {
+const buildOrderBy = (query: RepoVideoOrderQuery): Prisma.VideosOrderByWithRelationInput => {
   switch (query.sort_by) {
     case "recorded_at":
       return { recordedAt: query.sort_order };
@@ -184,7 +184,7 @@ export class VideosService {
     query: RepoVideoListQueryInput,
   ): Promise<RepositoryVideoListResponse> {
     const targetDirectory = getTargetDirectory();
-    const where: Prisma.VideoWhereInput = {
+    const where: Prisma.VideosWhereInput = {
       repositoryId: repository.id,
       ...(query.status ? { status: query.status } : {}),
       ...(query.contributor_user_id ? { recorder: query.contributor_user_id } : {}),

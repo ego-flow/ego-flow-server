@@ -2,7 +2,7 @@ import { prisma } from "../lib/infra/prisma";
 
 export class SettingRepository {
   async findValue(key: string): Promise<string | null> {
-    const setting = await prisma.setting.findUnique({
+    const setting = await prisma.settings.findUnique({
       where: { key },
       select: { value: true },
     });
@@ -11,14 +11,14 @@ export class SettingRepository {
   }
 
   async updateValue(key: string, value: string): Promise<void> {
-    await prisma.setting.update({
+    await prisma.settings.update({
       where: { key },
       data: { value },
     });
   }
 
   async createValue(key: string, value: string): Promise<void> {
-    await prisma.setting.create({
+    await prisma.settings.create({
       data: { key, value },
     });
   }

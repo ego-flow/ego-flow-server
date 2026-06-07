@@ -67,7 +67,7 @@ const session = {
 };
 
 const fakePrisma: any = {
-  recordingSession: {
+  recordingSessions: {
     findUnique: async () => session,
     update: async (args: { where: { id: string }; data: Record<string, unknown> }) => {
       recordingSessionUpdateCalls.push(args);
@@ -77,7 +77,7 @@ const fakePrisma: any = {
       };
     },
   },
-  recordingSegment: {
+  recordingSegments: {
     findUnique: async () => ({
       id: "segment-1",
       recordingSessionId: "session-1",
@@ -97,7 +97,7 @@ const fakePrisma: any = {
       return { count: 1 };
     },
   },
-  video: {
+  videos: {
     findUnique: async () => null,
     findMany: async () => [
       {
@@ -136,7 +136,7 @@ const fakePrisma: any = {
       };
     },
   },
-  repoMember: {
+  repoMembers: {
     findMany: async () => [
       {
         userId: "alice",
@@ -144,7 +144,7 @@ const fakePrisma: any = {
       },
     ],
   },
-  repository: {
+  repositories: {
     findUnique: async () => ({
       contributors: [],
     }),
