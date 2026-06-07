@@ -53,8 +53,8 @@ const mutablePythonToken = pythonToken as unknown as {
 };
 const { repositoryAccessService } =
   require("../src/lib/repositories/repository-access") as typeof import("../src/lib/repositories/repository-access");
-const { repositoryService } =
-  require("../src/services/repository.service") as typeof import("../src/services/repository.service");
+const { repositoriesService } =
+  require("../src/services/repositories.service") as typeof import("../src/services/repositories.service");
 const { repositoriesRoutes } =
   require("../src/routes/repositories.routes") as typeof import("../src/routes/repositories.routes");
 
@@ -63,8 +63,8 @@ const originalFindActiveAuthenticatedUser = userRepository.findActiveAuthenticat
 const originalVerifyPythonToken = pythonToken.verifyPythonToken;
 const originalAssertRepositoryAccess = repositoryAccessService.assertAction;
 const originalAssertRepositoryStatus = repositoryAccessService.assertRepositoryStatus;
-const originalResolveRepository = repositoryService.resolveRepository;
-const originalGetRepositoryManifest = repositoryService.getRepositoryManifest;
+const originalResolveRepository = repositoriesService.resolveRepository;
+const originalGetRepositoryManifest = repositoriesService.getRepositoryManifest;
 
 let server: import("node:http").Server | null = null;
 const repoId = "11111111-1111-4111-8111-111111111111";
@@ -92,8 +92,8 @@ beforeEach(() => {
     id: repositoryId,
     deactivated: required === "deactivated",
   });
-  repositoryService.resolveRepository = originalResolveRepository;
-  repositoryService.getRepositoryManifest = originalGetRepositoryManifest;
+  repositoriesService.resolveRepository = originalResolveRepository;
+  repositoriesService.getRepositoryManifest = originalGetRepositoryManifest;
 });
 
 afterEach(async () => {
@@ -129,7 +129,7 @@ test("GET /repositories/resolve supports slug and owner_id/name forms", async ()
     userId: "alice",
     role: "user",
   });
-  repositoryService.resolveRepository = (async (
+  repositoriesService.resolveRepository = (async (
     _requestUserId: string,
     _requestUserRole: "admin" | "user",
     ownerId: string,
@@ -149,7 +149,7 @@ test("GET /repositories/resolve supports slug and owner_id/name forms", async ()
         updated_at: "2026-04-12T00:00:00.000Z",
       },
     };
-  }) as typeof repositoryService.resolveRepository;
+  }) as typeof repositoriesService.resolveRepository;
 
   const slugResponse = await fetch(
     `${baseUrl}/api/v1/repositories/resolve?slug=alice/daily-kitchen`,
@@ -184,9 +184,9 @@ test("GET /repositories/resolve returns 400 for invalid slug and 404 for hidden 
     role: "user",
     displayName: "Alice Kim",
   });
-  repositoryService.resolveRepository = (async () => {
+  repositoriesService.resolveRepository = (async () => {
     throw new AppError(404, "NOT_FOUND", "Repository not found.");
-  }) as typeof repositoryService.resolveRepository;
+  }) as typeof repositoriesService.resolveRepository;
 
   const invalidSlugResponse = await fetch(
     `${baseUrl}/api/v1/repositories/resolve?slug=alice`,
@@ -219,7 +219,7 @@ test("GET /repositories/resolve accepts Python static tokens", async () => {
     role: "user",
     displayName: "Alice Kim",
   });
-  repositoryService.resolveRepository = (async () => {
+  repositoriesService.resolveRepository = (async () => {
     called = true;
     return {
       repository: {
@@ -234,7 +234,7 @@ test("GET /repositories/resolve accepts Python static tokens", async () => {
         updated_at: "2026-04-12T00:00:00.000Z",
       },
     };
-  }) as typeof repositoryService.resolveRepository;
+  }) as typeof repositoriesService.resolveRepository;
 
   const response = await fetch(`${baseUrl}/api/v1/repositories/resolve?slug=alice/daily-kitchen`, {
     headers: { Authorization: "Bearer ef_0123456789abcdef0123456789abcdef01234567" },
@@ -278,7 +278,7 @@ test("GET /repositories/:repoId/manifest uses repoAccess context and validated q
     effectiveRole: "read",
     isSystemAdmin: false,
   })) as typeof repositoryAccessService.assertAction;
-  repositoryService.getRepositoryManifest = (async (access, query) => {
+  repositoriesService.getRepositoryManifest = (async (access, query) => {
     capturedRepoId = access.repository.id;
     capturedRole = access.effectiveRole;
     capturedPage = query.page;
@@ -302,7 +302,7 @@ test("GET /repositories/:repoId/manifest uses repoAccess context and validated q
       },
       videos: [],
     };
-  }) as typeof repositoryService.getRepositoryManifest;
+  }) as typeof repositoriesService.getRepositoryManifest;
 
   const response = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/manifest?page=2&limit=5`, {
     headers: { Authorization: "Bearer ef_0123456789abcdef0123456789abcdef01234567" },
@@ -407,7 +407,7 @@ test("GET /repositories/:repoId/manifest applies default page and limit", async 
     effectiveRole: "read",
     isSystemAdmin: false,
   })) as typeof repositoryAccessService.assertAction;
-  repositoryService.getRepositoryManifest = (async (access, query) => {
+  repositoriesService.getRepositoryManifest = (async (access, query) => {
     capturedPage = query.page;
     capturedLimit = query.limit;
 
@@ -429,7 +429,7 @@ test("GET /repositories/:repoId/manifest applies default page and limit", async 
       },
       videos: [],
     };
-  }) as typeof repositoryService.getRepositoryManifest;
+  }) as typeof repositoriesService.getRepositoryManifest;
 
   const response = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/manifest`, {
     headers: { Authorization: "Bearer ef_0123456789abcdef0123456789abcdef01234567" },

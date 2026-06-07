@@ -195,8 +195,8 @@ const fakePrisma: any = {
 (globalThis as any).__egoflowPrisma = fakePrisma;
 
 const { VideosService } = require("../src/services/videos.service") as typeof import("../src/services/videos.service");
-const { repositoryService } =
-  require("../src/services/repository.service") as typeof import("../src/services/repository.service");
+const { repositoriesService } =
+  require("../src/services/repositories.service") as typeof import("../src/services/repositories.service");
 const { verifySignedFileUrlToken } =
   require("../src/lib/storage/signed-file-url") as typeof import("../src/lib/storage/signed-file-url");
 const { getTargetDirectory } = require("../src/lib/storage/storage") as typeof import("../src/lib/storage/storage");
@@ -460,7 +460,7 @@ test("repo-scoped detail returns 404 when the video belongs to another repositor
 });
 
 test("getRepositoryManifest returns completed videos with download metadata and no internal paths", async () => {
-  const response = await repositoryService.getRepositoryManifest(
+  const response = await repositoriesService.getRepositoryManifest(
     repositoryAccess({
       id: repository.id,
       name: repository.name,
@@ -527,7 +527,7 @@ test("getRepositoryManifest returns completed videos with download metadata and 
   assert.equal("vlmVideoPath" in firstVideo, false);
   assert.equal("thumbnailPath" in firstVideo, false);
 
-  const secondPage = await repositoryService.getRepositoryManifest(
+  const secondPage = await repositoriesService.getRepositoryManifest(
     repositoryAccess({
       id: repository.id,
       name: repository.name,
@@ -568,7 +568,7 @@ test("getRepositoryManifest returns completed videos with download metadata and 
 });
 
 test("getRepositoryManifest returns an empty manifest page for repositories without completed videos", async () => {
-  const response = await repositoryService.getRepositoryManifest(
+  const response = await repositoriesService.getRepositoryManifest(
     repositoryAccess({
       id: "repo-2",
       name: "public-repo",
@@ -632,7 +632,7 @@ test("getRepositoryManifest throws when a completed video lacks artifact metadat
 
   await assert.rejects(
     () =>
-      repositoryService.getRepositoryManifest(
+      repositoriesService.getRepositoryManifest(
         repositoryAccess({
           id: repository.id,
           name: repository.name,

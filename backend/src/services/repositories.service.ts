@@ -1,14 +1,16 @@
-import fs from "fs/promises";
-import path from "path";
+import { RepoVisibility } from "@prisma/client";
 
-import { RepoVisibility, VideoStatus, type Prisma } from "@prisma/client";
-
-import { BadRequest, Conflict, ErrorCode, Internal, NotFound } from "../lib/core/errors";
+import { BadRequest, Conflict, ErrorCode, NotFound } from "../lib/core/errors";
 import { getRepositoryAccessPolicy, type RepositoryActiveAccessAction } from "../lib/repositories/access-policy";
+import { permanentlyDeleteRepositoryData } from "../lib/repositories/repository-delete";
+import { renameRepositoryDirectory } from "../lib/repositories/repository-directory";
+import { loadRepositoryManifest } from "../lib/repositories/repository-manifest";
+import {
+  assertRepositoryIsIdle,
+  assertRepositoryPermanentlyDeletable,
+  getRepositoryPermanentDeleteState,
+} from "../lib/repositories/repository-work-state";
 import { isRepoRoleAtLeast, toAppRepoRole } from "../lib/repositories/roles";
-import { runPrismaTransaction } from "../lib/infra/prisma";
-import { getTargetDirectory } from "../lib/storage/storage";
-import { toSignedFileUrl } from "../lib/storage/signed-file-url";
 import {
   normalizeRepositoryTags,
   toRepositoryRecord,
@@ -21,10 +23,8 @@ import {
   type RepositorySummaryRow,
 } from "../repositories/repositories.repository";
 import { repoMemberRepository } from "../repositories/repo-member.repository";
-import { recordingSegmentRepository } from "../repositories/recording-segment.repository";
-import { recordingSessionRepository } from "../repositories/recording-session.repository";
 import { userRepository } from "../repositories/user.repository";
-import { videosRepository, type ManifestVideoRecord } from "../repositories/videos.repository";
+import { videosRepository } from "../repositories/videos.repository";
 import type {
   CreateRepositoryInput,
   CreateRepositoryMemberInput,
@@ -35,8 +35,6 @@ import type {
 } from "../types/repository/request";
 import type { AppUserRole } from "../types/auth";
 import type { AppRepoRole, RepositoryAccessContext, RepositoryRecord } from "../types/repository";
-import { movePath, pathExists } from "../lib/storage/file-system";
-import { remapPathWithinDirectory } from "../lib/storage/path-mapping";
 import { repositoryAccessService } from "../lib/repositories/repository-access";
 import { refreshRepositoryContributors } from "../lib/repositories/repository-contributors";
 
@@ -49,35 +47,12 @@ const normalizeDescription = (description: string | null | undefined): string | 
   return trimmed ? trimmed : null;
 };
 
-const toRepositoryThumbnailUrl = (
-  targetDirectory: string,
-  video: Pick<ManifestVideoRecord, "thumbnailPath">,
-) => toSignedFileUrl(targetDirectory, video.thumbnailPath);
-
-const toRepositoryVideoDownloadUrl = (repositoryId: string, videoId: string) =>
-  `/api/v1/repositories/${repositoryId}/videos/${videoId}/download`;
-
-const getManifestArtifactMetadata = (video: {
-  id: string;
-  sizeBytes: bigint | null;
-  vlmSha256: string | null;
-}) => {
-  if (video.sizeBytes === null || !video.vlmSha256) {
-    throw Internal(`Manifest metadata is missing for completed video '${video.id}'.`);
-  }
-
-  return {
-    size_bytes: Number(video.sizeBytes),
-    sha256: video.vlmSha256,
-  };
-};
-
 type AccessibleRepositoryEntry = {
   record: RepositoryRecord;
   effectiveRole: AppRepoRole;
 };
 
-export class RepositoryService {
+export class RepositoriesService {
   async listAccessibleRepositories(userId: string, userRole: AppUserRole) {
     return {
       repositories: await this.getAccessibleRepositories(userId, userRole, "repository.list"),
@@ -108,67 +83,7 @@ export class RepositoryService {
   }
 
   async getRepositoryManifest(access: RepositoryAccessContext, query: ManifestQueryInput) {
-    const targetDirectory = getTargetDirectory();
-    const repository = access.repository;
-    const where: Prisma.VideoWhereInput = {
-      repositoryId: repository.id,
-      status: VideoStatus.COMPLETED,
-    };
-
-    const [total, videos] = await Promise.all([
-      videosRepository.countVideos(where),
-      videosRepository.findManifestVideos({
-        where,
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
-      }),
-    ]);
-
-    return {
-      manifest_version: "1",
-      repository: {
-        id: repository.id,
-        owner_id: repository.ownerId,
-        name: repository.name,
-        visibility: repository.visibility,
-        my_role: access.effectiveRole,
-      },
-      default_artifact: "vlm_video",
-      pagination: {
-        total,
-        page: query.page,
-        limit: query.limit,
-        has_next: query.page * query.limit < total,
-      },
-      videos: videos.map((video) => {
-        const artifactMetadata = getManifestArtifactMetadata(video);
-
-        return {
-          video_id: video.id,
-          recorded_at: video.recordedAt ? video.recordedAt.toISOString() : null,
-          duration_sec: video.durationSec,
-          resolution_width: video.resolutionWidth,
-          resolution_height: video.resolutionHeight,
-          fps: video.fps,
-          codec: video.codec,
-          scene_summary: video.semanticMetadata?.sceneSummary ?? null,
-          clip_segments: video.semanticMetadata?.clipSegments ?? null,
-          artifacts: {
-            vlm_video: {
-              download_url: toRepositoryVideoDownloadUrl(repository.id, video.id),
-              ...artifactMetadata,
-              content_type: "video/mp4",
-            },
-            thumbnail: video.thumbnailPath
-              ? {
-                  download_url: toRepositoryThumbnailUrl(targetDirectory, video),
-                  content_type: "image/jpeg",
-                }
-              : null,
-          },
-        };
-      }),
-    };
+    return loadRepositoryManifest(access, query);
   }
 
   async resolveRepositoryFromQuery(
@@ -256,8 +171,13 @@ export class RepositoryService {
     }
 
     if (nextName !== previousRepository.name) {
-      await this.ensureRepositoryIsIdle(previousRepository.id, previousRepository.name);
-      await this.renameRepositoryDirectory(previousRepository.ownerId, previousRepository.name, nextName, repositoryId);
+      await assertRepositoryIsIdle(previousRepository.id);
+      await renameRepositoryDirectory({
+        ownerId: previousRepository.ownerId,
+        previousName: previousRepository.name,
+        nextName,
+        repositoryId,
+      });
     }
 
     try {
@@ -293,7 +213,7 @@ export class RepositoryService {
   }
 
   async getRepositoryDeleteReadiness(access: RepositoryAccessContext) {
-    const state = await this.getRepositoryPermanentDeleteState(access);
+    const state = await getRepositoryPermanentDeleteState(access.repository.id);
 
     return {
       repository_id: access.repository.id,
@@ -307,35 +227,11 @@ export class RepositoryService {
   }
 
   async permanentlyDeleteRepository(access: RepositoryAccessContext) {
-    const state = await this.getRepositoryPermanentDeleteState(access);
+    const state = await getRepositoryPermanentDeleteState(access.repository.id);
     const repositoryId = access.repository.id;
 
-    if (state.activeStreamingSessionCount > 0 || state.finalizingSegmentCount > 0) {
-      throw Conflict(
-        "Repository cannot be permanently deleted while streams or recording finalization are active.",
-      );
-    }
-
-    const videos = await videosRepository.findRepositoryVideoPaths(repositoryId);
-
-    await Promise.all(
-      videos.flatMap((video) =>
-        [video.rawRecordingPath, video.vlmVideoPath, video.dashboardVideoPath, video.thumbnailPath]
-          .filter((filePath): filePath is string => Boolean(filePath))
-          .map((filePath) => fs.rm(filePath, { force: true, recursive: true })),
-      ),
-    );
-
-    const repositoryDir = path.join(getTargetDirectory(), access.repository.ownerId, access.repository.name);
-    await fs.rm(repositoryDir, { recursive: true, force: true });
-
-    await runPrismaTransaction(async (tx) => {
-      await repoMemberRepository.deleteManyByRepositoryId(repositoryId, tx);
-      await videosRepository.deleteManyByRepositoryId(repositoryId, tx);
-      await recordingSegmentRepository.deleteManyByRepositoryId(repositoryId, tx);
-      await recordingSessionRepository.deleteManyByRepositoryId(repositoryId, tx);
-      await repositoriesRepository.deleteRepository(repositoryId, tx);
-    });
+    assertRepositoryPermanentlyDeletable(state);
+    await permanentlyDeleteRepositoryData(access.repository);
 
     return {
       id: repositoryId,
@@ -433,23 +329,6 @@ export class RepositoryService {
 
   private async getVideoCountsByRepositoryId(repositoryIds: string[]): Promise<Map<string, number>> {
     return videosRepository.countVideosByRepositoryIds(repositoryIds);
-  }
-
-  private async getRepositoryPermanentDeleteState(access: RepositoryAccessContext) {
-    const repositoryId = access.repository.id;
-    const [activeStreamingSessionCount, finalizingSegmentCount] = await Promise.all([
-      recordingSessionRepository.countStreamingByRepositoryId(repositoryId),
-      recordingSegmentRepository.countFinalizingByRepositoryId(repositoryId),
-    ]);
-
-    return {
-      repository: access.repository,
-      activeStreamingSessionCount,
-      finalizingSegmentCount,
-      canDelete:
-        activeStreamingSessionCount === 0 &&
-        finalizingSegmentCount === 0,
-    };
   }
 
   private async getAccessibleRepositories(
@@ -555,53 +434,6 @@ export class RepositoryService {
     }
   }
 
-  private async ensureRepositoryIsIdle(
-    repositoryId: string,
-    _repositoryName: string,
-    options: { blockPending?: boolean } = { blockPending: true },
-  ) {
-    const activeSession = await recordingSessionRepository.hasOpenSessionByRepositoryId({
-      repositoryId,
-      blockPending: options.blockPending ?? true,
-    });
-
-    if (activeSession) {
-      throw Conflict("Repository cannot be modified while a stream is active.");
-    }
-
-    const finalizingSegment = await recordingSegmentRepository.hasFinalizingByRepositoryId(repositoryId);
-
-    if (finalizingSegment) {
-      throw Conflict("Repository cannot be modified while recording finalization is in progress.");
-    }
-  }
-
-  private async renameRepositoryDirectory(ownerId: string, previousName: string, nextName: string, repositoryId: string) {
-    const targetDirectory = getTargetDirectory();
-    const previousDirectory = path.join(targetDirectory, ownerId, previousName);
-    const nextDirectory = path.join(targetDirectory, ownerId, nextName);
-
-    if (await pathExists(nextDirectory)) {
-      throw Conflict("Target repository directory already exists.");
-    }
-
-    if (await pathExists(previousDirectory)) {
-      await fs.mkdir(path.dirname(nextDirectory), { recursive: true });
-      await movePath(previousDirectory, nextDirectory);
-    }
-
-    const videos = await videosRepository.findVideoPathsForRepositoryRename(repositoryId);
-
-    await videosRepository.updateVideoPathsForRepositoryRename({
-      videos: videos.map((video) => ({
-        id: video.id,
-        vlmVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.vlmVideoPath),
-        dashboardVideoPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.dashboardVideoPath),
-        thumbnailPath: remapPathWithinDirectory(previousDirectory, nextDirectory, video.thumbnailPath),
-      })),
-    });
-  }
-
   private getRepositoryResolveTarget(query: RepositoryResolveQueryInput) {
     if (query.slug) {
       const parts = query.slug.split("/");
@@ -622,4 +454,4 @@ export class RepositoryService {
   }
 }
 
-export const repositoryService = new RepositoryService();
+export const repositoriesService = new RepositoriesService();
