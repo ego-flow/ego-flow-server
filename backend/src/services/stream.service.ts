@@ -10,12 +10,12 @@ import { Conflict, Forbidden, NotFound, PreconditionFailed } from "../lib/core/e
 import { redis } from "../lib/infra/redis";
 import { getTargetDirectory } from "../lib/storage/storage";
 import type { RepositoryRecord } from "../types/repository";
-import type { StreamRegisterInput } from "../schemas/stream.schema";
+import type { StreamRegisterInput } from "../types/stream/request";
 import { streamRecordingKey } from "../lib/streaming/stream-keys";
 import { recordingSessionRepository } from "../repositories/recording-session.repository";
+import { reconcileHttpUploads } from "../lib/streaming/http-upload-session";
 import { recordingSessionService } from "../lib/streaming/recording-session";
 import { streamOwnershipService } from "../lib/streaming/stream-ownership";
-import { httpStreamService } from "./http-stream.service";
 
 /**
  * 스트리밍 세션 등록, publish ticket 발급, reconcile 루프를 관리하는 서비스.
@@ -23,10 +23,6 @@ import { httpStreamService } from "./http-stream.service";
  */
 export class StreamService {
   private reconcileTimer?: NodeJS.Timeout;
-
-  extractRepositoryName(streamPath: string) {
-    return recordingSessionService.extractRepositoryName(streamPath);
-  }
 
   /**
    * [1단계: 세션 등록]
@@ -190,7 +186,7 @@ export class StreamService {
           reason: message,
         });
       });
-      void httpStreamService.reconcileHttpUploads().catch((error) => {
+      void reconcileHttpUploads().catch((error) => {
         const message = error instanceof Error ? error.message : "unknown error";
         console.warn("[http-stream] reconcile-loop-failed", {
           reason: message,

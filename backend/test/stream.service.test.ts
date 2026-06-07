@@ -52,14 +52,12 @@ const { liveStreamsService } =
   require("../src/services/live-streams.service") as typeof import("../src/services/live-streams.service");
 const { repositoryAccessService } =
   require("../src/lib/repositories/repository-access") as typeof import("../src/lib/repositories/repository-access");
-const { repositoryService } =
-  require("../src/services/repository.service") as typeof import("../src/services/repository.service");
 const { Forbidden } = require("../src/lib/core/errors") as typeof import("../src/lib/core/errors");
 
 const originalAssertAccess = repositoryAccessService.assertAction;
 const originalGetAccess = repositoryAccessService.getAccessForAction;
 const originalAssertRepositoryStatus = repositoryAccessService.assertRepositoryStatus;
-const originalListAccessibleRepositoryIds = repositoryService.listAccessibleRepositoryIds;
+const originalListAccessibleActiveRepositoryIds = repositoryAccessService.listAccessibleActiveRepositoryIds;
 
 const repository = {
   id: "566fdab1-771a-42f9-a4eb-2f1c04859874",
@@ -108,7 +106,7 @@ beforeEach(() => {
     id: repositoryId,
     deactivated: false,
   });
-  repositoryService.listAccessibleRepositoryIds = originalListAccessibleRepositoryIds;
+  repositoryAccessService.listAccessibleActiveRepositoryIds = originalListAccessibleActiveRepositoryIds;
 });
 
 test("registerSession creates a unique MediaMTX path and caches pending metadata", async () => {
@@ -359,7 +357,7 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
   fakePrisma.recordingSession.findMany = async () => {
     throw new Error("listLiveStreams should not query recording_sessions");
   };
-  repositoryService.listAccessibleRepositoryIds = async () => new Set([repository.id]);
+  repositoryAccessService.listAccessibleActiveRepositoryIds = async () => new Set([repository.id]);
 
   await fakeRedis.sadd("stream:active:sessions", "session-1", "session-hidden");
   fakeRedis.setJson("stream:recording:session-1", {
@@ -472,5 +470,5 @@ after(() => {
   repositoryAccessService.assertAction = originalAssertAccess;
   repositoryAccessService.getAccessForAction = originalGetAccess;
   repositoryAccessService.assertRepositoryStatus = originalAssertRepositoryStatus;
-  repositoryService.listAccessibleRepositoryIds = originalListAccessibleRepositoryIds;
+  repositoryAccessService.listAccessibleActiveRepositoryIds = originalListAccessibleActiveRepositoryIds;
 });

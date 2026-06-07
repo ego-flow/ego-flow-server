@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 
 import {
   RecordingSessionEndReason,
@@ -9,34 +8,28 @@ import {
 } from "@prisma/client";
 
 import {
-  HTTP_STREAM_TIMEOUT_MS,
-  HTTP_UPLOAD_LOCK_TTL_SECONDS,
   RECORDING_ACTIVE_TTL_SECONDS,
   STREAM_ACTIVE_SET_KEY,
 } from "../constants/stream/stream-constants";
-import { runtimeConfig as env } from "../config/runtime";
 import { BadRequest, Conflict, Forbidden, NotFound, PreconditionFailed } from "../lib/core/errors";
 import { redis } from "../lib/infra/redis";
-import type { HttpStreamFinishInput, HttpStreamStartInput } from "../schemas/stream.schema";
+import type { HttpStreamFinishInput, HttpStreamStartInput } from "../types/stream/request";
 import type { HttpStreamChunkInput, RecordingSessionLiveCache } from "../types/stream";
-import { httpUploadLockKey, streamRecordingKey } from "../lib/streaming/stream-keys";
-import {
-  recordingSessionRepository,
-  type RecordingSessionRecord,
-} from "../repositories/recording-session.repository";
+import { streamRecordingKey } from "../lib/streaming/stream-keys";
+import { extractRepositoryNameFromStreamPath } from "../lib/streaming/stream-paths";
+import { recordingSessionRepository } from "../repositories/recording-session.repository";
 import { recordingSegmentRepository } from "../repositories/recording-segment.repository";
-import { videosRepository } from "../repositories/videos.repository";
 import { recordingSessionService } from "../lib/streaming/recording-session";
 import { streamOwnershipService } from "../lib/streaming/stream-ownership";
-
-type HttpUploadCache = RecordingSessionLiveCache & {
-  ingestType: "HTTP";
-  status: "STREAMING";
-  rawPath: string;
-  bytesReceived: number;
-  lastSequence: number | null;
-  lastChunkAt: number;
-};
+import {
+  buildHttpUploadCache,
+  buildHttpUploadRawPath,
+  clearHttpUploadPointers,
+  parseHttpUploadCache,
+  statFile,
+  withHttpUploadLock,
+  type HttpUploadCache,
+} from "../lib/streaming/http-upload-session";
 
 export class HttpStreamService {
   async start(recordingSessionId: string, requestUserId: string, input: HttpStreamStartInput) {
@@ -72,13 +65,13 @@ export class HttpStreamService {
       throw PreconditionFailed("Publish ticket does not match this recording session.");
     }
 
-    const rawPath = this.buildRawPath(session.streamPath, session.id);
+    const rawPath = buildHttpUploadRawPath(session.streamPath, session.id);
     await fs.mkdir(path.dirname(rawPath), { recursive: true });
 
     const now = new Date();
-    const cache = this.buildStreamingCache({
+    const cache = buildHttpUploadCache({
       repositoryId: session.repositoryId,
-      repositoryName: recordingSessionService.extractRepositoryName(session.streamPath),
+      repositoryName: extractRepositoryNameFromStreamPath(session.streamPath),
       userId: session.userId,
       deviceType: session.deviceType,
       rawPath,
@@ -129,7 +122,7 @@ export class HttpStreamService {
       throw BadRequest("Chunk body must not be empty.");
     }
 
-    return this.withUploadLock(recordingSessionId, async () => {
+    return withHttpUploadLock(recordingSessionId, async () => {
       const cache = await this.getStreamingHttpCache(recordingSessionId);
       this.assertOwner(cache, requestUserId);
 
@@ -173,7 +166,7 @@ export class HttpStreamService {
   }
 
   async finish(recordingSessionId: string, requestUserId: string, input: HttpStreamFinishInput) {
-    const result = await this.withUploadLock(recordingSessionId, async () => {
+    const result = await withHttpUploadLock(recordingSessionId, async () => {
       const cache = await this.getStreamingHttpCache(recordingSessionId);
       this.assertOwner(cache, requestUserId);
 
@@ -181,7 +174,7 @@ export class HttpStreamService {
         throw PreconditionFailed(`Unexpected total bytes. Expected ${cache.bytesReceived}.`);
       }
 
-      const stat = await this.statFile(cache.rawPath);
+      const stat = await statFile(cache.rawPath);
       if (!stat || stat.size !== input.total_bytes) {
         throw PreconditionFailed("Stored raw file size does not match total bytes.");
       }
@@ -215,7 +208,7 @@ export class HttpStreamService {
       };
     });
 
-    await this.clearHttpPointers(recordingSessionId);
+    await clearHttpUploadPointers(recordingSessionId);
     await recordingSessionService.tryEnqueueFinalize(recordingSessionId);
 
     console.info("[http-stream] finished", {
@@ -229,129 +222,12 @@ export class HttpStreamService {
     return result.response;
   }
 
-  async reconcileHttpUploads() {
-    const sessions = await recordingSessionRepository.findStreamingHttpUploads();
-
-    const nowMs = Date.now();
-    for (const session of sessions) {
-      const rawCache = await redis.get(streamRecordingKey(session.id));
-      const cache = this.parseHttpUploadCache(rawCache);
-
-      if (!cache) {
-        await this.withUploadLockIfAvailable(session.id, async () => {
-          await this.failHttpUpload(session, null, "HTTP upload cache is missing.");
-        });
-        continue;
-      }
-
-      if (nowMs - cache.lastChunkAt <= HTTP_STREAM_TIMEOUT_MS) {
-        continue;
-      }
-
-      await this.withUploadLockIfAvailable(session.id, async () => {
-        const refreshedCache = this.parseHttpUploadCache(await redis.get(streamRecordingKey(session.id)));
-        if (!refreshedCache) {
-          await this.failHttpUpload(session, null, "HTTP upload cache is missing.");
-          return;
-        }
-        if (Date.now() - refreshedCache.lastChunkAt <= HTTP_STREAM_TIMEOUT_MS) {
-          return;
-        }
-
-        const stat = await this.statFile(refreshedCache.rawPath);
-        if (stat && stat.size > 0 && stat.size === refreshedCache.bytesReceived) {
-          const claimed = await this.closeUnexpectedAndMarkWriteDone(session.id);
-          if (!claimed) {
-            console.info("[http-stream] timeout-recovered-skipped", {
-              recordingSessionId: session.id,
-              reason: "state-transition-not-claimed",
-            });
-            return;
-          }
-          await this.clearHttpPointers(session.id);
-          await recordingSessionService.tryEnqueueFinalize(session.id);
-          console.info("[http-stream] timeout-recovered-write-done", {
-            recordingSessionId: session.id,
-            repositoryId: session.repositoryId,
-            repositoryName: refreshedCache.repositoryName,
-            bytesReceived: refreshedCache.bytesReceived,
-          });
-          return;
-        }
-
-        const reason = !stat
-          ? "HTTP upload raw file is missing."
-          : stat.size === 0
-            ? "HTTP upload raw file is empty."
-            : `HTTP upload raw file size mismatch. expected=${refreshedCache.bytesReceived} actual=${stat.size}.`;
-        await this.failHttpUpload(session, refreshedCache, reason);
-      });
-    }
-  }
-
-  private buildRawPath(streamPath: string, recordingSessionId: string) {
-    const repositoryName = recordingSessionService.extractRepositoryName(streamPath);
-    return path.join(env.RAW_ROOT, "http", repositoryName, recordingSessionId, "recording.mp4");
-  }
-
-  private buildStreamingCache(params: {
-    repositoryId: string;
-    repositoryName: string;
-    userId: string;
-    deviceType: string | null;
-    rawPath: string;
-    bytesReceived: number;
-    lastSequence: number | null;
-    lastChunkAt: number;
-  }): HttpUploadCache {
-    const cache: HttpUploadCache = {
-      repositoryId: params.repositoryId,
-      repositoryName: params.repositoryName,
-      userId: params.userId,
-      ingestType: "HTTP",
-      status: "STREAMING",
-      rawPath: params.rawPath,
-      bytesReceived: params.bytesReceived,
-      lastSequence: params.lastSequence,
-      lastChunkAt: params.lastChunkAt,
-    };
-    if (params.deviceType) {
-      cache.deviceType = params.deviceType;
-    }
-    return cache;
-  }
-
   private async getStreamingHttpCache(recordingSessionId: string) {
-    const cache = this.parseHttpUploadCache(await redis.get(streamRecordingKey(recordingSessionId)));
+    const cache = parseHttpUploadCache(await redis.get(streamRecordingKey(recordingSessionId)));
     if (!cache) {
       throw NotFound("Active HTTP stream not found.");
     }
     return cache;
-  }
-
-  private parseHttpUploadCache(raw: string | null): HttpUploadCache | null {
-    if (!raw) {
-      return null;
-    }
-
-    try {
-      const cache = JSON.parse(raw) as RecordingSessionLiveCache;
-      if (
-        cache.ingestType !== "HTTP" ||
-        cache.status !== "STREAMING" ||
-        typeof cache.rawPath !== "string" ||
-        typeof cache.bytesReceived !== "number" ||
-        !Number.isSafeInteger(cache.bytesReceived) ||
-        (cache.lastSequence !== null && typeof cache.lastSequence !== "number") ||
-        typeof cache.lastChunkAt !== "number"
-      ) {
-        return null;
-      }
-
-      return cache as HttpUploadCache;
-    } catch (_error) {
-      return null;
-    }
   }
 
   private assertOwner(cache: HttpUploadCache, requestUserId: string) {
@@ -360,124 +236,6 @@ export class HttpStreamService {
     }
   }
 
-  private async withUploadLock<T>(recordingSessionId: string, callback: () => Promise<T>): Promise<T> {
-    const lockKey = httpUploadLockKey(recordingSessionId);
-    const lockValue = randomUUID();
-    const locked = await redis.set(lockKey, lockValue, "EX", HTTP_UPLOAD_LOCK_TTL_SECONDS, "NX");
-    if (locked !== "OK") {
-      throw Conflict("HTTP stream upload is busy.");
-    }
-
-    try {
-      return await callback();
-    } finally {
-      if ((await redis.get(lockKey)) === lockValue) {
-        await redis.del(lockKey);
-      }
-    }
-  }
-
-  private async withUploadLockIfAvailable(recordingSessionId: string, callback: () => Promise<void>) {
-    const lockKey = httpUploadLockKey(recordingSessionId);
-    const lockValue = randomUUID();
-    const locked = await redis.set(lockKey, lockValue, "EX", HTTP_UPLOAD_LOCK_TTL_SECONDS, "NX");
-    if (locked !== "OK") {
-      return;
-    }
-
-    try {
-      await callback();
-    } finally {
-      if ((await redis.get(lockKey)) === lockValue) {
-        await redis.del(lockKey);
-      }
-    }
-  }
-
-  private async closeUnexpectedAndMarkWriteDone(recordingSessionId: string) {
-    const closedAt = new Date();
-    const sessionClosed = await recordingSessionRepository.closeStreamingHttpUpload({
-      recordingSessionId,
-      closedAt,
-      endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
-    });
-    if (!sessionClosed) {
-      return false;
-    }
-
-    return recordingSegmentRepository.markWriteDoneByRecordingSessionId(recordingSessionId, closedAt);
-  }
-
-  private async failHttpUpload(
-    session: RecordingSessionRecord,
-    cache: HttpUploadCache | null,
-    errorMessage: string,
-  ) {
-    const segment = await recordingSegmentRepository.findRawPathByRecordingSessionId(session.id);
-    const rawPath = cache?.rawPath ?? segment?.rawPath ?? this.buildRawPath(session.streamPath, session.id);
-
-    const closedAt = new Date();
-    const failed = await recordingSessionRepository.closeStreamingHttpUpload({
-      recordingSessionId: session.id,
-      closedAt,
-      endReason: RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
-    });
-    if (!failed) {
-      console.info("[http-stream] timeout-failed-skipped", {
-        recordingSessionId: session.id,
-        repositoryId: session.repositoryId,
-        repositoryName: recordingSessionService.extractRepositoryName(session.streamPath),
-        reason: "state-transition-not-claimed",
-      });
-      return false;
-    }
-    const segmentFailed = await recordingSegmentRepository.markFailedByRecordingSessionId(session.id, closedAt);
-    if (!segmentFailed) {
-      console.info("[http-stream] timeout-failed-skipped", {
-        recordingSessionId: session.id,
-        repositoryId: session.repositoryId,
-        repositoryName: recordingSessionService.extractRepositoryName(session.streamPath),
-        reason: "segment-transition-not-claimed",
-      });
-      return false;
-    }
-    await videosRepository.upsertFailedRecording({
-      repositoryId: session.repositoryId,
-      recordingSessionId: session.id,
-      rawRecordingPath: rawPath,
-      streamPath: session.streamPath,
-      deviceType: session.deviceType,
-      recorder: session.userId,
-      errorMessage,
-      processedAt: closedAt,
-    });
-
-    await this.clearHttpPointers(session.id);
-    console.warn("[http-stream] timeout-failed", {
-      recordingSessionId: session.id,
-      repositoryId: session.repositoryId,
-      repositoryName: recordingSessionService.extractRepositoryName(session.streamPath),
-      userId: session.userId,
-      rawPath,
-      reason: errorMessage,
-    });
-    return true;
-  }
-
-  private async clearHttpPointers(recordingSessionId: string) {
-    await redis.multi()
-      .del(streamRecordingKey(recordingSessionId), httpUploadLockKey(recordingSessionId))
-      .srem(STREAM_ACTIVE_SET_KEY, recordingSessionId)
-      .exec();
-  }
-
-  private async statFile(filePath: string) {
-    try {
-      return await fs.stat(filePath);
-    } catch (_error) {
-      return null;
-    }
-  }
 }
 
 export const httpStreamService = new HttpStreamService();

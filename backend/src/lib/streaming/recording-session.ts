@@ -279,7 +279,7 @@ export class RecordingSessionService {
    * "live/{repoName}/{recordingSessionId}" 형식의 stream path에서 repository 이름 부분을 추출한다.
    * 형식이 맞지 않으면 에러를 던진다.
    */
-  extractRepositoryName(streamPath: string): string {
+  private extractRepositoryName(streamPath: string): string {
     return extractRepositoryNameFromStreamPath(streamPath);
   }
 

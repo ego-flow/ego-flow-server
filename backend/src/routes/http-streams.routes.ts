@@ -12,6 +12,7 @@ import {
   recordingSessionIdParamsSchema,
 } from "../schemas/stream.schema";
 import { httpStreamService } from "../services/http-stream.service";
+import type { RecordingSessionIdParams } from "../types/stream/request";
 
 const router = Router();
 
@@ -23,7 +24,7 @@ router.post(
   validate(httpStreamStartSchema),
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    const { recordingSessionId } = req.params as { recordingSessionId: string };
+    const { recordingSessionId } = req.params as RecordingSessionIdParams;
     const response = await httpStreamService.start(recordingSessionId, user.userId, req.body);
     res.status(200).json(response);
   }),
@@ -41,7 +42,7 @@ router.post(
   parseHttpStreamChunk,
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    const { recordingSessionId } = req.params as { recordingSessionId: string };
+    const { recordingSessionId } = req.params as RecordingSessionIdParams;
     const response = await httpStreamService.appendChunk(recordingSessionId, user.userId, getHttpStreamChunk(req));
     res.status(200).json(response);
   }),
@@ -55,7 +56,7 @@ router.post(
   validate(httpStreamFinishSchema),
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    const { recordingSessionId } = req.params as { recordingSessionId: string };
+    const { recordingSessionId } = req.params as RecordingSessionIdParams;
     const response = await httpStreamService.finish(recordingSessionId, user.userId, req.body);
     res.status(200).json(response);
   }),

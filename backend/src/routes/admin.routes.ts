@@ -4,7 +4,7 @@ import { asyncHandler } from "../lib/http/async-handler";
 import { requireDashboardSession } from "../middleware/auth.middleware";
 import { requireRole } from "../middleware/role.middleware";
 import { validate } from "../middleware/validate.middleware";
-import type { AdminUserIdParamInput } from "../schemas/admin.schema";
+import type { AdminUserIdParamInput } from "../types/admin/request";
 import { adminUserIdParamSchema, createAdminUserSchema, resetUserPasswordSchema } from "../schemas/admin.schema";
 import { adminService } from "../services/admin.service";
 

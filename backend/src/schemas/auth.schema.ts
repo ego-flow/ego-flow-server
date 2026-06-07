@@ -46,8 +46,3 @@ export const mediaMtxAuthSchema = z.object({
   id: optionalString,
   ip: optionalString,
 });
-
-export type LoginInput = z.infer<typeof loginSchema>;
-export type DashboardLoginInput = z.infer<typeof dashboardLoginSchema>;
-export type IssuePythonTokenInput = z.infer<typeof issuePythonTokenSchema>;
-export type MediaMtxAuthInput = z.infer<typeof mediaMtxAuthSchema>;

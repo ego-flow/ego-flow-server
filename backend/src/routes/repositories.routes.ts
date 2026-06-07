@@ -14,7 +14,7 @@ import type {
   ManifestQueryInput,
   RepositoryMemberParamInput,
   RepositoryResolveQueryInput,
-} from "../schemas/repository.schema";
+} from "../types/repository/request";
 import {
   createRepositoryMemberSchema,
   createRepositorySchema,

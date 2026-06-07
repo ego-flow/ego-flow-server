@@ -11,12 +11,17 @@ import {
   revokePythonToken as revokePythonTokenCredential,
 } from "../lib/auth/python-token";
 import { userRepository } from "../repositories/user.repository";
-import type { IssuePythonTokenInput, LoginInput, MediaMtxAuthInput } from "../schemas/auth.schema";
 import { mediaMtxAuthSchema } from "../schemas/auth.schema";
-import type { ChangeMyPasswordInput } from "../schemas/user.schema";
+import type {
+  ChangeMyPasswordInput,
+  IssuePythonTokenInput,
+  LoginInput,
+  MediaMtxAuthInput,
+} from "../types/auth/request";
 import type { AppUserRole, AuthContext, AuthenticatedUser } from "../types/auth";
+import { toAuthenticatedUserResponse, toCredentialUserResponse } from "../mappers/user.mapper";
 import { streamOwnershipService } from "../lib/streaming/stream-ownership";
-import { streamService } from "./stream.service";
+import { extractRepositoryNameFromStreamPath } from "../lib/streaming/stream-paths";
 
 export class AuthService {
   private logMediaMtxAuthDecision(
@@ -30,7 +35,7 @@ export class AuthService {
 
     if (path) {
       try {
-        repositoryName = streamService.extractRepositoryName(path);
+        repositoryName = extractRepositoryNameFromStreamPath(path);
       } catch (_error) {
         repositoryName = null;
       }
@@ -57,22 +62,6 @@ export class AuthService {
 
   private normalizeMediaMtxPath(path: string) {
     return path.trim().replace(/^\/+|\/+$/g, "");
-  }
-
-  private toCredentialUserResponse(user: { id: string; role: AppUserRole; displayName: string }) {
-    return {
-      id: user.id,
-      role: user.role,
-      displayName: user.displayName,
-    };
-  }
-
-  private toAuthenticatedUserResponse(user: AuthenticatedUser) {
-    return {
-      id: user.userId,
-      role: user.role,
-      display_name: user.displayName,
-    };
   }
 
   private async authenticatePassword(input: LoginInput) {
@@ -102,7 +91,7 @@ export class AuthService {
 
     return {
       token,
-      user: this.toCredentialUserResponse(user),
+      user: toCredentialUserResponse(user),
     };
   }
 
@@ -112,7 +101,7 @@ export class AuthService {
 
     return {
       session,
-      user: this.toCredentialUserResponse(user),
+      user: toCredentialUserResponse(user),
     };
   }
 
@@ -128,7 +117,7 @@ export class AuthService {
 
   getDashboardSession(user: AuthenticatedUser) {
     return {
-      user: this.toAuthenticatedUserResponse(user),
+      user: toAuthenticatedUserResponse(user),
     };
   }
 
@@ -145,7 +134,7 @@ export class AuthService {
   validatePythonToken(user: AuthenticatedUser) {
     return {
       valid: true,
-      user: this.toAuthenticatedUserResponse(user),
+      user: toAuthenticatedUserResponse(user),
     };
   }
 

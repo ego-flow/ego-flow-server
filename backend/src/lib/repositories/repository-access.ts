@@ -92,6 +92,30 @@ export class RepositoryAccessService {
     return access;
   }
 
+  async listAccessibleActiveRepositoryIds(
+    userId: string,
+    userRole: AppUserRole,
+    action: RepositoryActiveAccessAction,
+  ): Promise<Set<string>> {
+    const policy = getRepositoryAccessPolicy(action);
+
+    if (userRole === "admin") {
+      return new Set(await repositoriesRepository.findActiveRepositoryIds());
+    }
+
+    const membershipRoleMap = await this.getMembershipRoleMap(userId);
+    const memberRepoIds = this.getRepositoryIdsWithRoleAtLeast(membershipRoleMap, policy.minRole);
+
+    const [memberRepos, publicRepos] = await Promise.all([
+      repositoriesRepository.findActiveRepositoryIdsByIds(memberRepoIds),
+      this.allowsPublicReadFallback(policy.minRole)
+        ? repositoriesRepository.findActivePublicRepositoryIds()
+        : Promise.resolve([]),
+    ]);
+
+    return new Set([...memberRepos, ...publicRepos]);
+  }
+
   async assertAction(
     userId: string,
     userRole: AppUserRole,
@@ -120,6 +144,25 @@ export class RepositoryAccessService {
     }
 
     return repositoryPresence;
+  }
+
+  private async getMembershipRoleMap(userId: string): Promise<Map<string, AppRepoRole>> {
+    const memberships = await repoMemberRepository.findMembershipRolesByUser(userId);
+
+    return new Map(memberships.map((membership) => [membership.repositoryId, toAppRepoRole(membership.role)]));
+  }
+
+  private getRepositoryIdsWithRoleAtLeast(
+    membershipRoleMap: Map<string, AppRepoRole>,
+    minRole: AppRepoRole,
+  ): string[] {
+    return Array.from(membershipRoleMap.entries())
+      .filter(([, role]) => isRepoRoleAtLeast(role, minRole))
+      .map(([repositoryId]) => repositoryId);
+  }
+
+  private allowsPublicReadFallback(minRole: AppRepoRole): boolean {
+    return minRole === "read";
   }
 }
 

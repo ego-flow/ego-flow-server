@@ -1,6 +1,6 @@
-import { AuthCredentialKind } from "../constants/auth/auth-constants";
+import { AuthCredentialKind } from "../../constants/auth/auth-constants";
 
-export { AuthCredentialKind } from "../constants/auth/auth-constants";
+export { AuthCredentialKind } from "../../constants/auth/auth-constants";
 
 export type AppUserRole = "admin" | "user";
 

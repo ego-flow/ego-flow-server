@@ -15,7 +15,3 @@ export const adminUserIdParamSchema = z.object({
 export const resetUserPasswordSchema = z.object({
   newPassword: z.string(),
 });
-
-export type CreateAdminUserInput = z.infer<typeof createAdminUserSchema>;
-export type AdminUserIdParamInput = z.infer<typeof adminUserIdParamSchema>;
-export type ResetUserPasswordInput = z.infer<typeof resetUserPasswordSchema>;

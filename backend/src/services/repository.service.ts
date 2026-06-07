@@ -9,7 +9,12 @@ import { isRepoRoleAtLeast, toAppRepoRole } from "../lib/repositories/roles";
 import { runPrismaTransaction } from "../lib/infra/prisma";
 import { getTargetDirectory } from "../lib/storage/storage";
 import { toSignedFileUrl } from "../lib/storage/signed-file-url";
-import { normalizeRepositoryTags, toRepositoryRecord } from "../mappers/repository.mapper";
+import {
+  normalizeRepositoryTags,
+  toRepositoryRecord,
+  toRepositoryResponse,
+  toRepositorySummary,
+} from "../mappers/repository.mapper";
 import {
   isUniqueConstraintError,
   repositoriesRepository,
@@ -27,37 +32,13 @@ import type {
   RepositoryResolveQueryInput,
   UpdateRepositoryInput,
   UpdateRepositoryMemberInput,
-} from "../schemas/repository.schema";
+} from "../types/repository/request";
 import type { AppUserRole } from "../types/auth";
 import type { AppRepoRole, RepositoryAccessContext, RepositoryRecord } from "../types/repository";
 import { movePath, pathExists } from "../lib/storage/file-system";
 import { remapPathWithinDirectory } from "../lib/storage/path-mapping";
 import { repositoryAccessService } from "../lib/repositories/repository-access";
 import { refreshRepositoryContributors } from "../lib/repositories/repository-contributors";
-
-const toRepositoryResponse = (
-  repository: RepositoryRecord,
-  effectiveRole: AppRepoRole,
-) => ({
-  id: repository.id,
-  name: repository.name,
-  owner_id: repository.ownerId,
-  visibility: repository.visibility,
-  description: repository.description,
-  tags: repository.tags,
-  my_role: effectiveRole,
-  created_at: repository.createdAt.toISOString(),
-  updated_at: repository.updatedAt.toISOString(),
-});
-
-const toRepositorySummary = (
-  repository: RepositoryRecord,
-  effectiveRole: AppRepoRole,
-  videoCount: number,
-) => ({
-  ...toRepositoryResponse(repository, effectiveRole),
-  video_count: videoCount,
-});
 
 const normalizeDescription = (description: string | null | undefined): string | null => {
   if (description === undefined || description === null) {
@@ -101,44 +82,6 @@ export class RepositoryService {
     return {
       repositories: await this.getAccessibleRepositories(userId, userRole, "repository.list"),
     };
-  }
-
-  /**
-   * [접근 가능한 repository id 집합]
-   * /live API filter를 위해 호출자 권한으로 read 가능한 repository id 집합을 계산한다.
-   * - admin: deactivated=false repository id 전체
-   * - 일반 사용자: owner / member / public repository id의 합집합
-   */
-  async listAccessibleRepositoryIds(
-    userId: string,
-    userRole: AppUserRole,
-    action: RepositoryActiveAccessAction = "repository.list",
-  ): Promise<Set<string> | null> {
-    const policy = getRepositoryAccessPolicy(action);
-
-    if (userRole === "admin") {
-      return new Set(await repositoriesRepository.findActiveRepositoryIds());
-    }
-
-    const membershipRoleMap = await this.getMembershipRoleMap(userId);
-    const memberRepoIds = this.getRepositoryIdsWithRoleAtLeast(membershipRoleMap, policy.minRole);
-
-    const [memberRepos, publicRepos] = await Promise.all([
-      repositoriesRepository.findActiveRepositoryIdsByIds(memberRepoIds),
-      this.allowsPublicReadFallback(policy.minRole)
-        ? repositoriesRepository.findActivePublicRepositoryIds()
-        : Promise.resolve([]),
-    ]);
-
-    const accessible = new Set<string>();
-    for (const repositoryId of memberRepos) {
-      accessible.add(repositoryId);
-    }
-    for (const repositoryId of publicRepos) {
-      accessible.add(repositoryId);
-    }
-
-    return accessible;
   }
 
   async listMaintainedRepositories(userId: string, userRole: AppUserRole) {

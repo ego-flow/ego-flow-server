@@ -10,6 +10,7 @@ import {
   streamRegisterSchema,
 } from "../schemas/stream.schema";
 import { streamService } from "../services/stream.service";
+import type { PublishTicketParams } from "../types/stream/request";
 
 const router = Router();
 
@@ -44,7 +45,7 @@ router.post(
   validate(publishTicketParamsSchema, "params"),
   asyncHandler(async (req, res) => {
     const user = getAuthUser(req);
-    const { recordingSessionId } = req.params as { recordingSessionId: string };
+    const { recordingSessionId } = req.params as PublishTicketParams;
     const response = await streamService.issuePublishTicket(
       user.userId,
       recordingSessionId,

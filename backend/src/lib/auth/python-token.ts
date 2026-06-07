@@ -6,7 +6,7 @@ import {
 } from "../../constants/auth/auth-constants";
 import { toAppUserRole } from "../../mappers/user.mapper";
 import { pythonTokenRepository } from "../../repositories/python-token.repository";
-import type { CreatePythonTokenInput } from "../../schemas/python-token.schema";
+import type { CreatePythonTokenInput } from "../../types/auth/request";
 import type { AppUserRole } from "../../types/auth";
 import { createPrefixedRandomToken, hashValue } from "./crypto";
 import { Forbidden, NotFound } from "../core/errors";

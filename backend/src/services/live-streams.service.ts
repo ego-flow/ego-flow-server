@@ -11,9 +11,13 @@ import {
 import { streamRecordingKey } from "../lib/streaming/stream-keys";
 import { recordingSessionRepository } from "../repositories/recording-session.repository";
 import type { AppUserRole } from "../types/auth";
-import type { RecordingSessionLiveCache } from "../types/stream";
+import type {
+  HlsPlaybackTicketResponse,
+  LiveStreamDetailResponse,
+  LiveStreamResponse,
+  RecordingSessionLiveCache,
+} from "../types/stream";
 import { repositoryAccessService } from "../lib/repositories/repository-access";
-import { repositoryService } from "./repository.service";
 import { streamOwnershipService } from "../lib/streaming/stream-ownership";
 
 /**
@@ -26,8 +30,8 @@ export class LiveStreamsService {
   /**
    * [Live stream 목록 - Redis read-only]
    */
-  async listLiveStreams(requestUserId: string, requestUserRole: AppUserRole) {
-    const accessibleRepoIds = await repositoryService.listAccessibleRepositoryIds(
+  async listLiveStreams(requestUserId: string, requestUserRole: AppUserRole): Promise<LiveStreamResponse[]> {
+    const accessibleRepoIds = await repositoryAccessService.listAccessibleActiveRepositoryIds(
       requestUserId,
       requestUserRole,
       "live.list",
@@ -50,7 +54,7 @@ export class LiveStreamsService {
       .filter((entry): entry is { recordingSessionId: string; cache: RecordingSessionLiveCache } => Boolean(entry));
 
     const visibleCaches = liveCaches.filter(
-      ({ cache }) => !accessibleRepoIds || accessibleRepoIds.has(cache.repositoryId),
+      ({ cache }) => accessibleRepoIds.has(cache.repositoryId),
     );
 
     const streams = visibleCaches.map(({ recordingSessionId, cache }) => {
@@ -86,7 +90,7 @@ export class LiveStreamsService {
     recordingSessionId: string,
     requestUserId: string,
     requestUserRole: AppUserRole,
-  ) {
+  ): Promise<LiveStreamDetailResponse> {
     const session = await recordingSessionRepository.findById(recordingSessionId);
 
     if (!session || session.status !== RecordingSessionStatus.STREAMING) {
@@ -149,7 +153,7 @@ export class LiveStreamsService {
     recordingSessionId: string,
     requestUserId: string,
     requestUserRole: AppUserRole,
-  ) {
+  ): Promise<HlsPlaybackTicketResponse> {
     const rawCache = await redis.get(streamRecordingKey(recordingSessionId));
     const liveCache = this.parseLiveCache(rawCache);
     if (!liveCache || liveCache.status !== "STREAMING") {

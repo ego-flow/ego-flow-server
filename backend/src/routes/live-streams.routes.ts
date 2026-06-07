@@ -4,11 +4,9 @@ import { asyncHandler } from "../lib/http/async-handler";
 import { getAuthUser } from "../lib/http/request-context";
 import { requireDashboardOrAppOrPython, requireDashboardOrPython } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
-import {
-  liveStreamRecordingSessionParamSchema,
-  type LiveStreamRecordingSessionParamInput,
-} from "../schemas/live-stream.schema";
+import { liveStreamRecordingSessionParamSchema } from "../schemas/live-stream.schema";
 import { liveStreamsService } from "../services/live-streams.service";
+import type { LiveStreamRecordingSessionParamInput } from "../types/stream/request";
 
 const router = Router();
 

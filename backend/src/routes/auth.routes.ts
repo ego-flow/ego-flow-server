@@ -5,7 +5,7 @@ import { clearDashboardSessionCookie, setDashboardSessionCookie } from "../lib/a
 import { getAuthUser } from "../lib/http/request-context";
 import { requireDashboardSession, requirePythonToken } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
-import type { PythonTokenIdParamInput } from "../schemas/python-token.schema";
+import type { PythonTokenIdParamInput } from "../types/auth/request";
 import { pythonTokenIdParamSchema } from "../schemas/python-token.schema";
 import { dashboardLoginSchema, issuePythonTokenSchema, loginSchema } from "../schemas/auth.schema";
 import { changeMyPasswordSchema } from "../schemas/user.schema";

@@ -17,30 +17,13 @@ import {
 import { BadRequest, Conflict, NotFound } from "../lib/core/errors";
 import { listActivePythonTokensForAdmin } from "../lib/auth/python-token";
 import { getTargetDirectory } from "../lib/storage/storage";
-import { toAppUserRole } from "../mappers/user.mapper";
+import { toAdminSettingsEntryResponse, toAdminUserResponse } from "../mappers/admin.mapper";
 import { recordingSessionRepository } from "../repositories/recording-session.repository";
 import { repoMemberRepository } from "../repositories/repo-member.repository";
 import { repositoriesRepository } from "../repositories/repositories.repository";
 import { userRepository } from "../repositories/user.repository";
-import type { CreateAdminUserInput, ResetUserPasswordInput } from "../schemas/admin.schema";
-
-type ConfigValue = string | number | boolean | null;
-
-type SettingsEntry = {
-  key: string;
-  value: ConfigValue;
-  sensitive?: boolean;
-  sourcePath?: string;
-  children?: SettingsEntry[];
-};
-
-type SettingsEntryResponse = {
-  key: string;
-  value: ConfigValue;
-  sensitive: boolean;
-  source_path: string | null;
-  children: SettingsEntryResponse[];
-};
+import type { CreateAdminUserInput, ResetUserPasswordInput } from "../types/admin/request";
+import type { AdminSettingsEntry } from "../types/admin/response";
 
 const maskSecretValue = (value: string | undefined): string => {
   if (!value) {
@@ -58,20 +41,6 @@ const resolveDisplayName = (userId: string, displayName: string | undefined) => 
   const normalized = displayName?.trim();
   return normalized || userId;
 };
-
-const toUserResponse = (user: {
-  id: string;
-  role: UserRole;
-  displayName: string;
-  createdAt: Date;
-  deactivated: boolean;
-}) => ({
-  id: user.id,
-  role: toAppUserRole(user.role),
-  displayName: user.displayName,
-  createdAt: user.createdAt.toISOString(),
-  deactivated: user.deactivated,
-});
 
 export class AdminService {
   private async getPermanentDeleteState(userId: string) {
@@ -117,7 +86,7 @@ export class AdminService {
     const sections: Array<{
       title: string;
       description?: string;
-      entries: SettingsEntry[];
+      entries: AdminSettingsEntry[];
     }> = [
       {
         title: "config.json",
@@ -196,14 +165,6 @@ export class AdminService {
       },
     ];
 
-    const toSettingsEntryResponse = (entry: SettingsEntry): SettingsEntryResponse => ({
-      key: entry.key,
-      value: entry.value,
-      sensitive: Boolean(entry.sensitive),
-      source_path: entry.sourcePath ?? null,
-      children: (entry.children ?? []).map(toSettingsEntryResponse),
-    });
-
     return {
       settings: {
         target_directory: getTargetDirectory(),
@@ -212,7 +173,7 @@ export class AdminService {
         sections: sections.map((section) => ({
           title: section.title,
           description: section.description ?? null,
-          entries: section.entries.map(toSettingsEntryResponse),
+          entries: section.entries.map(toAdminSettingsEntryResponse),
         })),
       },
     };
@@ -234,7 +195,7 @@ export class AdminService {
     });
 
     return {
-      user: toUserResponse(user),
+      user: toAdminUserResponse(user),
     };
   }
 
@@ -242,7 +203,7 @@ export class AdminService {
     const users = await userRepository.findAllForAdmin();
 
     return {
-      users: users.map(toUserResponse),
+      users: users.map(toAdminUserResponse),
     };
   }
 

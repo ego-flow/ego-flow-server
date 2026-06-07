@@ -9,7 +9,7 @@ import { validate } from "../middleware/validate.middleware";
 import type {
   RepoVideoListQueryInput,
   RepoVideoParamsInput,
-} from "../schemas/repository-video.schema";
+} from "../types/videos/request";
 import {
   repoVideoListQuerySchema,
   repoVideoParamsSchema,

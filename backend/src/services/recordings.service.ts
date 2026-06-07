@@ -6,7 +6,7 @@ import {
 import { BadRequest, Conflict, Forbidden, NotFound } from "../lib/core/errors";
 import { extractRepositoryNameFromStreamPath } from "../lib/streaming/stream-paths";
 import { recordingSessionRepository } from "../repositories/recording-session.repository";
-import type { RecordingCloseIntentInput } from "../schemas/stream.schema";
+import type { RecordingCloseIntentInput } from "../types/stream/request";
 
 export class RecordingsService {
   async recordCloseIntent(

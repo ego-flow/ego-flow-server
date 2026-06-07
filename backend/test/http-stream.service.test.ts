@@ -158,6 +158,8 @@ const { streamOwnershipService } =
   require("../src/lib/streaming/stream-ownership") as typeof import("../src/lib/streaming/stream-ownership");
 const { recordingSessionService } =
   require("../src/lib/streaming/recording-session") as typeof import("../src/lib/streaming/recording-session");
+const { reconcileHttpUploads } =
+  require("../src/lib/streaming/http-upload-session") as typeof import("../src/lib/streaming/http-upload-session");
 
 const originalConsumePublishTicket = streamOwnershipService.consumePublishTicket;
 const originalTryEnqueueFinalize = recordingSessionService.tryEnqueueFinalize;
@@ -340,7 +342,7 @@ test("reconcile does not create failed video when timeout failure loses the stat
     completedAt: new Date(),
   };
 
-  await httpStreamService.reconcileHttpUploads();
+  await reconcileHttpUploads();
 
   assert.equal(currentSession.status, RecordingSessionStatus.CLOSED);
   assert.equal(currentSession.endReason, RecordingSessionEndReason.NORMAL_DISCONNECT);
@@ -390,7 +392,7 @@ test("reconcile does not enqueue finalize when timeout recovery loses the state 
     return true;
   };
 
-  await httpStreamService.reconcileHttpUploads();
+  await reconcileHttpUploads();
 
   assert.equal(currentSession.status, RecordingSessionStatus.CLOSED);
   assert.equal(currentSession.endReason, RecordingSessionEndReason.NORMAL_DISCONNECT);
@@ -426,7 +428,7 @@ test("reconcile marks timed out missing raw file as failed and creates failed vi
   } satisfies RecordingSessionLiveCache);
   await fakeRedis.sadd("stream:active:sessions", session.id);
 
-  await httpStreamService.reconcileHttpUploads();
+  await reconcileHttpUploads();
 
   assert.equal(currentSession.status, RecordingSessionStatus.CLOSED);
   assert.equal(currentSession.endReason, RecordingSessionEndReason.UNEXPECTED_DISCONNECT);

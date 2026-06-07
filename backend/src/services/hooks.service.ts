@@ -23,7 +23,7 @@ import type {
   StreamNotReadyHookInput,
   SegmentCreateHookInput,
   SegmentCompleteHookInput,
-} from "../schemas/stream.schema";
+} from "../types/stream/request";
 import type { RecordingSessionLiveCache } from "../types/stream";
 import { recordingSessionService } from "../lib/streaming/recording-session";
 import { streamOwnershipService } from "../lib/streaming/stream-ownership";

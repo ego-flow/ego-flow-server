@@ -20,7 +20,3 @@ export const repoVideoListQuerySchema = z.object({
   sort_order: z.enum(["asc", "desc"]).default("desc"),
   contributor_user_id: z.string().trim().min(1).max(64).optional(),
 });
-
-export type RepoVideoRepositoryParamInput = z.infer<typeof repoVideoRepositoryParamSchema>;
-export type RepoVideoParamsInput = z.infer<typeof repoVideoParamsSchema>;
-export type RepoVideoListQueryInput = z.infer<typeof repoVideoListQuerySchema>;

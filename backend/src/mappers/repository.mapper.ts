@@ -1,6 +1,11 @@
 import type { Prisma, RepoVisibility } from "@prisma/client";
 
-import type { RepositoryRecord } from "../types/repository";
+import type {
+  AppRepoRole,
+  RepositoryRecord,
+  RepositoryResponse,
+  RepositorySummaryResponse,
+} from "../types/repository";
 
 const toRepositoryVisibility = (visibility: RepoVisibility): "public" | "private" => visibility;
 
@@ -47,4 +52,28 @@ export const toRepositoryRecord = (repository: {
   tags: normalizeRepositoryTags(repository.tags),
   createdAt: repository.createdAt,
   updatedAt: repository.updatedAt,
+});
+
+export const toRepositoryResponse = (
+  repository: RepositoryRecord,
+  effectiveRole: AppRepoRole,
+): RepositoryResponse => ({
+  id: repository.id,
+  name: repository.name,
+  owner_id: repository.ownerId,
+  visibility: repository.visibility,
+  description: repository.description,
+  tags: repository.tags,
+  my_role: effectiveRole,
+  created_at: repository.createdAt.toISOString(),
+  updated_at: repository.updatedAt.toISOString(),
+});
+
+export const toRepositorySummary = (
+  repository: RepositoryRecord,
+  effectiveRole: AppRepoRole,
+  videoCount: number,
+): RepositorySummaryResponse => ({
+  ...toRepositoryResponse(repository, effectiveRole),
+  video_count: videoCount,
 });
