@@ -1,5 +1,34 @@
 import type { RecordingSessionIngestTypeValue } from "./model";
 
+export interface StreamRegisterResponse {
+  recordingSessionId: string;
+}
+
+export interface StreamPublishTicketResponse {
+  stream_path: string;
+  publish_ticket: string;
+}
+
+export interface HttpStreamStartResponse {
+  recording_session_id: string;
+  status: "STREAMING";
+  bytes_received: number;
+  last_sequence: number | null;
+}
+
+export interface HttpStreamAppendChunkResponse {
+  recording_session_id: string;
+  bytes_received: number;
+  last_sequence: number;
+}
+
+export interface HttpStreamFinishResponse {
+  recording_session_id: string;
+  status: "CLOSED";
+  segment_status: "WRITE_DONE";
+  bytes_received: number;
+}
+
 export interface LiveStreamResponse {
   recording_session_id: string;
   repository_id: string;
