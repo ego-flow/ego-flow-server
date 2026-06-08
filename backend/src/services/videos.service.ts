@@ -6,15 +6,10 @@ import { NotFound } from "../lib/core/errors";
 import { isMissingFileError } from "../lib/storage/file-system";
 import { toSignedFileUrl } from "../lib/storage/signed-file-url";
 import { getTargetDirectory, toStorageRelativePath } from "../lib/storage/storage";
-import {
-  videosRepository,
-  type RepositoryVideoRecord,
-} from "../repositories/videos.repository";
+import { videosRepository } from "../repositories/videos.repository";
 import { repositoriesRepository } from "../repositories/repositories.repository";
 import { userRepository } from "../repositories/user.repository";
-import {
-  type RecordingFinalizeProgress,
-} from "../types/processing";
+import type { RecordingFinalizeProgress } from "../types/processing";
 import { processingService } from "../lib/processing/processing-queue";
 import { normalizeContributorUserIds, refreshRepositoryContributors } from "../lib/repositories/repository-contributors";
 import {
@@ -26,6 +21,9 @@ import type { RepoVideoListQueryInput, RepoVideoOrderQuery } from "../types/vide
 import type {
   RepositoryContributorSummary,
   RepositoryVideoContext,
+  RepositoryVideoMapperInput,
+} from "../types/videos/model";
+import type {
   RepositoryVideoDownloadResponse,
   RepositoryVideoListResponse,
   RepositoryVideoResponse,
@@ -163,7 +161,7 @@ export class VideosService {
   }
 
   private async getProcessingProgressByVideoId(
-    videos: Array<Pick<RepositoryVideoRecord, "id" | "recordingSessionId" | "status">>,
+    videos: Array<Pick<RepositoryVideoMapperInput, "id" | "recordingSessionId" | "status">>,
   ): Promise<Map<string, RecordingFinalizeProgress | null>> {
     const entries = await Promise.all(
       videos.map(async (video) => {

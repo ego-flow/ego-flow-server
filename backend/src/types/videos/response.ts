@@ -2,19 +2,6 @@ import type { VideoStatus } from "@prisma/client";
 
 import type { RecordingFinalizeProgress } from "../processing";
 
-export interface RepositoryVideoContext {
-  id: string;
-  name: string;
-  ownerId: string;
-}
-
-export interface RepositoryContributorSummary {
-  userId: string;
-  displayName: string;
-  videoCount: number;
-  latestRecordedAt: Date | null;
-}
-
 export interface RepositoryContributorResponse {
   user_id: string;
   display_name: string;

@@ -1,18 +1,20 @@
 import { VideoStatus } from "@prisma/client";
 
 import { toSignedFileUrl } from "../lib/storage/signed-file-url";
-import type { RepositoryVideoRecord } from "../repositories/videos.repository";
 import {
   RECORDING_FINALIZE_COMPLETED_PROGRESS,
   type RecordingFinalizeProgress,
 } from "../types/processing";
 import type {
-  RepositoryContributorResponse,
   RepositoryContributorSummary,
   RepositoryVideoContext,
+  RepositoryVideoMapperInput,
+} from "../types/videos/model";
+import type {
+  RepositoryContributorResponse,
   RepositoryVideoResponse,
   RepositoryVideoStatusResponse,
-} from "../types/videos";
+} from "../types/videos/response";
 
 const normalizeProgress = (
   status: VideoStatus,
@@ -27,7 +29,7 @@ const normalizeProgress = (
 
 const toRepositoryThumbnailUrl = (
   targetDirectory: string,
-  video: Pick<RepositoryVideoRecord, "thumbnailPath">,
+  video: Pick<RepositoryVideoMapperInput, "thumbnailPath">,
 ) => toSignedFileUrl(targetDirectory, video.thumbnailPath);
 
 const toSizeBytes = (value: bigint | number | null | undefined) => {
@@ -40,7 +42,7 @@ const toSizeBytes = (value: bigint | number | null | undefined) => {
 
 export const toRepositoryVideoResponse = (
   targetDirectory: string,
-  video: RepositoryVideoRecord,
+  video: RepositoryVideoMapperInput,
   repository: RepositoryVideoContext,
   displayNamesByUserId: Map<string, string>,
   options?: { includeDashboardVideoUrl?: boolean; processingProgress?: RecordingFinalizeProgress | null },
