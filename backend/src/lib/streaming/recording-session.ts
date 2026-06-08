@@ -1,31 +1,23 @@
-import { randomUUID } from "node:crypto";
-
 import {
-  RecordingSessionStatus,
-  RecordingSessionEndReason,
   RecordingSessionIngestType,
-  RecordingSegmentStatus,
 } from "@prisma/client";
 
 import {
   RECORDING_REGISTRATION_TTL_SECONDS,
 } from "../../constants/stream/stream-constants";
-import { redis } from "../infra/redis";
-import { runtimeConfig as env } from "../../config/runtime";
-import { processingService } from "../processing/processing-queue";
-import { streamRecordingKey } from "./stream-keys";
-import { clearLivePointers } from "./stream-live-cache";
-import {
-  extractRecordingSessionIdFromStreamPath,
-  extractRepositoryNameFromStreamPath,
-  normalizeStreamPath,
-} from "./stream-paths";
-import { recordingSegmentRepository } from "../../repositories/recording-segment.repository";
+import { extractRepositoryNameFromStreamPath } from "./stream-paths";
 import { recordingSessionRepository } from "../../repositories/recording-session.repository";
-import type {
-  RecordingSessionLiveCache,
-  RecordingFinalizeJobData,
-} from "../../types/stream";
+import type { RecordingSessionLiveCache } from "../../types/stream";
+import {
+  cachePendingRecordingSession,
+  getRecordingSessionLiveCacheById,
+  getRecordingSessionLiveCacheByPath,
+} from "./recording-session-cache";
+import { tryEnqueueRecordingFinalize } from "./recording-finalize";
+import {
+  getMediamtxActiveStreamPaths,
+  reconcileMediamtxRecordingSessions,
+} from "./recording-reconcile";
 
 /**
  * RecordingSession 라이프사이클 전체를 관리하는 핵심 서비스.
@@ -87,31 +79,7 @@ export class RecordingSessionService {
     },
     ttlSeconds: number,
   ) {
-    const liveCache: RecordingSessionLiveCache = {
-      repositoryId: session.repositoryId,
-      repositoryName: this.extractRepositoryName(session.streamPath),
-      userId: session.userId,
-      ingestType: session.ingestType,
-      status: "PENDING",
-    };
-    if (session.deviceType) {
-      liveCache.deviceType = session.deviceType;
-    }
-
-    await redis.set(
-      streamRecordingKey(session.id),
-      JSON.stringify(liveCache),
-      "EX",
-      Math.max(1, ttlSeconds),
-    );
-
-    console.info("[rtmp-state] pending-cache-refreshed", {
-      recordingSessionId: session.id,
-      repositoryId: session.repositoryId,
-      repositoryName: liveCache.repositoryName,
-      userId: session.userId,
-      ttlSec: ttlSeconds,
-    });
+    await cachePendingRecordingSession(session, ttlSeconds);
   }
 
   /**
@@ -125,62 +93,7 @@ export class RecordingSessionService {
    * 후처리 재시도 기준은 RecordingSession.status가 아니라 RecordingSegment.status=WRITE_DONE이다.
    */
   async tryEnqueueFinalize(recordingSessionId: string): Promise<boolean> {
-    const session = await recordingSessionRepository.findById(recordingSessionId);
-    if (!session || session.status !== RecordingSessionStatus.CLOSED) {
-      return false;
-    }
-
-    const segment = await recordingSegmentRepository.findFinalizeStateByRecordingSessionId(recordingSessionId);
-
-    if (!segment) {
-      console.info("[rtmp-finalize] no-recording-segment", {
-        recordingSessionId,
-        repositoryId: session.repositoryId,
-        repositoryName: this.extractRepositoryName(session.streamPath),
-        endReason: session.endReason ?? null,
-      });
-      return false;
-    }
-
-    if (segment.status === RecordingSegmentStatus.WRITING) {
-      console.info("[rtmp-finalize] waiting-for-segment-complete", {
-        recordingSessionId,
-        repositoryId: session.repositoryId,
-        repositoryName: this.extractRepositoryName(session.streamPath),
-        rawPath: segment.rawPath,
-      });
-      return false;
-    }
-
-    if (segment.status !== RecordingSegmentStatus.WRITE_DONE) {
-      console.info("[rtmp-finalize] segment-not-ready", {
-        recordingSessionId,
-        repositoryId: session.repositoryId,
-        repositoryName: this.extractRepositoryName(session.streamPath),
-        segmentStatus: segment.status,
-      });
-      return false;
-    }
-
-    const repoName = this.extractRepositoryName(session.streamPath);
-    const payload: RecordingFinalizeJobData = {
-      recordingSessionId: session.id,
-      videoId: randomUUID(),
-      repositoryId: session.repositoryId,
-      ownerId: session.ownerId,
-      repoName,
-      targetDirectory: session.targetDirectory,
-    };
-
-    await processingService.enqueueRecordingFinalize(payload);
-    console.info("[rtmp-finalize] enqueued", {
-      recordingSessionId: session.id,
-      repositoryId: session.repositoryId,
-      repositoryName: repoName,
-      videoId: payload.videoId,
-      segmentStatus: segment.status,
-    });
-    return true;
+    return tryEnqueueRecordingFinalize(recordingSessionId);
   }
 
   /**
@@ -189,34 +102,10 @@ export class RecordingSessionService {
    * - STREAMING: active path가 없거나 closedAt이 기록되어 있으면 CLOSED로 보정 후 segment complete 기반 enqueue 시도
    */
   async reconcileSessions() {
-    const mediamtxSessions = await recordingSessionRepository.findStreamingByIngestType(
-      RecordingSessionIngestType.MEDIAMTX,
-    );
-    const activeStreamPaths = mediamtxSessions.length > 0 ? await this.getActiveStreamPaths() : null;
-
-    for (const session of mediamtxSessions) {
-      const repoName = this.extractRepositoryName(session.streamPath);
-
-      if (session.closedAt) {
-        await this.closeStreamingSession(session, {
-          endReason: session.endReason ?? RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
-          logPrefix: "[rtmp-reconcile] not-ready-streaming-closed",
-        });
-        await this.tryEnqueueFinalize(session.id);
-        continue;
-      }
-
-      const activePathMissing = activeStreamPaths ? !activeStreamPaths.has(this.normalizeStreamPath(session.streamPath)) : false;
-      if (activePathMissing) {
-        await this.closeStreamingSession(session, {
-          endReason: session.endReason ?? RecordingSessionEndReason.UNEXPECTED_DISCONNECT,
-          logPrefix: "[rtmp-reconcile] missing-active-path-closed",
-          repositoryName: repoName,
-          activeStreamPaths: activeStreamPaths ? Array.from(activeStreamPaths.values()) : null,
-        });
-        await this.tryEnqueueFinalize(session.id);
-      }
-    }
+    await reconcileMediamtxRecordingSessions({
+      getActiveStreamPaths: () => this.getActiveStreamPaths(),
+      tryEnqueueFinalize: (recordingSessionId) => this.tryEnqueueFinalize(recordingSessionId),
+    });
   }
 
   /**
@@ -225,53 +114,11 @@ export class RecordingSessionService {
    * RTMP/HLS 인증에서 사용된다.
    */
   async getLiveCacheByPath(streamPath: string): Promise<RecordingSessionLiveCache | null> {
-    const recordingSessionId = this.extractRecordingSessionId(streamPath);
-    if (!recordingSessionId) {
-      return null;
-    }
-
-    return this.getLiveCacheByRecordingSessionId(recordingSessionId);
+    return getRecordingSessionLiveCacheByPath(streamPath);
   }
 
   async getLiveCacheByRecordingSessionId(recordingSessionId: string): Promise<RecordingSessionLiveCache | null> {
-    return this.parseRedisRecord<RecordingSessionLiveCache>(
-      await redis.get(streamRecordingKey(recordingSessionId)),
-    );
-  }
-
-  private async closeStreamingSession(
-    session: {
-      id: string;
-      repositoryId: string;
-      streamPath: string;
-      status: RecordingSessionStatus;
-      endReason: RecordingSessionEndReason | null;
-      closedAt?: Date | null;
-    },
-    options: {
-      endReason: RecordingSessionEndReason;
-      logPrefix: string;
-      [key: string]: unknown;
-    },
-  ) {
-    const closedAt = session.closedAt ?? new Date();
-    await recordingSessionRepository.close({
-      recordingSessionId: session.id,
-      closedAt,
-      endReason: session.endReason ?? options.endReason,
-    });
-
-    const repoName = this.extractRepositoryName(session.streamPath);
-    await clearLivePointers(session.id, session.repositoryId, repoName);
-
-    const { logPrefix, endReason: _endReason, ...details } = options;
-    console.info(logPrefix, {
-      recordingSessionId: session.id,
-      repositoryId: session.repositoryId,
-      repositoryName: repoName,
-      previousStatus: session.status,
-      ...details,
-    });
+    return getRecordingSessionLiveCacheById(recordingSessionId);
   }
 
   /**
@@ -283,65 +130,8 @@ export class RecordingSessionService {
     return extractRepositoryNameFromStreamPath(streamPath);
   }
 
-  private extractRecordingSessionId(streamPath: string): string | null {
-    return extractRecordingSessionIdFromStreamPath(streamPath);
-  }
-
-  private normalizeStreamPath(streamPath: string): string {
-    return normalizeStreamPath(streamPath);
-  }
-
-  /**
-   * [MediaMTX active path 조회]
-   * MediaMTX API에서 현재 active path 목록을 가져와 stream path 집합으로 반환한다.
-   * reconcile 시 DB 상태와 대조하여 실제로 송출이 끊긴 세션을 감지하는 데 사용된다.
-   */
   private async getActiveStreamPaths(): Promise<Set<string> | null> {
-    const baseUrl = env.MEDIAMTX_API_URL.replace(/\/+$/, "");
-
-    try {
-      const response = await fetch(`${baseUrl}/v3/paths/list`);
-      if (!response.ok) {
-        console.warn("[rtmp-reconcile] active-path-query-failed", {
-          reason: `status ${response.status}`,
-        });
-        return null;
-      }
-
-      const payload = (await response.json()) as { items?: Array<{ name?: unknown }> };
-      const paths = new Set<string>();
-
-      for (const item of payload.items ?? []) {
-        if (typeof item.name !== "string") {
-          continue;
-        }
-        const normalized = this.normalizeStreamPath(item.name);
-        const parts = normalized.split("/");
-        if (parts.length >= 3 && parts[0] === "live" && parts[1] && parts[2]) {
-          paths.add(normalized);
-        }
-      }
-
-      return paths;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "unknown error";
-      console.warn("[rtmp-reconcile] active-path-query-failed", {
-        reason: message,
-      });
-      return null;
-    }
-  }
-
-  private parseRedisRecord<T>(raw: string | null): T | null {
-    if (!raw) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(raw) as T;
-    } catch (_error) {
-      return null;
-    }
+    return getMediamtxActiveStreamPaths();
   }
 
 }
