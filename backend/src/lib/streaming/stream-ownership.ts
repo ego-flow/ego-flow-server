@@ -1,119 +1,42 @@
-import { v4 as uuidv4 } from "uuid";
-
-import { RecordingSessionIngestType } from "@prisma/client";
-
-import { HLS_PLAYBACK_TICKET_TTL_SECONDS } from "../../constants/stream/stream-constants";
-import { PUBLISH_TICKET_TTL_SECONDS } from "../../constants/stream/stream-ownership-constants";
-import { redis } from "../infra/redis";
-import type {
-  HlsPlaybackTicketRecord,
-  PublishTicketRecord,
-  RecordingSessionIngestTypeValue,
-  RecordingSessionLiveCache,
-} from "../../types/stream";
-import { hlsPlaybackTicketKey, streamRecordingKey, streamTicketKey } from "./stream-keys";
-
-type PublishTicketValidationResult =
-  | {
-      ok: true;
-      ticket: PublishTicketRecord;
-      ticketId: string;
-    }
-  | {
-      ok: false;
-      reason: string;
-      ticketId: string | null;
-    };
-
-type PublishTicketConsumeResult =
-  | {
-      ok: true;
-      ticket: PublishTicketRecord;
-      ticketId: string;
-    }
-  | {
-      ok: false;
-      reason: string;
-      ticketId: string | null;
-    };
-
-type PublishTicketValidationOptions = {
-  refreshTtl?: boolean;
-  expectedIngestType?: RecordingSessionIngestTypeValue;
-};
-
-type HlsPlaybackTicketValidationResult =
-  | {
-      ok: true;
-      ticket: HlsPlaybackTicketRecord;
-      ticketId: string;
-      liveCache: RecordingSessionLiveCache;
-    }
-  | {
-      ok: false;
-      reason: string;
-      ticketId: string | null;
-    };
-
-type HlsPlaybackTicketValidationOptions = {
-  expectedUserId?: string | null;
-};
+import {
+  extractHlsPlaybackTicketId,
+  extractHlsPlaybackUserId,
+  getHlsPlaybackTicketTtlSeconds,
+  issueHlsPlaybackTicket,
+  validateHlsPlaybackTicket,
+  type HlsPlaybackTicketGrant,
+  type HlsPlaybackTicketValidationOptions,
+  type HlsPlaybackTicketValidationResult,
+  type IssueHlsPlaybackTicketParams,
+} from "./hls-playback-ticket";
+import {
+  consumeValidatedPublishTicket,
+  extractTicketId,
+  getPublishTicketTtlSeconds,
+  issuePublishTicket,
+  validatePublishTicket,
+  type IssuePublishTicketParams,
+  type PublishTicketConsumeResult,
+  type PublishTicketGrant,
+  type PublishTicketValidationOptions,
+  type PublishTicketValidationResult,
+} from "./publish-ticket";
 
 export class StreamOwnershipService {
   getPublishTicketTtlSeconds() {
-    return PUBLISH_TICKET_TTL_SECONDS;
+    return getPublishTicketTtlSeconds();
   }
 
   getHlsPlaybackTicketTtlSeconds() {
-    return HLS_PLAYBACK_TICKET_TTL_SECONDS;
+    return getHlsPlaybackTicketTtlSeconds();
   }
 
-  async issuePublishTicket(params: {
-    recordingSessionId: string;
-    repositoryId: string;
-    userId: string;
-    ingestType: RecordingSessionIngestTypeValue;
-    streamPath: string;
-  }): Promise<{ ticket: PublishTicketRecord; ticketId: string }> {
-    const ticketId = `t_${uuidv4()}`;
-    const ticket: PublishTicketRecord = {
-      recordingSessionId: params.recordingSessionId,
-      repositoryId: params.repositoryId,
-      userId: params.userId,
-      ingestType: params.ingestType,
-      streamPath: params.streamPath,
-      status: "active",
-    };
-
-    await redis.set(streamTicketKey(ticketId), JSON.stringify(ticket), "EX", PUBLISH_TICKET_TTL_SECONDS);
-
-    return { ticket, ticketId };
+  async issuePublishTicket(params: IssuePublishTicketParams): Promise<PublishTicketGrant> {
+    return issuePublishTicket(params);
   }
 
-  async issueHlsPlaybackTicket(params: {
-    recordingSessionId: string;
-    repositoryId: string;
-    userId: string;
-    streamPath: string;
-  }): Promise<{ ticket: HlsPlaybackTicketRecord; ticketId: string }> {
-    const ticketId = `pt_${uuidv4()}`;
-    const ticket: HlsPlaybackTicketRecord = {
-      recordingSessionId: params.recordingSessionId,
-      repositoryId: params.repositoryId,
-      userId: params.userId,
-      ingestType: RecordingSessionIngestType.MEDIAMTX,
-      streamPath: params.streamPath,
-      status: "active",
-    };
-
-    await redis.set(
-      hlsPlaybackTicketKey(ticketId),
-      JSON.stringify(ticket),
-      "EX",
-      HLS_PLAYBACK_TICKET_TTL_SECONDS,
-    );
-
-    return { ticket, ticketId };
+  async issueHlsPlaybackTicket(params: IssueHlsPlaybackTicketParams): Promise<HlsPlaybackTicketGrant> {
+    return issueHlsPlaybackTicket(params);
   }
 
   async validatePublishTicket(
@@ -121,76 +44,7 @@ export class StreamOwnershipService {
     ticketId?: string | null,
     options: PublishTicketValidationOptions = {},
   ): Promise<PublishTicketValidationResult> {
-    const normalizedTicketId = ticketId?.trim();
-    if (!normalizedTicketId) {
-      return {
-        ok: false,
-        reason: "missing-publish-ticket",
-        ticketId: null,
-      };
-    }
-
-    const ticketKey = streamTicketKey(normalizedTicketId);
-    const raw = await redis.get(ticketKey);
-    if (!raw) {
-      return {
-        ok: false,
-        reason: "unknown-or-expired-ticket",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    let ticket: PublishTicketRecord;
-    try {
-      ticket = JSON.parse(raw) as PublishTicketRecord;
-    } catch (_error) {
-      return {
-        ok: false,
-        reason: "malformed-ticket-record",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    if (ticket.status !== "active") {
-      return {
-        ok: false,
-        reason: `ticket-status-${ticket.status.toLowerCase()}`,
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    if (ticket.streamPath !== streamPath) {
-      return {
-        ok: false,
-        reason: "ticket-stream-path-mismatch",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    if (options.expectedIngestType && ticket.ingestType !== options.expectedIngestType) {
-      return {
-        ok: false,
-        reason: "ticket-ingest-type-mismatch",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    if (options.refreshTtl ?? true) {
-      const refreshed = await redis.expire(ticketKey, PUBLISH_TICKET_TTL_SECONDS);
-      if (!refreshed) {
-        return {
-          ok: false,
-          reason: "unknown-or-expired-ticket",
-          ticketId: normalizedTicketId,
-        };
-      }
-    }
-
-    return {
-      ok: true,
-      ticket,
-      ticketId: normalizedTicketId,
-    };
+    return validatePublishTicket(streamPath, ticketId, options);
   }
 
   async consumePublishTicket(
@@ -210,36 +64,11 @@ export class StreamOwnershipService {
       return validation;
     }
 
-    const nextTicket: PublishTicketRecord = {
-      ...validation.ticket,
-      status: "consumed",
-    };
-
-    const updated = await redis.set(
-      streamTicketKey(validation.ticketId),
-      JSON.stringify(nextTicket),
-      "KEEPTTL",
-      "XX",
-    );
-    if (updated !== "OK") {
-      return {
-        ok: false,
-        reason: "unknown-or-expired-ticket",
-        ticketId: validation.ticketId,
-      };
-    }
-
-    return {
-      ok: true,
-      ticket: nextTicket,
-      ticketId: validation.ticketId,
-    };
+    return consumeValidatedPublishTicket(validation);
   }
 
   extractTicketId(query?: string) {
-    const queryParams = new URLSearchParams(query ?? "");
-    const ticketId = queryParams.get("ticket");
-    return ticketId && ticketId.trim() ? ticketId.trim() : null;
+    return extractTicketId(query);
   }
 
   extractHlsPlaybackTicketId(params: {
@@ -247,38 +76,14 @@ export class StreamOwnershipService {
     query?: string | null | undefined;
     password?: string | null | undefined;
   }) {
-    const token = params.token?.trim();
-    if (token) {
-      return token;
-    }
-
-    const queryParams = new URLSearchParams(params.query ?? "");
-    const queryTicket = queryParams.get("ticket")?.trim();
-    if (queryTicket) {
-      return queryTicket;
-    }
-
-    const queryToken = queryParams.get("token")?.trim();
-    if (queryToken) {
-      return queryToken;
-    }
-
-    const password = params.password?.trim();
-    return password || null;
+    return extractHlsPlaybackTicketId(params);
   }
 
   extractHlsPlaybackUserId(params: {
     user?: string | null | undefined;
     query?: string | null | undefined;
   }) {
-    const queryParams = new URLSearchParams(params.query ?? "");
-    const queryUserId = queryParams.get("user_id")?.trim();
-    if (queryUserId) {
-      return queryUserId;
-    }
-
-    const user = params.user?.trim();
-    return user || null;
+    return extractHlsPlaybackUserId(params);
   }
 
   async validateHlsPlaybackTicket(
@@ -286,131 +91,8 @@ export class StreamOwnershipService {
     ticketId?: string | null,
     options: HlsPlaybackTicketValidationOptions = {},
   ): Promise<HlsPlaybackTicketValidationResult> {
-    const normalizedTicketId = ticketId?.trim();
-    if (!normalizedTicketId) {
-      return {
-        ok: false,
-        reason: "missing-playback-ticket",
-        ticketId: null,
-      };
-    }
-
-    const ticketKey = hlsPlaybackTicketKey(normalizedTicketId);
-    const raw = await redis.get(ticketKey);
-    if (!raw) {
-      return {
-        ok: false,
-        reason: "unknown-or-expired-playback-ticket",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    let ticket: HlsPlaybackTicketRecord;
-    try {
-      ticket = JSON.parse(raw) as HlsPlaybackTicketRecord;
-    } catch (_error) {
-      return {
-        ok: false,
-        reason: "malformed-playback-ticket-record",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    if (ticket.status !== "active") {
-      return {
-        ok: false,
-        reason: `playback-ticket-status-${String(ticket.status).toLowerCase()}`,
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    const expectedUserId = options.expectedUserId?.trim();
-    if (!expectedUserId) {
-      return {
-        ok: false,
-        reason: "missing-playback-user-id",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    if (ticket.userId !== expectedUserId) {
-      return {
-        ok: false,
-        reason: "playback-ticket-user-mismatch",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    if (ticket.streamPath !== streamPath) {
-      return {
-        ok: false,
-        reason: "playback-ticket-stream-path-mismatch",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    const liveRaw = await redis.get(streamRecordingKey(ticket.recordingSessionId));
-    if (!liveRaw) {
-      return {
-        ok: false,
-        reason: "live-cache-missing",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    let liveCache: RecordingSessionLiveCache;
-    try {
-      liveCache = JSON.parse(liveRaw) as RecordingSessionLiveCache;
-    } catch (_error) {
-      return {
-        ok: false,
-        reason: "malformed-live-cache",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    if (liveCache.status !== "STREAMING") {
-      return {
-        ok: false,
-        reason: "live-cache-not-streaming",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    if (liveCache.repositoryId !== ticket.repositoryId) {
-      return {
-        ok: false,
-        reason: "live-cache-repository-mismatch",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    const expectedStreamPath = `live/${liveCache.repositoryName}/${ticket.recordingSessionId}`;
-    if (expectedStreamPath !== ticket.streamPath) {
-      return {
-        ok: false,
-        reason: "live-cache-stream-path-mismatch",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    const refreshed = await redis.expire(ticketKey, HLS_PLAYBACK_TICKET_TTL_SECONDS);
-    if (!refreshed) {
-      return {
-        ok: false,
-        reason: "unknown-or-expired-playback-ticket",
-        ticketId: normalizedTicketId,
-      };
-    }
-
-    return {
-      ok: true,
-      ticket,
-      ticketId: normalizedTicketId,
-      liveCache,
-    };
+    return validateHlsPlaybackTicket(streamPath, ticketId, options);
   }
-
 }
 
 export const streamOwnershipService = new StreamOwnershipService();
