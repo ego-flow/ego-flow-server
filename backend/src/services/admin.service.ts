@@ -4,16 +4,31 @@ import { UserRole } from "@prisma/client";
 import { fileConfig, getConfigFilePath } from "../config/config.file";
 import { env, getDotenvPath } from "../config/env";
 import {
+  FIXED_BACKEND_INTERNAL_PORT,
+  FIXED_BACKEND_SERVICE_NAME,
+  FIXED_DASHBOARD_INTERNAL_PORT,
+  FIXED_DASHBOARD_SERVICE_NAME,
   FIXED_HLS_PORT,
   FIXED_MEDIAMTX_API_PORT,
+  FIXED_MEDIAMTX_SERVICE_NAME,
   FIXED_POSTGRES_PORT,
+  FIXED_POSTGRES_SERVICE_NAME,
   FIXED_PUBLIC_HTTP_PORT,
   FIXED_REDIS_PORT,
+  FIXED_REDIS_SERVICE_NAME,
   FIXED_RTMP_PORT,
   FIXED_RTMPS_PORT,
   FIXED_WEBRTC_UDP_PORT,
   FIXED_WHIP_PORT,
 } from "../constants/config/config-constants";
+import {
+  ADMIN_CONFIG_SETTING_KEY,
+  ADMIN_ENV_SETTING_KEY,
+  ADMIN_PORT_GROUP_KEY,
+  ADMIN_PORT_LABEL,
+  ADMIN_SETTINGS_SECTION_DESCRIPTION,
+  ADMIN_SETTINGS_SECTION_TITLE,
+} from "../constants/admin/admin-settings-constants";
 import { BadRequest, Conflict, NotFound } from "../lib/core/errors";
 import { listActivePythonTokensForAdmin } from "../lib/auth/python-token";
 import { getTargetDirectory } from "../lib/storage/storage";
@@ -89,78 +104,118 @@ export class AdminService {
       entries: AdminSettingsEntry[];
     }> = [
       {
-        title: "config.json",
-        description: "Values loaded from config.json.",
+        title: ADMIN_SETTINGS_SECTION_TITLE.ConfigFile,
+        description: ADMIN_SETTINGS_SECTION_DESCRIPTION.ConfigFile,
         entries: [
-          { key: "TARGET_DIRECTORY", value: fileConfig.TARGET_DIRECTORY, sourcePath: getConfigFilePath() },
-          { key: "CORS_ORIGIN", value: fileConfig.CORS_ORIGIN, sourcePath: getConfigFilePath() },
-          { key: "WORKER_CONCURRENCY", value: fileConfig.WORKER_CONCURRENCY, sourcePath: getConfigFilePath() },
-          { key: "DELETE_RAW_AFTER_PROCESSING", value: fileConfig.DELETE_RAW_AFTER_PROCESSING, sourcePath: getConfigFilePath() },
-          { key: "JWT_EXPIRES_IN", value: fileConfig.JWT_EXPIRES_IN, sourcePath: getConfigFilePath() },
           {
-            key: "JWT_REFRESH_THRESHOLD_SECONDS",
+            key: ADMIN_CONFIG_SETTING_KEY.TargetDirectory,
+            value: fileConfig.TARGET_DIRECTORY,
+            sourcePath: getConfigFilePath(),
+          },
+          { key: ADMIN_CONFIG_SETTING_KEY.CorsOrigin, value: fileConfig.CORS_ORIGIN, sourcePath: getConfigFilePath() },
+          {
+            key: ADMIN_CONFIG_SETTING_KEY.WorkerConcurrency,
+            value: fileConfig.WORKER_CONCURRENCY,
+            sourcePath: getConfigFilePath(),
+          },
+          {
+            key: ADMIN_CONFIG_SETTING_KEY.DeleteRawAfterProcessing,
+            value: fileConfig.DELETE_RAW_AFTER_PROCESSING,
+            sourcePath: getConfigFilePath(),
+          },
+          { key: ADMIN_CONFIG_SETTING_KEY.JwtExpiresIn, value: fileConfig.JWT_EXPIRES_IN, sourcePath: getConfigFilePath() },
+          {
+            key: ADMIN_CONFIG_SETTING_KEY.JwtRefreshThresholdSeconds,
             value: fileConfig.JWT_REFRESH_THRESHOLD_SECONDS,
             sourcePath: getConfigFilePath(),
           },
           {
-            key: "SIGNED_FILE_URL_EXPIRES_IN",
+            key: ADMIN_CONFIG_SETTING_KEY.SignedFileUrlExpiresIn,
             value: fileConfig.SIGNED_FILE_URL_EXPIRES_IN,
             sourcePath: getConfigFilePath(),
           },
         ],
       },
       {
-        title: "Ports",
-        description: "Stack port map.",
+        title: ADMIN_SETTINGS_SECTION_TITLE.Ports,
+        description: ADMIN_SETTINGS_SECTION_DESCRIPTION.Ports,
         entries: [
           {
             key: `${FIXED_PUBLIC_HTTP_PORT}/tcp`,
-            value: "Dashboard, API, WHIP routing",
-            children: [
-              { key: "backend:3000/tcp", value: "Backend API" },
-              { key: "dashboard:8088/tcp", value: "Dashboard UI" },
-              { key: `mediamtx:${FIXED_WHIP_PORT}/tcp`, value: "WHIP signaling" },
-            ],
-          },
-          { key: `${FIXED_RTMP_PORT}/tcp`, value: "RTMP ingest" },
-          {
-            key: `${FIXED_RTMPS_PORT}/tcp`,
-            value: "RTMPS ingest",
-          },
-          { key: `${FIXED_HLS_PORT}/tcp`, value: "HLS playback" },
-          { key: `${FIXED_WEBRTC_UDP_PORT}/udp`, value: "WebRTC media" },
-          {
-            key: "internal-only",
-            value: "Docker network only",
+            value: ADMIN_PORT_LABEL.PublicHttp,
             children: [
               {
-                key: `mediamtx:${FIXED_MEDIAMTX_API_PORT}/tcp`,
-                value: "MediaMTX control API",
+                key: `${FIXED_BACKEND_SERVICE_NAME}:${FIXED_BACKEND_INTERNAL_PORT}/tcp`,
+                value: ADMIN_PORT_LABEL.BackendApi,
               },
-              { key: `postgres:${FIXED_POSTGRES_PORT}/tcp`, value: "PostgreSQL" },
-              { key: `redis:${FIXED_REDIS_PORT}/tcp`, value: "Redis, BullMQ" },
+              {
+                key: `${FIXED_DASHBOARD_SERVICE_NAME}:${FIXED_DASHBOARD_INTERNAL_PORT}/tcp`,
+                value: ADMIN_PORT_LABEL.DashboardUi,
+              },
+              { key: `${FIXED_MEDIAMTX_SERVICE_NAME}:${FIXED_WHIP_PORT}/tcp`, value: ADMIN_PORT_LABEL.WhipSignaling },
+            ],
+          },
+          { key: `${FIXED_RTMP_PORT}/tcp`, value: ADMIN_PORT_LABEL.RtmpIngest },
+          {
+            key: `${FIXED_RTMPS_PORT}/tcp`,
+            value: ADMIN_PORT_LABEL.RtmpsIngest,
+          },
+          { key: `${FIXED_HLS_PORT}/tcp`, value: ADMIN_PORT_LABEL.HlsPlayback },
+          { key: `${FIXED_WEBRTC_UDP_PORT}/udp`, value: ADMIN_PORT_LABEL.WebRtcMedia },
+          {
+            key: ADMIN_PORT_GROUP_KEY.InternalOnly,
+            value: ADMIN_PORT_LABEL.DockerNetworkOnly,
+            children: [
+              {
+                key: `${FIXED_MEDIAMTX_SERVICE_NAME}:${FIXED_MEDIAMTX_API_PORT}/tcp`,
+                value: ADMIN_PORT_LABEL.MediaMtxControlApi,
+              },
+              {
+                key: `${FIXED_POSTGRES_SERVICE_NAME}:${FIXED_POSTGRES_PORT}/tcp`,
+                value: ADMIN_PORT_LABEL.Postgres,
+              },
+              { key: `${FIXED_REDIS_SERVICE_NAME}:${FIXED_REDIS_PORT}/tcp`, value: ADMIN_PORT_LABEL.RedisBullMq },
             ],
           },
         ],
       },
       {
-        title: ".env",
-        description: "Values loaded from .env. Secret values are masked.",
+        title: ADMIN_SETTINGS_SECTION_TITLE.Dotenv,
+        description: ADMIN_SETTINGS_SECTION_DESCRIPTION.Dotenv,
         entries: [
-          { key: "NODE_ENV", value: env.NODE_ENV, sourcePath: getDotenvPath() },
-          { key: "PORT", value: env.PORT, sourcePath: getDotenvPath() },
-          { key: "DATABASE_URL", value: maskSecretValue(env.DATABASE_URL), sensitive: true, sourcePath: getDotenvPath() },
-          { key: "JWT_SECRET", value: maskSecretValue(env.JWT_SECRET), sensitive: true, sourcePath: getDotenvPath() },
+          { key: ADMIN_ENV_SETTING_KEY.NodeEnv, value: env.NODE_ENV, sourcePath: getDotenvPath() },
+          { key: ADMIN_ENV_SETTING_KEY.Port, value: env.PORT, sourcePath: getDotenvPath() },
           {
-            key: "ADMIN_DEFAULT_PASSWORD",
+            key: ADMIN_ENV_SETTING_KEY.DatabaseUrl,
+            value: maskSecretValue(env.DATABASE_URL),
+            sensitive: true,
+            sourcePath: getDotenvPath(),
+          },
+          {
+            key: ADMIN_ENV_SETTING_KEY.JwtSecret,
+            value: maskSecretValue(env.JWT_SECRET),
+            sensitive: true,
+            sourcePath: getDotenvPath(),
+          },
+          {
+            key: ADMIN_ENV_SETTING_KEY.AdminDefaultPassword,
             value: maskSecretValue(env.ADMIN_DEFAULT_PASSWORD),
             sensitive: true,
             sourcePath: getDotenvPath(),
           },
-          { key: "HF_TOKEN", value: maskSecretValue(env.HF_TOKEN), sensitive: true, sourcePath: getDotenvPath() },
-          { key: "RTMPS_ENCRYPTION_MODE", value: env.RTMPS_ENCRYPTION_MODE ?? null, sourcePath: getDotenvPath() },
-          { key: "RTMPS_CERT_PATH", value: env.RTMPS_CERT_PATH ?? null, sourcePath: getDotenvPath() },
-          { key: "RTMPS_KEY_PATH", value: env.RTMPS_KEY_PATH ?? null, sourcePath: getDotenvPath() },
+          {
+            key: ADMIN_ENV_SETTING_KEY.HfToken,
+            value: maskSecretValue(env.HF_TOKEN),
+            sensitive: true,
+            sourcePath: getDotenvPath(),
+          },
+          {
+            key: ADMIN_ENV_SETTING_KEY.RtmpsEncryptionMode,
+            value: env.RTMPS_ENCRYPTION_MODE ?? null,
+            sourcePath: getDotenvPath(),
+          },
+          { key: ADMIN_ENV_SETTING_KEY.RtmpsCertPath, value: env.RTMPS_CERT_PATH ?? null, sourcePath: getDotenvPath() },
+          { key: ADMIN_ENV_SETTING_KEY.RtmpsKeyPath, value: env.RTMPS_KEY_PATH ?? null, sourcePath: getDotenvPath() },
         ],
       },
     ];
