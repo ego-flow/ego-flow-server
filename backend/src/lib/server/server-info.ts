@@ -1,5 +1,3 @@
-import { runtimeConfig as env } from "../../config/runtime";
-
 export const getServerInfo = () => ({
   api_version: "v1",
   server_version: "0.1.0",
@@ -9,9 +7,5 @@ export const getServerInfo = () => ({
     thumbnail_download: true,
     live_streams: true,
     python_tokens: true,
-  },
-  urls: {
-    api_base: "/api/v1",
-    hls_port: env.HLS_PORT,
   },
 });

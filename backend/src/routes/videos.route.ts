@@ -102,4 +102,23 @@ router.get(
   }),
 );
 
+// Block Express' implicit HEAD handling for this GET-only redirect endpoint.
+router.head("/:videoId/thumbnail", (_req, _res, next) => {
+  next(NotFound("Route not found."));
+});
+
+// GET /api/v1/repositories/:repoId/videos/:videoId/thumbnail
+router.get(
+  "/:videoId/thumbnail",
+  requireDashboardOrPython,
+  repoAccess({ action: "video.download" }),
+  repoStatus({ required: "active" }),
+  validate(repoVideoParamsSchema, "params"),
+  asyncHandler(async (req, res) => {
+    const params = req.params as RepoVideoParamsInput;
+    const thumbnail = await videosService.getRepositoryVideoThumbnail(params.repoId, params.videoId);
+    res.redirect(307, thumbnail.redirectUrl);
+  }),
+);
+
 export const videosRoutes = router;

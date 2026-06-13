@@ -6,6 +6,7 @@ import {
 } from "../lib/videos/repository-video-access";
 import {
   buildRepositoryVideoDownloadResponse,
+  buildRepositoryVideoThumbnailResponse,
   deleteRepositoryVideoArtifactsAndRecord,
 } from "../lib/videos/repository-video-artifacts";
 import {
@@ -29,6 +30,7 @@ import type {
   RepositoryVideoDownloadResponse,
   RepositoryVideoListResponse,
   RepositoryVideoResponse,
+  RepositoryVideoSignedFileResponse,
   RepositoryVideoStatusResponse,
 } from "../types/videos/response";
 
@@ -98,6 +100,12 @@ export class VideosService {
     const video = await getManagedRepositoryVideo(repoId, videoId);
 
     return buildRepositoryVideoDownloadResponse(video);
+  }
+
+  async getRepositoryVideoThumbnail(repoId: string, videoId: string): Promise<RepositoryVideoSignedFileResponse> {
+    const video = await getManagedRepositoryVideo(repoId, videoId);
+
+    return buildRepositoryVideoThumbnailResponse(video);
   }
 
   async deleteRepositoryVideo(repoId: string, videoId: string) {

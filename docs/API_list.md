@@ -7,7 +7,7 @@ Current API list based on the server codebase.
 | Endpoint | Input | Response | Purpose |
 |---|---|---|---|
 | `GET /api/v1/health` | none | `{ status: "ok" }` | Server health check |
-| `GET /api/v1/info` | none | `api_version`, `server_version`, `capabilities`, `urls` | Expose server capabilities and base URLs |
+| `GET /api/v1/info` | none | `api_version`, `server_version`, `capabilities` | Expose server capabilities |
 | `GET /api/v1/openapi.json` | none | OpenAPI JSON | Raw API spec |
 | `GET /api-docs` | none | Swagger UI | Browser API docs |
 | `GET /files/{owner}/{repo}/{file}?signature=...` | signed URL query | static file | Signed access to thumbnails and video artifacts |
@@ -68,6 +68,7 @@ Current API list based on the server codebase.
 | `GET /api/v1/repositories/:repoId/videos/:videoId/status` | path params | `{ id, repository_id, status, progress, error_message, processing_* }`; `progress` is `{ current_step, total_steps, task, label }` when available | Read video processing status |
 | `DELETE /api/v1/repositories/:repoId/videos/:videoId` | path params | `{ id, deleted: true }` | Delete video and generated artifacts |
 | `GET /api/v1/repositories/:repoId/videos/:videoId/download` | path params | `307` signed file URL redirect | Download VLM video artifact |
+| `GET /api/v1/repositories/:repoId/videos/:videoId/thumbnail` | path params | `307` signed file URL redirect | Download video thumbnail artifact |
 | `GET /api/v1/repositories/:repoId/manifest?page&limit` | Python token | dataset manifest | Completed video manifest for Python/VLM usage |
 
 ## Live / Playback

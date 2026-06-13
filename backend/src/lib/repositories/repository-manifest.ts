@@ -5,20 +5,12 @@ import type { ManifestQueryInput } from "../../types/repository/request";
 import type { RepositoryAccessContext } from "../../types/repository";
 import type { RepositoryManifestResponse } from "../../types/repository/response";
 import { Internal } from "../core/errors";
-import { toSignedFileUrl } from "../storage/signed-file-url";
-import { getTargetDirectory } from "../storage/storage";
-
-const toRepositoryThumbnailUrl = (targetDirectory: string, thumbnailPath: string): string => {
-  const signedUrl = toSignedFileUrl(targetDirectory, thumbnailPath);
-  if (!signedUrl) {
-    throw Internal(`Thumbnail path is outside the configured storage directory.`);
-  }
-
-  return signedUrl;
-};
 
 const toRepositoryVideoDownloadUrl = (repositoryId: string, videoId: string) =>
   `/api/v1/repositories/${repositoryId}/videos/${videoId}/download`;
+
+const toRepositoryThumbnailDownloadUrl = (repositoryId: string, videoId: string) =>
+  `/api/v1/repositories/${repositoryId}/videos/${videoId}/thumbnail`;
 
 const getManifestArtifactMetadata = (video: {
   id: string;
@@ -39,7 +31,6 @@ export const loadRepositoryManifest = async (
   access: RepositoryAccessContext,
   query: ManifestQueryInput,
 ): Promise<RepositoryManifestResponse> => {
-  const targetDirectory = getTargetDirectory();
   const repository = access.repository;
   const where: Prisma.VideosWhereInput = {
     repositoryId: repository.id,
@@ -92,7 +83,7 @@ export const loadRepositoryManifest = async (
           },
           thumbnail: video.thumbnailPath
             ? {
-                download_url: toRepositoryThumbnailUrl(targetDirectory, video.thumbnailPath),
+                download_url: toRepositoryThumbnailDownloadUrl(repository.id, video.id),
                 content_type: "image/jpeg",
               }
             : null,

@@ -77,6 +77,7 @@ const originalAssertRepositoryAccess = repositoryAccessService.assertAction;
 const originalAssertRepositoryStatus = repositoryAccessService.assertRepositoryStatus;
 const originalListRepositoryVideos = videosService.listRepositoryVideos;
 const originalGetRepositoryVideoDownload = videosService.getRepositoryVideoDownload;
+const originalGetRepositoryVideoThumbnail = videosService.getRepositoryVideoThumbnail;
 const originalDeleteRepositoryVideo = videosService.deleteRepositoryVideo;
 
 const repoId = "11111111-1111-4111-8111-111111111111";
@@ -168,6 +169,7 @@ beforeEach(() => {
   });
   videosService.listRepositoryVideos = originalListRepositoryVideos;
   videosService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
+  videosService.getRepositoryVideoThumbnail = originalGetRepositoryVideoThumbnail;
   videosService.deleteRepositoryVideo = originalDeleteRepositoryVideo;
 });
 
@@ -180,6 +182,7 @@ afterEach(async () => {
   repositoryAccessService.assertRepositoryStatus = originalAssertRepositoryStatus;
   videosService.listRepositoryVideos = originalListRepositoryVideos;
   videosService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
+  videosService.getRepositoryVideoThumbnail = originalGetRepositoryVideoThumbnail;
   videosService.deleteRepositoryVideo = originalDeleteRepositoryVideo;
 
 });
@@ -224,12 +227,14 @@ test("repo-scoped list uses repository context resolved by repoAccess", { concur
   }
 });
 
-test("repo-scoped download rejects HEAD but accepts GET dashboard sessions and Python bearer tokens", { concurrency: false }, async () => {
+test("repo-scoped artifact redirects reject HEAD but accept dashboard sessions and Python bearer tokens", { concurrency: false }, async () => {
   const { baseUrl, close } = await startServer();
   const videoPath = path.join(targetDirectory, "alice", "daily-kitchen", ".codex-test", `${videoId}.mp4`);
+  const thumbnailPath = path.join(targetDirectory, "alice", "daily-kitchen", ".codex-test", `${videoId}.jpg`);
 
   await fs.mkdir(path.dirname(videoPath), { recursive: true });
   await fs.writeFile(videoPath, Buffer.from("0123456789", "utf8"));
+  await fs.writeFile(thumbnailPath, Buffer.from("jpeg-bytes", "utf8"));
 
   videosService.getRepositoryVideoDownload = (async () => ({
     id: videoId,
@@ -238,6 +243,9 @@ test("repo-scoped download rejects HEAD but accepts GET dashboard sessions and P
     sha256: "a".repeat(64),
     redirectUrl: toSignedFileUrl(targetDirectory, videoPath)!,
   })) as typeof videosService.getRepositoryVideoDownload;
+  videosService.getRepositoryVideoThumbnail = (async () => ({
+    redirectUrl: toSignedFileUrl(targetDirectory, thumbnailPath)!,
+  })) as typeof videosService.getRepositoryVideoThumbnail;
 
   try {
     const headResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {
@@ -248,6 +256,15 @@ test("repo-scoped download rejects HEAD but accepts GET dashboard sessions and P
     assert.equal(headResponse.status, 404);
     assert.equal(headResponse.headers.get("location"), null);
     assert.equal(await headResponse.text(), "");
+
+    const thumbnailHeadResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/thumbnail`, {
+      method: "HEAD",
+      headers: { Cookie: "egoflow_session=dashboard-session" },
+      redirect: "manual",
+    });
+    assert.equal(thumbnailHeadResponse.status, 404);
+    assert.equal(thumbnailHeadResponse.headers.get("location"), null);
+    assert.equal(await thumbnailHeadResponse.text(), "");
 
     const downloadResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {
       headers: {
@@ -264,6 +281,25 @@ test("repo-scoped download rejects HEAD but accepts GET dashboard sessions and P
     const signature = redirectedUrl.searchParams.get("signature");
     assert.ok(signature);
     assert.equal(verifySignedFileUrlToken(signature).path, `alice/daily-kitchen/.codex-test/${videoId}.mp4`);
+
+    const thumbnailResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/thumbnail`, {
+      headers: {
+        Cookie: "egoflow_session=dashboard-session",
+      },
+      redirect: "manual",
+    });
+    assert.equal(thumbnailResponse.status, 307);
+    const thumbnailLocation = thumbnailResponse.headers.get("location");
+    assert.ok(thumbnailLocation);
+
+    const thumbnailRedirect = new URL(thumbnailLocation, baseUrl);
+    assert.equal(thumbnailRedirect.pathname, `/files/alice/daily-kitchen/.codex-test/${videoId}.jpg`);
+    const thumbnailSignature = thumbnailRedirect.searchParams.get("signature");
+    assert.ok(thumbnailSignature);
+    assert.equal(
+      verifySignedFileUrlToken(thumbnailSignature).path,
+      `alice/daily-kitchen/.codex-test/${videoId}.jpg`,
+    );
 
     const queryTokenResponse = await fetch(
       `${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download?token=jwt-token`,
@@ -290,9 +326,27 @@ test("repo-scoped download rejects HEAD but accepts GET dashboard sessions and P
       verifySignedFileUrlToken(pythonTokenSignature).path,
       `alice/daily-kitchen/.codex-test/${videoId}.mp4`,
     );
+
+    const pythonThumbnailResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/thumbnail`, {
+      headers: {
+        Authorization: "Bearer ef_python-token",
+      },
+      redirect: "manual",
+    });
+    assert.equal(pythonThumbnailResponse.status, 307);
+    const pythonThumbnailLocation = pythonThumbnailResponse.headers.get("location");
+    assert.ok(pythonThumbnailLocation);
+    const pythonThumbnailRedirect = new URL(pythonThumbnailLocation, baseUrl);
+    const pythonThumbnailSignature = pythonThumbnailRedirect.searchParams.get("signature");
+    assert.ok(pythonThumbnailSignature);
+    assert.equal(
+      verifySignedFileUrlToken(pythonThumbnailSignature).path,
+      `alice/daily-kitchen/.codex-test/${videoId}.jpg`,
+    );
   } finally {
     await close();
     await fs.rm(videoPath, { force: true });
+    await fs.rm(thumbnailPath, { force: true });
     await fs.rm(path.dirname(videoPath), { recursive: true, force: true });
   }
 });

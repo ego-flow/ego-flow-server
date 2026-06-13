@@ -50,10 +50,13 @@ export interface RepositoryVideoStatusResponse {
   processing_completed_at: string | null;
 }
 
-export interface RepositoryVideoDownloadResponse {
+export interface RepositoryVideoSignedFileResponse {
+  redirectUrl: string;
+}
+
+export interface RepositoryVideoDownloadResponse extends RepositoryVideoSignedFileResponse {
   id: string;
   path: string;
   sizeBytes: bigint | number | null;
   sha256: string | null;
-  redirectUrl: string;
 }

@@ -6,7 +6,10 @@ import {
   videosRepository,
   type ManagedRepositoryVideoRecord,
 } from "../../repositories/videos.repository";
-import type { RepositoryVideoDownloadResponse } from "../../types/videos/response";
+import type {
+  RepositoryVideoDownloadResponse,
+  RepositoryVideoSignedFileResponse,
+} from "../../types/videos/response";
 import { NotFound } from "../core/errors";
 import { refreshRepositoryContributors } from "../repositories/repository-contributors";
 import { isMissingFileError } from "../storage/file-system";
@@ -14,6 +17,7 @@ import { toSignedFileUrl } from "../storage/signed-file-url";
 import { getTargetDirectory, toStorageRelativePath } from "../storage/storage";
 
 const VIDEO_FILE_UNAVAILABLE_MESSAGE = "Video file is not available.";
+const THUMBNAIL_FILE_UNAVAILABLE_MESSAGE = "Thumbnail file is not available.";
 
 const ensureFileExists = async (filePath: string, missingMessage: string) => {
   try {
@@ -46,6 +50,25 @@ export const buildRepositoryVideoDownloadResponse = async (
     path: video.vlmVideoPath,
     sizeBytes: video.sizeBytes,
     sha256: video.vlmSha256,
+    redirectUrl,
+  };
+};
+
+export const buildRepositoryVideoThumbnailResponse = async (
+  video: ManagedRepositoryVideoRecord,
+): Promise<RepositoryVideoSignedFileResponse> => {
+  if (!video.thumbnailPath) {
+    throw NotFound(THUMBNAIL_FILE_UNAVAILABLE_MESSAGE);
+  }
+
+  const targetDirectory = getTargetDirectory();
+  await ensureFileExists(video.thumbnailPath, THUMBNAIL_FILE_UNAVAILABLE_MESSAGE);
+  const redirectUrl = toSignedFileUrl(targetDirectory, video.thumbnailPath);
+  if (!redirectUrl) {
+    throw NotFound(THUMBNAIL_FILE_UNAVAILABLE_MESSAGE);
+  }
+
+  return {
     redirectUrl,
   };
 };

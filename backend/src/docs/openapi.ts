@@ -130,7 +130,7 @@ export const openApiDocument = {
       },
       InfoResponse: {
         type: "object",
-        required: ["api_version", "server_version", "capabilities", "urls"],
+        required: ["api_version", "server_version", "capabilities"],
         properties: {
           api_version: { type: "string", example: "v1" },
           server_version: { type: "string", example: "0.1.0" },
@@ -143,14 +143,6 @@ export const openApiDocument = {
               thumbnail_download: { type: "boolean" },
               live_streams: { type: "boolean" },
               python_tokens: { type: "boolean" },
-            },
-          },
-          urls: {
-            type: "object",
-            required: ["api_base", "hls_port"],
-            properties: {
-              api_base: { type: "string", example: "/api/v1" },
-              hls_port: { type: "integer", example: 8888 },
             },
           },
         },
@@ -847,7 +839,7 @@ export const openApiDocument = {
         type: "object",
         required: ["download_url", "content_type"],
         properties: {
-          download_url: { type: "string", example: "/files/owner/repository/.thumbnails/video.jpg?signature=..." },
+          download_url: { type: "string", example: "/api/v1/repositories/{repoId}/videos/{videoId}/thumbnail" },
           content_type: { type: "string", example: "image/jpeg" },
         },
       },
@@ -2194,6 +2186,30 @@ export const openApiDocument = {
               Location: {
                 schema: { type: "string" },
                 description: "Signed `/files/*` URL for the requested video.",
+              },
+            },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+        },
+      },
+    },
+    "/repositories/{repoId}/videos/{videoId}/thumbnail": {
+      get: {
+        tags: ["Videos"],
+        summary: "Resolve a repository video thumbnail URL",
+        parameters: [
+          { $ref: "#/components/parameters/RepoId" },
+          { $ref: "#/components/parameters/VideoId" },
+        ],
+        responses: {
+          "307": {
+            description: "Temporary redirect to a signed thumbnail file URL",
+            headers: {
+              Location: {
+                schema: { type: "string" },
+                description: "Signed `/files/*` URL for the requested thumbnail.",
               },
             },
           },

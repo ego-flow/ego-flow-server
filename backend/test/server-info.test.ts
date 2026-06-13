@@ -5,8 +5,6 @@ process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egof
 process.env.JWT_SECRET ??= "replace-this-in-tests-only";
 process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
 
-const { runtimeConfig } =
-  require("../src/config/runtime") as typeof import("../src/config/runtime");
 const { getServerInfo } =
   require("../src/lib/server/server-info") as typeof import("../src/lib/server/server-info");
 
@@ -20,10 +18,6 @@ test("getServerInfo exposes the expected public capability metadata", () => {
       thumbnail_download: true,
       live_streams: true,
       python_tokens: true,
-    },
-    urls: {
-      api_base: "/api/v1",
-      hls_port: runtimeConfig.HLS_PORT,
     },
   });
 });

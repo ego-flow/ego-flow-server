@@ -512,17 +512,13 @@ test("getRepositoryManifest returns completed videos with download metadata and 
             content_type: "video/mp4",
           },
           thumbnail: {
-            download_url: response.videos[0]!.artifacts.thumbnail!.download_url,
+            download_url: "/api/v1/repositories/repo-1/videos/video-1/thumbnail",
             content_type: "image/jpeg",
           },
         },
       },
     ],
   });
-  assertSignedFileUrl(
-    response.videos[0]!.artifacts.thumbnail!.download_url,
-    "alice/daily-kitchen/.thumbnails/video-1.jpg",
-  );
   const firstVideo = response.videos[0]!;
   assert.equal("vlmVideoPath" in firstVideo, false);
   assert.equal("thumbnailPath" in firstVideo, false);
@@ -658,6 +654,16 @@ test("getRepositoryManifest throws when a completed video lacks artifact metadat
 test("repo-scoped download requires available completed artifacts", async () => {
   await assert.rejects(
     () => service.getRepositoryVideoDownload("repo-2", "video-2"),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.statusCode === 404 &&
+      error.code === "NOT_FOUND",
+  );
+});
+
+test("repo-scoped thumbnail requires an available thumbnail file", async () => {
+  await assert.rejects(
+    () => service.getRepositoryVideoThumbnail("repo-1", "video-3"),
     (error: unknown) =>
       error instanceof AppError &&
       error.statusCode === 404 &&
