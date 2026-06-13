@@ -191,6 +191,17 @@ test("routes and services do not import Prisma infrastructure directly", async (
   assert.deepEqual(violations, [], formatViolations(violations));
 });
 
+test("lib components do not import Prisma infrastructure directly", async () => {
+  const files = await loadSourceFiles();
+  const imports = collectImports(files);
+  const violations = imports
+    .filter((sourceImport) => sourceImport.sourceFile.layer === "lib")
+    .filter((sourceImport) => sourceImport.targetFile?.projectPath === "src/lib/infra/prisma.ts")
+    .map((sourceImport) => `${sourceImport.sourceFile.projectPath} imports ${sourceImport.specifier}`);
+
+  assert.deepEqual(violations, [], formatViolations(violations));
+});
+
 test("support layers do not import route-facing layers", async () => {
   const files = await loadSourceFiles();
   const imports = collectImports(files);

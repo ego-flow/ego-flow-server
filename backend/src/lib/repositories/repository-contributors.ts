@@ -1,15 +1,14 @@
 import { type Prisma } from "@prisma/client";
 
-import { prisma, runPrismaTransaction, type PrismaTransactionClient } from "../infra/prisma";
 import { repoMemberRepository } from "../../repositories/repo-member.repository";
 import { repositoriesRepository } from "../../repositories/repositories.repository";
+import {
+  defaultRepositoryPersistenceClient,
+  isRootRepositoryPersistenceClient,
+  runRepositoryTransaction,
+  type RepositoryPersistenceClient,
+} from "../../repositories/repository-transaction";
 import { videosRepository } from "../../repositories/videos.repository";
-
-type PrismaClientLike = typeof prisma | PrismaTransactionClient;
-
-const isRootPrismaClient = (client: PrismaClientLike): client is typeof prisma =>
-  typeof (client as typeof prisma).$transaction === "function" &&
-  typeof (client as typeof prisma).$connect === "function";
 
 export const normalizeContributorUserIds = (value: Prisma.JsonValue | null | undefined): string[] => {
   if (!Array.isArray(value)) {
@@ -21,7 +20,7 @@ export const normalizeContributorUserIds = (value: Prisma.JsonValue | null | und
 
 export const computeRepositoryContributorUserIds = async (
   repositoryId: string,
-  client: PrismaClientLike = prisma,
+  client: RepositoryPersistenceClient = defaultRepositoryPersistenceClient,
 ): Promise<string[]> => {
   const [contributors, adminUserIds, recorderUserIds] = await Promise.all([
     repositoriesRepository.findContributors(repositoryId, client),
@@ -40,10 +39,10 @@ export const computeRepositoryContributorUserIds = async (
 
 export const refreshRepositoryContributors = async (
   repositoryId: string,
-  client: PrismaClientLike = prisma,
+  client: RepositoryPersistenceClient = defaultRepositoryPersistenceClient,
 ): Promise<string[]> => {
-  if (isRootPrismaClient(client)) {
-    return runPrismaTransaction((tx): Promise<string[]> => refreshRepositoryContributors(repositoryId, tx));
+  if (isRootRepositoryPersistenceClient(client)) {
+    return runRepositoryTransaction((tx): Promise<string[]> => refreshRepositoryContributors(repositoryId, tx));
   }
 
   const contributorsJson = await repositoriesRepository.findContributorsForUpdate(repositoryId, client);

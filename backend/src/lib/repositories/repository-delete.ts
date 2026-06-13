@@ -5,9 +5,9 @@ import { recordingSegmentRepository } from "../../repositories/recording-segment
 import { recordingSessionRepository } from "../../repositories/recording-session.repository";
 import { repoMemberRepository } from "../../repositories/repo-member.repository";
 import { repositoriesRepository } from "../../repositories/repositories.repository";
+import { runRepositoryTransaction } from "../../repositories/repository-transaction";
 import { videosRepository } from "../../repositories/videos.repository";
 import type { RepositoryRecord } from "../../types/repository";
-import { runPrismaTransaction } from "../infra/prisma";
 import { getTargetDirectory } from "../storage/storage";
 
 export const deleteRepositoryStorageArtifacts = async (
@@ -28,7 +28,7 @@ export const deleteRepositoryStorageArtifacts = async (
 };
 
 export const deleteRepositoryRecords = async (repositoryId: string): Promise<void> => {
-  await runPrismaTransaction(async (tx) => {
+  await runRepositoryTransaction(async (tx) => {
     await repoMemberRepository.deleteManyByRepositoryId(repositoryId, tx);
     await videosRepository.deleteManyByRepositoryId(repositoryId, tx);
     await recordingSegmentRepository.deleteManyByRepositoryId(repositoryId, tx);
