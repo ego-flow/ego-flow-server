@@ -23,10 +23,6 @@ export type HlsPlaybackTicketValidationResult =
       ticketId: string | null;
     };
 
-export type HlsPlaybackTicketValidationOptions = {
-  expectedUserId?: string | null;
-};
-
 export type IssueHlsPlaybackTicketParams = {
   recordingSessionId: string;
   repositoryId: string;
@@ -88,23 +84,9 @@ export const extractHlsPlaybackTicketId = (params: {
   return normalizeTicketId(params.password);
 };
 
-export const extractHlsPlaybackUserId = (params: {
-  user?: string | null | undefined;
-  query?: string | null | undefined;
-}): string | null => {
-  const queryParams = new URLSearchParams(params.query ?? "");
-  const queryUserId = normalizeTicketId(queryParams.get("user_id"));
-  if (queryUserId) {
-    return queryUserId;
-  }
-
-  return normalizeTicketId(params.user);
-};
-
 export const validateHlsPlaybackTicket = async (
   streamPath: string,
   ticketId?: string | null,
-  options: HlsPlaybackTicketValidationOptions = {},
 ): Promise<HlsPlaybackTicketValidationResult> => {
   const normalizedTicketId = normalizeTicketId(ticketId);
   if (!normalizedTicketId) {
@@ -138,23 +120,6 @@ export const validateHlsPlaybackTicket = async (
     return {
       ok: false,
       reason: `playback-ticket-status-${String(ticket.status).toLowerCase()}`,
-      ticketId: normalizedTicketId,
-    };
-  }
-
-  const expectedUserId = options.expectedUserId?.trim();
-  if (!expectedUserId) {
-    return {
-      ok: false,
-      reason: "missing-playback-user-id",
-      ticketId: normalizedTicketId,
-    };
-  }
-
-  if (ticket.userId !== expectedUserId) {
-    return {
-      ok: false,
-      reason: "playback-ticket-user-mismatch",
       ticketId: normalizedTicketId,
     };
   }

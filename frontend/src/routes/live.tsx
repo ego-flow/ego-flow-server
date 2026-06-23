@@ -35,7 +35,6 @@ const formatBytes = (value: number | null) => {
 const buildDirectHlsUrl = (
 	streamPath: string,
 	playbackTicket: string,
-	viewerUserId: string,
 ) => {
 	const normalizedPath = streamPath.replace(/^\/+/, "");
 	let host = "127.0.0.1";
@@ -50,7 +49,6 @@ const buildDirectHlsUrl = (
 
 	const query = new URLSearchParams({
 		ticket: playbackTicket,
-		user_id: viewerUserId,
 	});
 
 	return `http://${host}:${DIRECT_HLS_PORT}/${normalizedPath}/index.m3u8?${query.toString()}`;
@@ -154,13 +152,11 @@ function LivePage() {
 		retry: false,
 	});
 	const selectedPlaybackTicket = playbackTicketQuery.data?.playbackTicket ?? null;
-	const viewerUserId = session?.user?.id ?? null;
 	const selectedHlsUrl =
-		selectedStream && selectedPlaybackTicket && viewerUserId
+		selectedStream && selectedPlaybackTicket
 			? buildDirectHlsUrl(
 					selectedStream.streamPath,
 					selectedPlaybackTicket,
-					viewerUserId,
 				)
 			: null;
 	const canPlaySelectedStream = Boolean(

@@ -41,7 +41,7 @@
    - HTTP ingest stream은 목록/상세 조회 대상이지만 HLS playback 대상은 아니다.
 
 9. HLS direct playback은 fixed `8888` 정책을 유지한다.
-   - Python package는 `http://{host}:8888/{stream_path}/index.m3u8?ticket=...&user_id=...`를 구성한다.
+   - Python package는 `http://{host}:8888/{stream_path}/index.m3u8?ticket=...`를 구성한다.
    - Authorization header는 HLS playlist/segment request에 붙이지 않는다.
 
 10. semantic metadata는 pass-through 확장 지점만 둔다.

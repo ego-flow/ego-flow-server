@@ -47,13 +47,6 @@ sequenceDiagram
     Python->>Python: raise EgoFlowStreamError
     Note over Python: 현재 Python package는 ingest_type=MEDIAMTX이고<br/>playback_available=true이고 playback_ready=true인 stream만 HLS로 연다.<br/>HTTP ingest stream은 목록에는 보일 수 있지만 playback 대상이 아니다.
   else playable MEDIAMTX stream
-    Python->>Backend: GET /api/v1/auth/python/tokens/validate
-    Note over Python,Backend: Headers<br/>Authorization: Bearer ef_raw_python_static_token
-    Backend->>Backend: requirePythonToken
-    Backend->>DB: active API token owner 조회
-    Backend-->>Python: 200 { valid: true, user: { id, role, display_name } }
-    Python->>Python: viewer_user_id cache
-
     Python->>Backend: POST /api/v1/live-streams/{recordingSessionId}/playback-ticket
     Note over Python,Backend: Headers<br/>Authorization: Bearer ef_raw_python_static_token<br/>Body 없음
 
@@ -71,16 +64,16 @@ sequenceDiagram
     end
 
     Python->>Python: direct HLS URL 구성
-    Note over Python: host = URL(api_base_url).hostname<br/>port = fixed 8888<br/>path = /{stream_path}/index.m3u8<br/>query = ticket={playback_ticket}&user_id={viewer_user_id}
+    Note over Python: host = URL(api_base_url).hostname<br/>port = fixed 8888<br/>path = /{stream_path}/index.m3u8<br/>query = ticket={playback_ticket}
 
-    Python->>MTX: GET /live/{repo}/{recordingSessionId}/index.m3u8?ticket=pt_...&user_id={viewer_user_id}
+    Python->>MTX: GET /live/{repo}/{recordingSessionId}/index.m3u8?ticket=pt_...
     Note over Python,MTX: Authorization header는 사용하지 않는다.<br/>HLS는 Caddy가 아니라 MediaMTX 8888/tcp에서 직접 읽는다.
 
     MTX->>Backend: POST /api/v1/auth/mediamtx
-    Note over MTX,Backend: authHTTPAddress payload<br/>action=read<br/>protocol=hls<br/>path=live/{repo}/{recordingSessionId}<br/>query=ticket=pt_...&user_id={viewer_user_id}
+    Note over MTX,Backend: authHTTPAddress payload<br/>action=read<br/>protocol=hls<br/>path=live/{repo}/{recordingSessionId}<br/>query=ticket=pt_...
 
     Backend->>Redis: playback ticket + live cache 검증
-    Note over Backend,Redis: DB-free hot path<br/>ticket exists<br/>ticket.status=active<br/>ticket.userId == query.user_id<br/>ticket.streamPath == path<br/>stream:recording:{recordingSessionId} exists<br/>live cache status=STREAMING<br/>repositoryId/path match<br/>ticket TTL refresh to 600s
+    Note over Backend,Redis: DB-free hot path<br/>ticket exists<br/>ticket.status=active<br/>ticket.streamPath == path<br/>stream:recording:{recordingSessionId} exists<br/>live cache status=STREAMING<br/>repositoryId/path match<br/>ticket TTL refresh to 600s
 
     alt ticket invalid or stream inactive
       Backend-->>MTX: 401 Unauthorized
@@ -106,8 +99,7 @@ sequenceDiagram
 
 %% 참고:
 %% Python package는 Dashboard에서 발급받은 ef_ static token만 사용한다.
-%% Python package는 playback-ticket 발급 전에 /auth/python/tokens/validate로 viewer user id를 얻는다.
-%% HLS URL query는 ticket과 user_id만 사용한다. Authorization header는 HLS playlist/segment 요청에 붙이지 않는다.
+%% HLS URL query는 ticket만 사용한다. Authorization header는 HLS playlist/segment 요청에 붙이지 않는다.
 %% Python HLS client가 segment request까지 query를 유지하지 않으면 각 playlist/segment URL에 같은 query를 다시 붙여야 한다.
 %% LiveStreamInfo는 recording_session_id만 사용한다. 이전 별칭은 제거했다.
 %% LiveStreamInfo.from_dict는 stream_path fallback을 만들지 않는다. 서버 response에 stream_path가 없으면 playback open 단계에서 오류로 처리한다.

@@ -342,7 +342,7 @@ test("POST /auth/mediamtx accepts HLS playback with playback ticket and active R
       action: "read",
       path: "live/test2/11111111-1111-4111-8111-111111111111",
       protocol: "hls",
-      query: "ticket=pt_hls&user_id=viewer-1",
+      query: "ticket=pt_hls",
       id: "hls-reader-1",
       ip: "203.0.113.10",
     }),
@@ -384,7 +384,7 @@ test("POST /auth/mediamtx rejects HLS playback when playback ticket targets anot
       action: "read",
       path: "live/other/11111111-1111-4111-8111-111111111111",
       protocol: "hls",
-      query: "ticket=pt_hls&user_id=viewer-1",
+      query: "ticket=pt_hls",
       id: "hls-reader-1",
       ip: "203.0.113.10",
     }),
@@ -425,7 +425,7 @@ test("POST /auth/mediamtx rejects playback action for HLS auth", async () => {
       action: "playback",
       path: "live/test2/11111111-1111-4111-8111-111111111111",
       protocol: "hls",
-      query: "ticket=pt_hls&user_id=viewer-1",
+      query: "ticket=pt_hls",
       id: "hls-reader-1",
       ip: "203.0.113.10",
     }),
@@ -434,7 +434,7 @@ test("POST /auth/mediamtx rejects playback action for HLS auth", async () => {
   assert.equal(response.status, 401);
 });
 
-test("POST /auth/mediamtx rejects HLS playback when playback ticket user mismatches", async () => {
+test("POST /auth/mediamtx ignores HLS playback user_id query when validating the ticket", async () => {
   const baseUrl = await startServer();
   fakeRedisModule.redis.setJson("stream:recording:11111111-1111-4111-8111-111111111111", {
     repositoryId: "566fdab1-771a-42f9-a4eb-2f1c04859874",
@@ -472,5 +472,5 @@ test("POST /auth/mediamtx rejects HLS playback when playback ticket user mismatc
     }),
   });
 
-  assert.equal(response.status, 401);
+  assert.equal(response.status, 200);
 });

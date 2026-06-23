@@ -1,11 +1,9 @@
 import {
   extractHlsPlaybackTicketId,
-  extractHlsPlaybackUserId,
   getHlsPlaybackTicketTtlSeconds,
   issueHlsPlaybackTicket,
   validateHlsPlaybackTicket,
   type HlsPlaybackTicketGrant,
-  type HlsPlaybackTicketValidationOptions,
   type HlsPlaybackTicketValidationResult,
   type IssueHlsPlaybackTicketParams,
 } from "./hls-playback-ticket";
@@ -79,19 +77,11 @@ export class StreamOwnershipService {
     return extractHlsPlaybackTicketId(params);
   }
 
-  extractHlsPlaybackUserId(params: {
-    user?: string | null | undefined;
-    query?: string | null | undefined;
-  }) {
-    return extractHlsPlaybackUserId(params);
-  }
-
   async validateHlsPlaybackTicket(
     streamPath: string,
     ticketId?: string | null,
-    options: HlsPlaybackTicketValidationOptions = {},
   ): Promise<HlsPlaybackTicketValidationResult> {
-    return validateHlsPlaybackTicket(streamPath, ticketId, options);
+    return validateHlsPlaybackTicket(streamPath, ticketId);
   }
 }
 
