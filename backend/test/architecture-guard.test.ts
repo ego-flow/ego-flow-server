@@ -239,3 +239,13 @@ test("schema files keep DTO aliases out of runtime validation modules", async ()
 
   assert.deepEqual(violations, [], formatViolations(violations));
 });
+
+test("video semantic metadata cascades with its parent video", async () => {
+  const schema = await fs.readFile(path.join(backendRoot, "prisma", "schema.prisma"), "utf8");
+  const semanticMetadataModel = schema.match(/model\s+VideoSemanticMetadata\s+\{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(
+    semanticMetadataModel,
+    /\bvideo\s+Videos\s+@relation\(\s*fields:\s*\[videoId\],\s*references:\s*\[id\],\s*onDelete:\s*Cascade\s*\)/,
+  );
+});
