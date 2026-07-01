@@ -6,6 +6,7 @@ export interface LiveStreamSummary {
 	recordingSessionId: string;
 	repositoryId: string;
 	repositoryName: string;
+	ownerId: string;
 	userId: string;
 	deviceType: string | null;
 	ingestType: "MEDIAMTX" | "HTTP";
@@ -15,7 +16,6 @@ export interface LiveStreamSummary {
 }
 
 export interface LiveStreamDetail extends LiveStreamSummary {
-	ownerId: string;
 	streamPath: string;
 	registeredAt: string;
 	playbackReady: boolean;
@@ -32,6 +32,7 @@ interface LiveStreamSummaryApiRecord {
 	recording_session_id: string;
 	repository_id: string;
 	repository_name: string;
+	owner_id: string;
 	user_id: string;
 	device_type: string | null;
 	ingest_type: "MEDIAMTX" | "HTTP";
@@ -64,6 +65,7 @@ const normalizeLiveStreamSummary = (
 	recordingSessionId: stream.recording_session_id,
 	repositoryId: stream.repository_id,
 	repositoryName: stream.repository_name,
+	ownerId: stream.owner_id,
 	userId: stream.user_id,
 	deviceType: stream.device_type,
 	ingestType: stream.ingest_type,

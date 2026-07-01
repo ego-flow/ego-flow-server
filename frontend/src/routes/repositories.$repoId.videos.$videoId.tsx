@@ -26,7 +26,7 @@ import {
 } from "#/lib/format";
 import { removeVideoSnapshot } from "#/lib/video-snapshots";
 import { videoStatusClassName } from "#/utils/class-names";
-import { contributorDisplayName } from "#/utils/display";
+import { contributorDisplayName, repositoryDisplayName } from "#/utils/display";
 
 export const Route = createFileRoute("/repositories/$repoId/videos/$videoId")({
 	component: RepositoryVideoDetailPage,
@@ -207,7 +207,7 @@ function RepositoryVideoDetailPage() {
 					) : null}
 
 					<h1 className="display-title text-3xl font-bold text-[var(--sea-ink)]">
-						{video?.repositoryName || "Video detail"}
+						{video ? repositoryDisplayName(video) : "Video detail"}
 					</h1>
 					<p className="mt-2 break-all text-sm text-[var(--sea-ink-soft)]">
 						{videoId}
@@ -293,11 +293,7 @@ function RepositoryVideoDetailPage() {
 								<dt className="font-semibold text-[var(--sea-ink)]">
 									Repository
 								</dt>
-								<dd>
-									{video
-										? `${video.ownerId}/${video.repositoryName}`
-										: "Unavailable"}
-								</dd>
+								<dd>{video ? repositoryDisplayName(video) : "Unavailable"}</dd>
 							</div>
 							<div>
 								<dt className="font-semibold text-[var(--sea-ink)]">

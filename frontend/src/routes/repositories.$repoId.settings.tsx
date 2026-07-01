@@ -26,6 +26,7 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { formatDateTime } from "#/lib/format";
 import { defaultRepositoriesSearch } from "#/lib/route-search";
+import { repositoryDisplayName } from "#/utils/display";
 import {
 	formatRepositoryTags,
 	parseRepositoryTags,
@@ -502,7 +503,7 @@ function RepositorySettingsPage() {
 					<section className="island-shell w-full max-w-2xl rounded-2xl p-6 shadow-xl">
 						<p className="island-kicker mb-2">Repository Deactivation</p>
 						<h2 className="text-2xl font-semibold text-[var(--sea-ink)]">
-							Deactivate {repository?.name}
+							Deactivate {repositoryDisplayName(repository)}
 						</h2>
 						<p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
 							Deactivation hides this repository from normal repository views

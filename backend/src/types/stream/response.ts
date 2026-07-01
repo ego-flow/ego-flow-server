@@ -33,6 +33,7 @@ export interface LiveStreamResponse {
   recording_session_id: string;
   repository_id: string;
   repository_name: string;
+  owner_id: string;
   user_id: string;
   device_type: string | null;
   ingest_type: RecordingSessionIngestTypeValue;
@@ -42,7 +43,6 @@ export interface LiveStreamResponse {
 }
 
 export interface LiveStreamDetailResponse extends LiveStreamResponse {
-  owner_id: string;
   registered_at: string;
   playback_ready: boolean;
   bytes_received: number | null;

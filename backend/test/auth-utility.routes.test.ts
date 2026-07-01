@@ -313,6 +313,7 @@ test("POST /auth/mediamtx accepts HLS playback with playback ticket and active R
   const baseUrl = await startServer();
   fakeRedisModule.redis.setJson("stream:recording:11111111-1111-4111-8111-111111111111", {
     repositoryId: "566fdab1-771a-42f9-a4eb-2f1c04859874",
+    ownerId: "admin",
     repositoryName: "test2",
     userId: "maintainer-1",
     ingestType: "MEDIAMTX",
@@ -356,6 +357,7 @@ test("POST /auth/mediamtx rejects HLS playback when playback ticket targets anot
   const baseUrl = await startServer();
   fakeRedisModule.redis.setJson("stream:recording:11111111-1111-4111-8111-111111111111", {
     repositoryId: "566fdab1-771a-42f9-a4eb-2f1c04859874",
+    ownerId: "admin",
     repositoryName: "test2",
     userId: "maintainer-1",
     ingestType: "MEDIAMTX",
@@ -397,6 +399,7 @@ test("POST /auth/mediamtx rejects playback action for HLS auth", async () => {
   const baseUrl = await startServer();
   fakeRedisModule.redis.setJson("stream:recording:11111111-1111-4111-8111-111111111111", {
     repositoryId: "566fdab1-771a-42f9-a4eb-2f1c04859874",
+    ownerId: "admin",
     repositoryName: "test2",
     userId: "maintainer-1",
     ingestType: "MEDIAMTX",
@@ -438,6 +441,7 @@ test("POST /auth/mediamtx ignores HLS playback user_id query when validating the
   const baseUrl = await startServer();
   fakeRedisModule.redis.setJson("stream:recording:11111111-1111-4111-8111-111111111111", {
     repositoryId: "566fdab1-771a-42f9-a4eb-2f1c04859874",
+    ownerId: "admin",
     repositoryName: "test2",
     userId: "maintainer-1",
     ingestType: "MEDIAMTX",

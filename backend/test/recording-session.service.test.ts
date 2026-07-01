@@ -276,6 +276,7 @@ test("handleStreamReady accepts an explicit ticket field when hook query is empt
   assert.deepEqual(await fakeRedis.smembers("stream:active:sessions"), ["session-1"]);
   assert.deepEqual(fakeRedis.getJson<RecordingSessionLiveCache>("stream:recording:session-1"), {
     repositoryId: "repo-1",
+    ownerId: "owner-1",
     repositoryName: "repo-name",
     userId: "user-1",
     ingestType: "MEDIAMTX",
@@ -319,6 +320,7 @@ test("handleStreamNotReady closes the streaming session and attempts finalize en
   await fakeRedis.sadd("stream:active:sessions", "session-1");
   fakeRedis.setJson("stream:recording:session-1", {
     repositoryId: "repo-1",
+    ownerId: "owner-1",
     repositoryName: "repo-name",
     userId: "user-1",
     ingestType: "MEDIAMTX",
@@ -665,6 +667,7 @@ test("reconcile closes a broken streaming session when active path is missing", 
   await fakeRedis.sadd("stream:active:sessions", "session-1");
   fakeRedis.setJson("stream:recording:session-1", {
     repositoryId: "repo-1",
+    ownerId: "owner-1",
     repositoryName: "repo-name",
     userId: "user-1",
     ingestType: "MEDIAMTX",

@@ -22,6 +22,7 @@ import { useAuth } from "#/hooks/useAuth";
 import { requestChangeMyPassword } from "#/lib/auth";
 import { formatDateTime } from "#/lib/format";
 import { userRoleClassName } from "#/utils/class-names";
+import { repositoryDisplayName } from "#/utils/display";
 
 export const Route = createFileRoute("/profile")({
 	component: ProfilePage,
@@ -57,7 +58,7 @@ function ProfilePage() {
 	} | null>(null);
 	const [deleteRepositoryConfirm, setDeleteRepositoryConfirm] = useState<{
 		repositoryId: string;
-		repositoryName: string;
+		repositoryDisplayName: string;
 	} | null>(null);
 
 	const currentTokenQuery = useQuery({
@@ -451,7 +452,7 @@ function ProfilePage() {
 										<div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 											<div className="min-w-0">
 												<h3 className="truncate text-base font-semibold text-[var(--sea-ink)]">
-													{repository.name}
+													{repositoryDisplayName(repository)}
 												</h3>
 												<p className="mt-1 text-sm text-[var(--sea-ink-soft)]">
 													Owner: {repository.ownerId}
@@ -496,7 +497,8 @@ function ProfilePage() {
 													onClick={() => {
 														setDeleteRepositoryConfirm({
 															repositoryId: repository.id,
-															repositoryName: repository.name,
+															repositoryDisplayName:
+																repositoryDisplayName(repository),
 														});
 													}}
 												>
@@ -620,7 +622,7 @@ function ProfilePage() {
 				description={
 					<>
 						<span className="font-semibold text-[var(--sea-ink)]">
-							{deleteRepositoryConfirm?.repositoryName}
+							{deleteRepositoryConfirm?.repositoryDisplayName}
 						</span>{" "}
 						and all associated data will be permanently removed. This action
 						cannot be undone.

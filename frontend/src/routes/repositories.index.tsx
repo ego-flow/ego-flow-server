@@ -24,6 +24,7 @@ import {
 import { formatDateTime } from "#/lib/format";
 import { defaultRepositoryVideosSearch } from "#/lib/route-search";
 import { repositoryRoleClassName } from "#/utils/class-names";
+import { repositoryDisplayName } from "#/utils/display";
 import { repositoryTagsMatchQuery } from "#/utils/repository-tags";
 
 export const Route = createFileRoute("/repositories/")({
@@ -79,6 +80,7 @@ function RepositoriesPage() {
 				const searchableText = [
 					repository.name,
 					repository.ownerId,
+					repositoryDisplayName(repository),
 					repository.description ?? "",
 				]
 					.join(" ")
@@ -467,7 +469,7 @@ function RepositoryRow({ repository }: { repository: RepositoryRecord }) {
 			<div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 				<div className="min-w-0 flex-1">
 					<h2 className="truncate text-xl font-bold text-[var(--sea-ink)]">
-						{repository.name}
+						{repositoryDisplayName(repository)}
 					</h2>
 					<p className="mt-2 line-clamp-2 text-sm text-[var(--sea-ink-soft)]">
 						{repository.description || "No description provided."}

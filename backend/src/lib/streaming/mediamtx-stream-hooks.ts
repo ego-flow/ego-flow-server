@@ -92,6 +92,7 @@ export const handleMediamtxStreamReady = async (
 
   const liveCache: RecordingSessionLiveCache = {
     repositoryId: session.repositoryId,
+    ownerId: session.ownerId,
     repositoryName: repoName,
     userId: session.userId,
     ingestType: RecordingSessionIngestType.MEDIAMTX,

@@ -96,6 +96,7 @@ export const startHttpStream = async (
   const now = new Date();
   const cache = buildHttpUploadCache({
     repositoryId: session.repositoryId,
+    ownerId: session.ownerId,
     repositoryName: extractRepositoryNameFromStreamPath(session.streamPath),
     userId: session.userId,
     deviceType: session.deviceType,

@@ -129,6 +129,7 @@ test("registerSession creates a unique MediaMTX path and caches pending metadata
   const cache = fakeRedis.getJson<RecordingSessionLiveCache>(`stream:recording:${response.recordingSessionId}`);
   assert.deepEqual(cache, {
     repositoryId: repository.id,
+    ownerId: repository.ownerId,
     repositoryName: repository.name,
     userId: "maintainer-1",
     ingestType: "MEDIAMTX",
@@ -182,6 +183,7 @@ test("registerSession reuses a non-expired pending session for the same user rep
   assert.equal(response.recordingSessionId, existingSession.id);
   assert.deepEqual(fakeRedis.getJson<RecordingSessionLiveCache>(`stream:recording:${existingSession.id}`), {
     repositoryId: repository.id,
+    ownerId: repository.ownerId,
     repositoryName: repository.name,
     userId: "maintainer-1",
     ingestType: "MEDIAMTX",
@@ -261,6 +263,7 @@ test("issuePublishTicket skips repository recheck and stores only ticket metadat
   };
   fakeRedis.setJson(`stream:recording:${pendingSession.id}`, {
     repositoryId: repository.id,
+    ownerId: repository.ownerId,
     repositoryName: repository.name,
     userId: "maintainer-1",
     deviceType: "phone_android",
@@ -362,6 +365,7 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
   await fakeRedis.sadd("stream:active:sessions", "session-1", "session-hidden");
   fakeRedis.setJson("stream:recording:session-1", {
     repositoryId: repository.id,
+    ownerId: repository.ownerId,
     repositoryName: repository.name,
     userId: "maintainer-1",
     deviceType: "phone_android",
@@ -370,6 +374,7 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
   } satisfies RecordingSessionLiveCache);
   fakeRedis.setJson("stream:recording:session-hidden", {
     repositoryId: "99999999-9999-4999-8999-999999999999",
+    ownerId: "other-owner",
     repositoryName: "hidden",
     userId: "other-user",
     ingestType: "MEDIAMTX",
@@ -383,6 +388,7 @@ test("listLiveStreams reads active ids and live metadata from Redis", async () =
       recording_session_id: "session-1",
       repository_id: repository.id,
       repository_name: repository.name,
+      owner_id: repository.ownerId,
       user_id: "maintainer-1",
       device_type: "phone_android",
       ingest_type: "MEDIAMTX",
@@ -417,6 +423,7 @@ test("getLiveStreamDetail exposes HTTP upload progress from Redis cache", async 
   });
   fakeRedis.setJson("stream:recording:session-http", {
     repositoryId: repository.id,
+    ownerId: repository.ownerId,
     repositoryName: repository.name,
     userId: "maintainer-1",
     deviceType: "phone_android",
@@ -444,6 +451,7 @@ test("issueHlsPlaybackTicket authorizes read access and stores a Redis playback 
   });
   fakeRedis.setJson("stream:recording:session-1", {
     repositoryId: repository.id,
+    ownerId: repository.ownerId,
     repositoryName: repository.name,
     userId: "maintainer-1",
     deviceType: "phone_android",

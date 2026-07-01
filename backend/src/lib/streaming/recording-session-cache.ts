@@ -11,6 +11,7 @@ import {
 export type PendingRecordingSessionCacheInput = {
   id: string;
   repositoryId: string;
+  ownerId: string;
   userId: string;
   deviceType: string | null;
   ingestType: RecordingSessionIngestType;
@@ -35,6 +36,7 @@ export const cachePendingRecordingSession = async (
 ): Promise<void> => {
   const liveCache: RecordingSessionLiveCache = {
     repositoryId: session.repositoryId,
+    ownerId: session.ownerId,
     repositoryName: extractRepositoryNameFromStreamPath(session.streamPath),
     userId: session.userId,
     ingestType: session.ingestType,
@@ -54,6 +56,7 @@ export const cachePendingRecordingSession = async (
   console.info("[rtmp-state] pending-cache-refreshed", {
     recordingSessionId: session.id,
     repositoryId: session.repositoryId,
+    ownerId: liveCache.ownerId,
     repositoryName: liveCache.repositoryName,
     userId: session.userId,
     ttlSec: ttlSeconds,

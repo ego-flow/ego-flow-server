@@ -113,6 +113,7 @@ test("consumePublishTicket preserves the remaining ticket TTL", async () => {
 test("issue and validate HLS playback ticket through Redis live cache", async () => {
   fakeRedis.setJson("stream:recording:session-1", {
     repositoryId: "repo-1",
+    ownerId: "owner-1",
     repositoryName: "repo-name",
     userId: "publisher-1",
     ingestType: "MEDIAMTX",
@@ -142,6 +143,7 @@ test("issue and validate HLS playback ticket through Redis live cache", async ()
 test("validateHlsPlaybackTicket rejects path mismatch and live cache repository mismatch", async () => {
   fakeRedis.setJson("stream:recording:session-1", {
     repositoryId: "repo-2",
+    ownerId: "owner-2",
     repositoryName: "repo-name",
     userId: "publisher-1",
     ingestType: "MEDIAMTX",
@@ -171,6 +173,7 @@ test("validateHlsPlaybackTicket rejects path mismatch and live cache repository 
 test("validateHlsPlaybackTicket does not require a request user id", async () => {
   fakeRedis.setJson("stream:recording:session-1", {
     repositoryId: "repo-1",
+    ownerId: "owner-1",
     repositoryName: "repo-name",
     userId: "publisher-1",
     ingestType: "MEDIAMTX",

@@ -72,6 +72,7 @@ export class RecordingSessionService {
     session: {
       id: string;
       repositoryId: string;
+      ownerId: string;
       userId: string;
       deviceType: string | null;
       ingestType: RecordingSessionIngestType;

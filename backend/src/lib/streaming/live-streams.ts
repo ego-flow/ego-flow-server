@@ -139,6 +139,7 @@ export const listActiveLiveStreams = async (
       recording_session_id: recordingSessionId,
       repository_id: cache.repositoryId,
       repository_name: cache.repositoryName,
+      owner_id: cache.ownerId,
       user_id: cache.userId,
       device_type: cache.deviceType ?? null,
       ingest_type: cache.ingestType,

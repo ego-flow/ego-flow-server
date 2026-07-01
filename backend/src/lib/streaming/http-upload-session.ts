@@ -39,6 +39,7 @@ export const buildHttpUploadRawPath = (streamPath: string, recordingSessionId: s
 
 export const buildHttpUploadCache = (params: {
   repositoryId: string;
+  ownerId: string;
   repositoryName: string;
   userId: string;
   deviceType: string | null;
@@ -49,6 +50,7 @@ export const buildHttpUploadCache = (params: {
 }): HttpUploadCache => {
   const cache: HttpUploadCache = {
     repositoryId: params.repositoryId,
+    ownerId: params.ownerId,
     repositoryName: params.repositoryName,
     userId: params.userId,
     ingestType: "HTTP",

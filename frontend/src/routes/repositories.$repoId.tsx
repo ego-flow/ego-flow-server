@@ -51,7 +51,7 @@ import {
 	repositoryRoleClassName,
 	videoStatusClassName,
 } from "#/utils/class-names";
-import { contributorDisplayName } from "#/utils/display";
+import { contributorDisplayName, repositoryDisplayName } from "#/utils/display";
 import { parseEnumValue } from "#/utils/enum";
 import {
 	parsePositiveInteger,
@@ -294,7 +294,7 @@ function RepositoryOverview({ repoId }: { repoId: string }) {
 										<div className="min-w-0">
 											<p className="island-kicker mb-3">Repository</p>
 											<h1 className="display-title break-words text-4xl font-bold text-[var(--sea-ink)] sm:text-5xl">
-												{repository.name}
+												{repositoryDisplayName(repository)}
 											</h1>
 											<p className="mt-4 max-w-3xl text-base leading-7 text-[var(--sea-ink-soft)]">
 												{repository.description || "No description provided."}

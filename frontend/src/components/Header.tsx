@@ -15,6 +15,7 @@ import { Button } from "#/components/ui/button";
 import { UserRole } from "#/constants/auth/auth-constants";
 import { useAuth } from "#/hooks/useAuth";
 import { defaultRepositoriesSearch } from "#/lib/route-search";
+import { repositoryDisplayName } from "#/utils/display";
 
 function getRepositoryIdFromPath(pathname: string) {
 	const match = pathname.match(/^\/repositories\/([^/]+)(?:\/|$)/);
@@ -64,7 +65,7 @@ export default function Header() {
 	const isAdmin = user?.role === UserRole.Admin;
 	const identityLabel = user?.displayName;
 	const repositoryTitle = currentRepositoryId
-		? (repositoryQuery.data?.name ?? "Repository")
+		? repositoryDisplayName(repositoryQuery.data)
 		: null;
 	const repositoriesActive = isPathActive(pathname, "/repositories");
 	const liveActive = isPathActive(pathname, "/live");

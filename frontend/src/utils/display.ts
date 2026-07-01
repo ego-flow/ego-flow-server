@@ -17,3 +17,26 @@ export const contributorDisplayName = (
 			contributor?.contributorUserId ??
 			contributor?.userId,
 	);
+
+export const repositoryDisplayName = (
+	repository:
+		| {
+				ownerId?: string | null;
+				name?: string | null;
+				repositoryName?: string | null;
+		  }
+		| null
+		| undefined,
+	fallback = "Repository",
+) => {
+	const ownerId = repository?.ownerId?.trim();
+	const repositoryName = (
+		repository?.name ?? repository?.repositoryName
+	)?.trim();
+
+	if (ownerId && repositoryName) {
+		return `${ownerId}/${repositoryName}`;
+	}
+
+	return fallbackText(repositoryName ?? ownerId, fallback);
+};

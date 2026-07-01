@@ -7,6 +7,7 @@ import { requestRepositoryDetail } from '#/api/repositories'
 import { requestVideos } from '#/api/videos'
 import { formatDateTime } from '#/lib/format'
 import { defaultRepositoryVideosSearch } from '#/lib/route-search'
+import { repositoryDisplayName } from '#/utils/display'
 
 export const Route = createFileRoute('/repositories/$repoId/contributors')({
   component: RepositoryContributorsPage,
@@ -62,7 +63,7 @@ function RepositoryContributorsPage() {
               Contributors
             </h1>
             <p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
-              {repository ? repository.name : 'Repository'} contributor list.
+              {repositoryDisplayName(repository)} contributor list.
             </p>
           </div>
           <span className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--chip-bg)] px-3 py-1 text-sm font-semibold text-[var(--sea-ink-soft)]">

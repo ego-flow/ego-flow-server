@@ -223,6 +223,7 @@ test("start consumes an HTTP publish ticket and creates upload cache", async () 
   assert.deepEqual(await fakeRedis.smembers("stream:active:sessions"), [session.id]);
   const cache = fakeRedis.getJson<RecordingSessionLiveCache>(`stream:recording:${session.id}`);
   const expectedRawPath = path.join(tempRoot, "http", "test2", session.id, "recording.mp4");
+  assert.equal(cache?.ownerId, session.ownerId);
   assert.equal(cache?.ingestType, "HTTP");
   assert.equal(cache?.status, "STREAMING");
   assert.equal(cache?.bytesReceived, 0);
@@ -235,6 +236,7 @@ test("appendChunk validates hot path from Redis and does not query DB", async ()
   const rawPath = path.join(tempRoot, "recording.mp4");
   fakeRedis.setJson(`stream:recording:${session.id}`, {
     repositoryId: session.repositoryId,
+    ownerId: session.ownerId,
     repositoryName: "test2",
     userId: session.userId,
     deviceType: session.deviceType,
@@ -283,6 +285,7 @@ test("finish validates total bytes, closes session, and enqueues finalize", asyn
   };
   fakeRedis.setJson(`stream:recording:${session.id}`, {
     repositoryId: session.repositoryId,
+    ownerId: session.ownerId,
     repositoryName: "test2",
     userId: session.userId,
     deviceType: session.deviceType,
@@ -376,6 +379,7 @@ test("reconcile does not enqueue finalize when timeout recovery loses the state 
   };
   fakeRedis.setJson(`stream:recording:${session.id}`, {
     repositoryId: session.repositoryId,
+    ownerId: session.ownerId,
     repositoryName: "test2",
     userId: session.userId,
     deviceType: session.deviceType,
@@ -416,6 +420,7 @@ test("reconcile marks timed out missing raw file as failed and creates failed vi
   };
   fakeRedis.setJson(`stream:recording:${session.id}`, {
     repositoryId: session.repositoryId,
+    ownerId: session.ownerId,
     repositoryName: "test2",
     userId: session.userId,
     deviceType: session.deviceType,

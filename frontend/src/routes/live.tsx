@@ -12,6 +12,7 @@ import {
 import { Button } from "#/components/ui/button";
 import { UserRole } from "#/constants/auth/auth-constants";
 import { useAuth } from "#/hooks/useAuth";
+import { repositoryDisplayName } from "#/utils/display";
 
 const HlsPlayer = lazy(() => import("#/components/HlsPlayer"));
 const DIRECT_HLS_PORT = 8888;
@@ -297,7 +298,7 @@ function LivePage() {
 								>
 									<div className="flex items-center justify-between gap-3">
 										<h3 className="truncate text-base font-semibold text-[var(--sea-ink)]">
-											{stream.repositoryName}
+											{repositoryDisplayName(stream)}
 										</h3>
 										<span className="rounded-full bg-emerald-500/12 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
 											{stream.ingestType === "HTTP" ? "HTTP" : "LIVE"}
@@ -367,7 +368,7 @@ function LivePage() {
 							</h2>
 							<p className="mt-1 text-sm text-[var(--sea-ink-soft)]">
 								{selectedStream
-									? selectedStream.repositoryName
+									? repositoryDisplayName(selectedStream)
 									: "Select an active stream to begin playback."}
 							</p>
 						</div>

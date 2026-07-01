@@ -2,6 +2,7 @@ export type RecordingSessionIngestTypeValue = "MEDIAMTX" | "HTTP";
 
 export interface RecordingSessionLiveCache {
   repositoryId: string;
+  ownerId: string;
   repositoryName: string;
   userId: string;
   ingestType: RecordingSessionIngestTypeValue;
