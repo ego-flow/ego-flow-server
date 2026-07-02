@@ -1,4 +1,4 @@
-import type { VideoStatus } from "@prisma/client";
+import type { VideoSemanticMetadataStatus, VideoStatus } from "@prisma/client";
 
 export interface RepositoryVideoContext {
   id: string;
@@ -29,8 +29,17 @@ export interface RepositoryVideoMapperInput {
   sizeBytes: bigint | number | null;
   recorder: string | null;
   semanticMetadata: {
+    videoId: string;
+    status: VideoSemanticMetadataStatus;
     sceneSummary: string | null;
     clipSegments: unknown;
+    actionLabels: unknown;
+    videoTextAlignment: unknown;
+    errorMessage: string | null;
+    processingStartedAt: Date | null;
+    processingCompletedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
   } | null;
   createdAt: Date;
 }

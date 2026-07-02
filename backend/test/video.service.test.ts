@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { beforeEach, test } from "node:test";
-import { VideoStatus } from "@prisma/client";
+import { VideoSemanticMetadataStatus, VideoStatus } from "@prisma/client";
 
 import { AppError } from "../src/lib/core/errors";
 import type { RepositoryAccessContext, RepositoryRecord } from "../src/types/repository";
@@ -61,8 +61,17 @@ type VideoRow = {
   vlmSha256: string | null;
   recorder: string | null;
   semanticMetadata: {
+    videoId: string;
+    status: VideoSemanticMetadataStatus;
     sceneSummary: string | null;
     clipSegments: unknown;
+    actionLabels: unknown;
+    videoTextAlignment: unknown;
+    errorMessage: string | null;
+    processingStartedAt: Date | null;
+    processingCompletedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
   } | null;
   createdAt: Date;
   recordingSessionId: string | null;
@@ -305,8 +314,17 @@ beforeEach(() => {
     vlmSha256: "b".repeat(64),
     recorder: "bob",
     semanticMetadata: {
+      videoId: "video-3",
+      status: VideoSemanticMetadataStatus.COMPLETED,
       sceneSummary: "Kitchen prep",
       clipSegments: [{ start_sec: 0, end_sec: 9.5 }],
+      actionLabels: ["prepare ingredients"],
+      videoTextAlignment: [{ start_sec: 0, text: "Kitchen prep" }],
+      errorMessage: null,
+      processingStartedAt: new Date("2026-04-11T09:35:10.000Z"),
+      processingCompletedAt: new Date("2026-04-11T09:35:30.000Z"),
+      createdAt: new Date("2026-04-11T09:35:05.000Z"),
+      updatedAt: new Date("2026-04-11T09:35:30.000Z"),
     },
     createdAt: new Date("2026-04-11T09:35:00.000Z"),
     recordingSessionId: "session-3",
@@ -359,6 +377,7 @@ test("listRepositoryVideos returns repo-scoped responses without internal file p
     processing_progress: null,
     scene_summary: null,
     clip_segments: null,
+    semantic_metadata: null,
     created_at: "2026-04-12T01:05:00.000Z",
   });
   assertSignedFileUrl(response.data[0]!.thumbnail_url, "alice/daily-kitchen/.thumbnails/video-1.jpg");
@@ -392,6 +411,24 @@ test("repo-scoped detail returns a signed dashboard playback URL", async () => {
   assert.equal(response.contributor_display_name, "Alice Kim");
 
   assertSignedFileUrl(response.dashboard_video_url, "alice/daily-kitchen/.dashboard/video-1.mp4");
+});
+
+test("repo-scoped detail exposes semantic metadata columns", async () => {
+  const response = await service.getRepositoryVideoDetail("repo-1", repository, "video-3");
+
+  assert.deepEqual(response.semantic_metadata, {
+    video_id: "video-3",
+    status: "COMPLETED",
+    clip_segments: [{ start_sec: 0, end_sec: 9.5 }],
+    action_labels: ["prepare ingredients"],
+    video_text_alignment: [{ start_sec: 0, text: "Kitchen prep" }],
+    scene_summary: "Kitchen prep",
+    error_message: null,
+    processing_started_at: "2026-04-11T09:35:10.000Z",
+    processing_completed_at: "2026-04-11T09:35:30.000Z",
+    created_at: "2026-04-11T09:35:05.000Z",
+    updated_at: "2026-04-11T09:35:30.000Z",
+  });
 });
 
 test("repo-scoped responses expose task progress for processing videos", async () => {

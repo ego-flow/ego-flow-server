@@ -54,6 +54,27 @@ interface VideoProcessingProgressApiRecord {
 	label: string;
 }
 
+export enum VideoSemanticMetadataStatus {
+	Pending = "PENDING",
+	Processing = "PROCESSING",
+	Completed = "COMPLETED",
+	Failed = "FAILED",
+}
+
+interface VideoSemanticMetadataApiRecord {
+	video_id: string;
+	status: VideoSemanticMetadataStatus;
+	clip_segments: unknown;
+	action_labels: unknown;
+	video_text_alignment: unknown;
+	scene_summary: string | null;
+	error_message: string | null;
+	processing_started_at: string | null;
+	processing_completed_at: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
 interface RepositoryVideoApiRecord {
 	id: string;
 	repository_id: string;
@@ -74,6 +95,7 @@ interface RepositoryVideoApiRecord {
 	dashboard_video_url?: string | null;
 	scene_summary: string | null;
 	clip_segments: unknown;
+	semantic_metadata: VideoSemanticMetadataApiRecord | null;
 	created_at: string;
 }
 
@@ -97,6 +119,20 @@ export interface VideoContributor {
 	latestRecordedAt: string | null;
 }
 
+export interface VideoSemanticMetadata {
+	videoId: string;
+	status: VideoSemanticMetadataStatus;
+	clipSegments: unknown;
+	actionLabels: unknown;
+	videoTextAlignment: unknown;
+	sceneSummary: string | null;
+	errorMessage: string | null;
+	processingStartedAt: string | null;
+	processingCompletedAt: string | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
 export interface VideoRecord {
 	id: string;
 	repositoryId: string;
@@ -117,6 +153,7 @@ export interface VideoRecord {
 	dashboardVideoUrl: string | null;
 	sceneSummary: string | null;
 	clipSegments: unknown;
+	semanticMetadata: VideoSemanticMetadata | null;
 	createdAt: string;
 }
 
@@ -217,6 +254,28 @@ function normalizeProcessingProgress(
 	};
 }
 
+function normalizeSemanticMetadata(
+	semanticMetadata: VideoSemanticMetadataApiRecord | null,
+): VideoSemanticMetadata | null {
+	if (!semanticMetadata) {
+		return null;
+	}
+
+	return {
+		videoId: semanticMetadata.video_id,
+		status: semanticMetadata.status,
+		clipSegments: semanticMetadata.clip_segments,
+		actionLabels: semanticMetadata.action_labels,
+		videoTextAlignment: semanticMetadata.video_text_alignment,
+		sceneSummary: semanticMetadata.scene_summary,
+		errorMessage: semanticMetadata.error_message,
+		processingStartedAt: semanticMetadata.processing_started_at,
+		processingCompletedAt: semanticMetadata.processing_completed_at,
+		createdAt: semanticMetadata.created_at,
+		updatedAt: semanticMetadata.updated_at,
+	};
+}
+
 function normalizeVideo(video: RepositoryVideoApiRecord): VideoRecord {
 	return {
 		id: video.id,
@@ -238,6 +297,7 @@ function normalizeVideo(video: RepositoryVideoApiRecord): VideoRecord {
 		dashboardVideoUrl: resolveBackendUrl(video.dashboard_video_url ?? null),
 		sceneSummary: video.scene_summary,
 		clipSegments: video.clip_segments,
+		semanticMetadata: normalizeSemanticMetadata(video.semantic_metadata),
 		createdAt: video.created_at,
 	};
 }

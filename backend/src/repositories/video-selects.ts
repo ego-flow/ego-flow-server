@@ -17,8 +17,17 @@ export const repositoryVideoSelect = {
   recorder: true,
   semanticMetadata: {
     select: {
-      sceneSummary: true,
+      videoId: true,
+      status: true,
       clipSegments: true,
+      actionLabels: true,
+      videoTextAlignment: true,
+      sceneSummary: true,
+      errorMessage: true,
+      processingStartedAt: true,
+      processingCompletedAt: true,
+      createdAt: true,
+      updatedAt: true,
     },
   },
   createdAt: true,

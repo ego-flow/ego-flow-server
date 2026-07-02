@@ -1,4 +1,4 @@
-import type { VideoStatus } from "@prisma/client";
+import type { VideoSemanticMetadataStatus, VideoStatus } from "@prisma/client";
 
 import type { RecordingFinalizeProgress } from "../processing";
 
@@ -7,6 +7,20 @@ export interface RepositoryContributorResponse {
   display_name: string;
   video_count: number;
   latest_recorded_at: string | null;
+}
+
+export interface RepositoryVideoSemanticMetadataResponse {
+  video_id: string;
+  status: VideoSemanticMetadataStatus;
+  clip_segments: unknown;
+  action_labels: unknown;
+  video_text_alignment: unknown;
+  scene_summary: string | null;
+  error_message: string | null;
+  processing_started_at: string | null;
+  processing_completed_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface RepositoryVideoResponse {
@@ -29,6 +43,7 @@ export interface RepositoryVideoResponse {
   dashboard_video_url?: string | null;
   scene_summary: string | null;
   clip_segments: unknown;
+  semantic_metadata: RepositoryVideoSemanticMetadataResponse | null;
   created_at: string;
 }
 

@@ -13,6 +13,8 @@ import {
 	requestVideoDetail,
 	requestVideoDownload,
 	requestVideoStatus,
+	VideoSemanticMetadataStatus,
+	type VideoSemanticMetadata,
 	type VideoProcessingProgress,
 } from "#/api/videos";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
@@ -32,8 +34,14 @@ export const Route = createFileRoute("/repositories/$repoId/videos/$videoId")({
 	component: RepositoryVideoDetailPage,
 });
 
-function formatClipSegments(value: unknown) {
-	if (!value) {
+type DetailPanelTab = "metadata" | "semantics";
+
+function formatSemanticJsonValue(value: unknown) {
+	if (
+		value === null ||
+		typeof value === "undefined" ||
+		(Array.isArray(value) && value.length === 0)
+	) {
 		return "None";
 	}
 
@@ -41,6 +49,31 @@ function formatClipSegments(value: unknown) {
 		return JSON.stringify(value, null, 2);
 	} catch {
 		return "Unavailable";
+	}
+}
+
+function formatSemanticTextValue(value: string | null | undefined) {
+	const trimmed = value?.trim();
+	return trimmed || "None";
+}
+
+function formatSemanticDateTime(value: string | null | undefined) {
+	return value ? formatDateTime(value) : "None";
+}
+
+function formatSemanticStatus(
+	status: VideoSemanticMetadata["status"] | null | undefined,
+) {
+	switch (status ?? VideoSemanticMetadataStatus.Pending) {
+		case VideoSemanticMetadataStatus.Processing:
+			return "Processing";
+		case VideoSemanticMetadataStatus.Completed:
+			return "Completed";
+		case VideoSemanticMetadataStatus.Failed:
+			return "Failed";
+		case VideoSemanticMetadataStatus.Pending:
+		default:
+			return "Pending";
 	}
 }
 
@@ -85,6 +118,8 @@ function RepositoryVideoDetailPage() {
 	const queryClient = useQueryClient();
 	const repositorySearch = useSearch({ from: "/repositories/$repoId" });
 	const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+	const [selectedDetailTab, setSelectedDetailTab] =
+		useState<DetailPanelTab>("metadata");
 
 	const detailQuery = useQuery({
 		queryKey: ["video-detail", repoId, videoId],
@@ -140,6 +175,7 @@ function RepositoryVideoDetailPage() {
 	const currentStatus =
 		statusQuery.data?.status ?? detailQuery.data?.status ?? null;
 	const playbackUrl = video?.dashboardVideoUrl ?? null;
+	const semanticMetadata = video?.semanticMetadata ?? null;
 
 	return (
 		<main className="page-wrap px-4 py-8 sm:py-10">
@@ -283,125 +319,217 @@ function RepositoryVideoDetailPage() {
 					) : null}
 				</article>
 
-				<aside className="space-y-6">
+				<aside>
 					<section className="island-shell rounded-2xl p-5 shadow-sm">
-						<h2 className="text-lg font-semibold text-[var(--sea-ink)]">
-							Metadata
-						</h2>
-						<dl className="mt-4 space-y-3 text-sm text-[var(--sea-ink-soft)]">
-							<div>
-								<dt className="font-semibold text-[var(--sea-ink)]">
-									Repository
-								</dt>
-								<dd>{video ? repositoryDisplayName(video) : "Unavailable"}</dd>
-							</div>
-							<div>
-								<dt className="font-semibold text-[var(--sea-ink)]">
-									Video ID
-								</dt>
-								<dd className="break-all">{video?.id ?? videoId}</dd>
-							</div>
-							<div>
-								<dt className="font-semibold text-[var(--sea-ink)]">Status</dt>
-								<dd>{currentStatus ?? "Unavailable"}</dd>
-							</div>
-							<div>
-								<dt className="font-semibold text-[var(--sea-ink)]">
-									Contributor
-								</dt>
-								<dd>{contributorDisplayName(video)}</dd>
-							</div>
-							<div>
-								<dt className="font-semibold text-[var(--sea-ink)]">Size</dt>
-								<dd>{formatBytes(video?.sizeBytes ?? null)}</dd>
-							</div>
-							<div>
-								<dt className="font-semibold text-[var(--sea-ink)]">
-									Duration
-								</dt>
-								<dd>{formatDuration(video?.durationSec ?? null)}</dd>
-							</div>
-							<div>
-								<dt className="font-semibold text-[var(--sea-ink)]">
-									Resolution
-								</dt>
-								<dd>{video ? formatResolution(video) : "Unavailable"}</dd>
-							</div>
-							<div>
-								<dt className="font-semibold text-[var(--sea-ink)]">FPS</dt>
-								<dd>{video?.fps ?? "Unavailable"}</dd>
-							</div>
-							<div>
-								<dt className="font-semibold text-[var(--sea-ink)]">Codec</dt>
-								<dd>{video?.codec || "Unavailable"}</dd>
-							</div>
-							<div>
-								<dt className="font-semibold text-[var(--sea-ink)]">
-									Recorded at
-								</dt>
-								<dd>{formatDateTime(video?.recordedAt ?? null)}</dd>
-							</div>
-							<div>
-								<dt className="font-semibold text-[var(--sea-ink)]">
-									Created at
-								</dt>
-								<dd>{formatDateTime(video?.createdAt ?? null)}</dd>
-							</div>
-							<div>
-								<dt className="font-semibold text-[var(--sea-ink)]">
-									Processing started
-								</dt>
-								<dd>
-									{formatDateTime(
-										statusQuery.data?.processingStartedAt ?? null,
-									)}
-								</dd>
-							</div>
-							<div>
-								<dt className="font-semibold text-[var(--sea-ink)]">
-									Processing completed
-								</dt>
-								<dd>
-									{formatDateTime(
-										statusQuery.data?.processingCompletedAt ?? null,
-									)}
-								</dd>
-							</div>
-						</dl>
-					</section>
-
-					<section className="island-shell rounded-2xl p-5 shadow-sm">
-						<h2 className="text-lg font-semibold text-[var(--sea-ink)]">
-							Analysis
-						</h2>
-						<div className="mt-4 space-y-4 text-sm text-[var(--sea-ink-soft)]">
-							<div>
-								<h3 className="font-semibold text-[var(--sea-ink)]">
-									Scene summary
-								</h3>
-								<p className="mt-1 whitespace-pre-wrap">
-									{video?.sceneSummary || "No summary generated yet."}
-								</p>
-							</div>
-							<div>
-								<h3 className="font-semibold text-[var(--sea-ink)]">
-									Clip segments
-								</h3>
-								<pre className="mt-1 overflow-x-auto rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] p-3 text-xs">
-									{formatClipSegments(video?.clipSegments)}
-								</pre>
-							</div>
-							{statusQuery.data?.errorMessage ? (
-								<div>
-									<h3 className="font-semibold text-[var(--sea-ink)]">
-										Finalize error
-									</h3>
-									<p className="mt-1 text-red-700 dark:text-red-300">
-										{statusQuery.data.errorMessage}
-									</p>
-								</div>
-							) : null}
+						<div
+							className="grid grid-cols-2 gap-2 rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] p-1"
+							role="tablist"
+							aria-label="Video detail panel"
+						>
+							{[
+								{ value: "metadata" as const, label: "Metadata" },
+								{ value: "semantics" as const, label: "Semantics" },
+							].map((tab) => (
+								<button
+									key={tab.value}
+									type="button"
+									role="tab"
+									aria-selected={selectedDetailTab === tab.value}
+									onClick={() => setSelectedDetailTab(tab.value)}
+									className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+										selectedDetailTab === tab.value
+											? "bg-[var(--card)] text-[var(--sea-ink)] shadow-sm"
+											: "text-[var(--sea-ink-soft)] hover:text-[var(--sea-ink)]"
+									}`}
+								>
+									{tab.label}
+								</button>
+							))}
 						</div>
+
+						{selectedDetailTab === "metadata" ? (
+							<dl className="mt-5 space-y-3 text-sm text-[var(--sea-ink-soft)]">
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Repository
+									</dt>
+									<dd>{video ? repositoryDisplayName(video) : "Unavailable"}</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Video ID
+									</dt>
+									<dd className="break-all">{video?.id ?? videoId}</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Status
+									</dt>
+									<dd>{currentStatus ?? "Unavailable"}</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Contributor
+									</dt>
+									<dd>{contributorDisplayName(video)}</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">Size</dt>
+									<dd>{formatBytes(video?.sizeBytes ?? null)}</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Duration
+									</dt>
+									<dd>{formatDuration(video?.durationSec ?? null)}</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Resolution
+									</dt>
+									<dd>{video ? formatResolution(video) : "Unavailable"}</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">FPS</dt>
+									<dd>{video?.fps ?? "Unavailable"}</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">Codec</dt>
+									<dd>{video?.codec || "Unavailable"}</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Recorded at
+									</dt>
+									<dd>{formatDateTime(video?.recordedAt ?? null)}</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Created at
+									</dt>
+									<dd>{formatDateTime(video?.createdAt ?? null)}</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Processing started
+									</dt>
+									<dd>
+										{formatDateTime(
+											statusQuery.data?.processingStartedAt ?? null,
+										)}
+									</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Processing completed
+									</dt>
+									<dd>
+										{formatDateTime(
+											statusQuery.data?.processingCompletedAt ?? null,
+										)}
+									</dd>
+								</div>
+							</dl>
+						) : (
+							<dl className="mt-5 space-y-4 text-sm text-[var(--sea-ink-soft)]">
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Semantic metadata status
+									</dt>
+									<dd>
+										{video
+											? formatSemanticStatus(semanticMetadata?.status)
+											: "Unavailable"}
+									</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Video ID
+									</dt>
+									<dd className="break-all">
+										{semanticMetadata?.videoId ?? video?.id ?? videoId}
+									</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Scene summary
+									</dt>
+									<dd className="mt-1 whitespace-pre-wrap">
+										{formatSemanticTextValue(semanticMetadata?.sceneSummary)}
+									</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Clip segments
+									</dt>
+									<dd>
+										<pre className="mt-1 overflow-x-auto rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] p-3 text-xs">
+											{formatSemanticJsonValue(semanticMetadata?.clipSegments)}
+										</pre>
+									</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Action labels
+									</dt>
+									<dd>
+										<pre className="mt-1 overflow-x-auto rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] p-3 text-xs">
+											{formatSemanticJsonValue(semanticMetadata?.actionLabels)}
+										</pre>
+									</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Video-text alignment
+									</dt>
+									<dd>
+										<pre className="mt-1 overflow-x-auto rounded-xl border border-[var(--line)] bg-[var(--chip-bg)] p-3 text-xs">
+											{formatSemanticJsonValue(
+												semanticMetadata?.videoTextAlignment,
+											)}
+										</pre>
+									</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Error message
+									</dt>
+									<dd>{formatSemanticTextValue(semanticMetadata?.errorMessage)}</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Processing started
+									</dt>
+									<dd>
+										{formatSemanticDateTime(
+											semanticMetadata?.processingStartedAt,
+										)}
+									</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Processing completed
+									</dt>
+									<dd>
+										{formatSemanticDateTime(
+											semanticMetadata?.processingCompletedAt,
+										)}
+									</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Created at
+									</dt>
+									<dd>{formatSemanticDateTime(semanticMetadata?.createdAt)}</dd>
+								</div>
+								<div>
+									<dt className="font-semibold text-[var(--sea-ink)]">
+										Updated at
+									</dt>
+									<dd>{formatSemanticDateTime(semanticMetadata?.updatedAt)}</dd>
+								</div>
+							</dl>
+						)}
 					</section>
 				</aside>
 			</section>

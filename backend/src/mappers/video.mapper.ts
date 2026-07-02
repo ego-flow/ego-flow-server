@@ -12,6 +12,7 @@ import type {
 } from "../types/videos/model";
 import type {
   RepositoryContributorResponse,
+  RepositoryVideoSemanticMetadataResponse,
   RepositoryVideoResponse,
   RepositoryVideoStatusResponse,
 } from "../types/videos/response";
@@ -40,37 +41,65 @@ const toSizeBytes = (value: bigint | number | null | undefined) => {
   return typeof value === "number" ? value : null;
 };
 
+const toRepositoryVideoSemanticMetadataResponse = (
+  semanticMetadata: RepositoryVideoMapperInput["semanticMetadata"],
+): RepositoryVideoSemanticMetadataResponse | null =>
+  semanticMetadata
+    ? {
+        video_id: semanticMetadata.videoId,
+        status: semanticMetadata.status,
+        clip_segments: semanticMetadata.clipSegments ?? null,
+        action_labels: semanticMetadata.actionLabels ?? null,
+        video_text_alignment: semanticMetadata.videoTextAlignment ?? null,
+        scene_summary: semanticMetadata.sceneSummary,
+        error_message: semanticMetadata.errorMessage,
+        processing_started_at: semanticMetadata.processingStartedAt
+          ? semanticMetadata.processingStartedAt.toISOString()
+          : null,
+        processing_completed_at: semanticMetadata.processingCompletedAt
+          ? semanticMetadata.processingCompletedAt.toISOString()
+          : null,
+        created_at: semanticMetadata.createdAt.toISOString(),
+        updated_at: semanticMetadata.updatedAt.toISOString(),
+      }
+    : null;
+
 export const toRepositoryVideoResponse = (
   targetDirectory: string,
   video: RepositoryVideoMapperInput,
   repository: RepositoryVideoContext,
   displayNamesByUserId: Map<string, string>,
   options?: { includeDashboardVideoUrl?: boolean; processingProgress?: RecordingFinalizeProgress | null },
-): RepositoryVideoResponse => ({
-  id: video.id,
-  repository_id: repository.id,
-  repository_name: repository.name,
-  owner_id: repository.ownerId,
-  status: video.status,
-  duration_sec: video.durationSec,
-  resolution_width: video.resolutionWidth,
-  resolution_height: video.resolutionHeight,
-  fps: video.fps,
-  codec: video.codec,
-  recorded_at: video.recordedAt ? video.recordedAt.toISOString() : null,
-  size_bytes: toSizeBytes(video.sizeBytes),
-  contributor_user_id: video.recorder,
-  contributor_display_name: video.recorder ? displayNamesByUserId.get(video.recorder) ?? video.recorder : null,
-  thumbnail_url: video.thumbnailPath ? toRepositoryThumbnailUrl(targetDirectory, video) : null,
-  processing_progress:
-    video.status === VideoStatus.PROCESSING ? normalizeProgress(video.status, options?.processingProgress ?? null) : null,
-  ...(options?.includeDashboardVideoUrl
-    ? { dashboard_video_url: toSignedFileUrl(targetDirectory, video.dashboardVideoPath) }
-    : {}),
-  scene_summary: video.semanticMetadata?.sceneSummary ?? null,
-  clip_segments: video.semanticMetadata?.clipSegments ?? null,
-  created_at: video.createdAt.toISOString(),
-});
+): RepositoryVideoResponse => {
+  const semanticMetadata = toRepositoryVideoSemanticMetadataResponse(video.semanticMetadata);
+
+  return {
+    id: video.id,
+    repository_id: repository.id,
+    repository_name: repository.name,
+    owner_id: repository.ownerId,
+    status: video.status,
+    duration_sec: video.durationSec,
+    resolution_width: video.resolutionWidth,
+    resolution_height: video.resolutionHeight,
+    fps: video.fps,
+    codec: video.codec,
+    recorded_at: video.recordedAt ? video.recordedAt.toISOString() : null,
+    size_bytes: toSizeBytes(video.sizeBytes),
+    contributor_user_id: video.recorder,
+    contributor_display_name: video.recorder ? displayNamesByUserId.get(video.recorder) ?? video.recorder : null,
+    thumbnail_url: video.thumbnailPath ? toRepositoryThumbnailUrl(targetDirectory, video) : null,
+    processing_progress:
+      video.status === VideoStatus.PROCESSING ? normalizeProgress(video.status, options?.processingProgress ?? null) : null,
+    ...(options?.includeDashboardVideoUrl
+      ? { dashboard_video_url: toSignedFileUrl(targetDirectory, video.dashboardVideoPath) }
+      : {}),
+    scene_summary: video.semanticMetadata?.sceneSummary ?? null,
+    clip_segments: video.semanticMetadata?.clipSegments ?? null,
+    semantic_metadata: semanticMetadata,
+    created_at: video.createdAt.toISOString(),
+  };
+};
 
 export const toRepositoryContributorResponse = (
   contributor: RepositoryContributorSummary,
