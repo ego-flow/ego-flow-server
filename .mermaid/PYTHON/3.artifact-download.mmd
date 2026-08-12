@@ -1,0 +1,69 @@
+sequenceDiagram
+  autonumber
+  participant Python as [ego-flow Python Package]
+  participant Cache as [Local Cache]
+  participant Backend as [Backend]
+  participant DB as [DB]
+  participant Storage as [Storage]
+
+  Python->>Cache: CacheManager 생성
+  Note over Python,Cache: root = EGO_FLOW_CACHE 또는 platformdirs user_cache_dir("ego-flow")<br/>server_root = {cache}/servers/{host-hint}-{sha1(api_base_url)[0:12]}<br/>repository_dir = repositories/{owner_id}/{repository_name}
+
+  Python->>Python: manifest video artifact 선택
+  Note over Python: selected fields<br/>video.video_id<br/>artifact.download_url<br/>artifact.size_bytes<br/>artifact.sha256<br/>artifact.content_type<br/>thumbnail.download_url optional
+
+  Python->>Cache: ensure_video(client, repository, video)
+  Note over Python,Cache: local path<br/>videos/{video_id}-{sha12}.mp4<br/><br/>download_mode != force_redownload이고<br/>파일이 존재하며 sha256이 일치하면 download 생략
+
+  alt cached video valid
+    Cache-->>Python: cached video path
+  else cache missing or invalid
+    Python->>Backend: GET /api/v1/repositories/{repoId}/videos/{videoId}/download
+    Note over Python,Backend: Headers<br/>Authorization: Bearer ef_raw_python_static_token<br/><br/>download_url이 absolute URL, /api/ URL, /files/ URL 중 무엇이든<br/>EgoFlowClient._absolute_any_url()로 절대 URL화한다.
+
+    Backend->>Backend: requireDashboardOrPython
+    Backend->>DB: repository read 권한 + video 조회
+    Note over Backend,DB: video.repository_id = repoId<br/>video.id = videoId<br/>video.status = COMPLETED<br/>vlm_video_path exists
+    Backend->>Storage: video file 존재 확인
+
+    alt not visible or file missing
+      Backend-->>Python: 403 Forbidden or 404 Not Found
+      Python->>Python: EgoFlowPermissionError or EgoFlowNotFoundError
+    else artifact available
+      Backend-->>Python: 307 redirect
+      Note over Backend,Python: Location: signed /files/... URL
+      Python->>Storage: artifact bytes download
+      Storage-->>Python: video bytes
+      Python->>Cache: tmp file write
+      Python->>Python: sha256 검증
+      alt sha mismatch
+        Python->>Cache: tmp file 삭제
+        Python->>Python: EgoFlowDownloadError
+      else sha ok
+        Python->>Cache: tmp file을 final path로 atomic replace
+        Cache-->>Python: cached video path
+      end
+    end
+  end
+
+  opt with_thumbnails=true and thumbnail artifact exists
+    Python->>Cache: ensure_thumbnail(client, repository, video)
+    Note over Python,Cache: local path<br/>thumbnails/{video_id}.jpg<br/><br/>thumbnail은 sha256 검증 없이 존재 여부 기준으로 cache reuse
+    alt cached thumbnail exists
+      Cache-->>Python: cached thumbnail path
+    else thumbnail missing
+      Python->>Backend: GET manifest thumbnail download_url
+      Note over Python,Backend: GET /api/v1/repositories/{repoId}/videos/{videoId}/thumbnail<br/>Authorization: Bearer ef_raw_python_static_token
+      Backend-->>Python: 307 redirect
+      Note over Backend,Python: Location: signed /files/... URL
+      Python->>Storage: thumbnail bytes download
+      Storage-->>Python: thumbnail bytes
+      Python->>Cache: thumbnail 저장
+    end
+  end
+
+%% 참고:
+%% artifact download는 Python static token 기반 API 호출과 signed file URL download를 조합한다.
+%% video artifact는 manifest sha256을 기준으로 cache 무결성을 검증한다.
+%% thumbnail artifact는 현재 ego-flow-py에서 sha256 metadata가 없으므로 파일 존재 여부만 cache hit로 본다.
+%% download_mode="reuse_dataset_if_exists"는 현재 코드상 cache 재사용 모드와 동일하게 처리된다.

@@ -1,0 +1,370 @@
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { afterEach, beforeEach, test } from "node:test";
+import type { AddressInfo } from "node:net";
+
+import express from "express";
+
+import { AppError } from "../src/lib/core/errors";
+import { errorMiddleware } from "../src/middleware/error.middleware";
+import { FakeRedis } from "./helpers/fake-redis";
+
+process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5432/egoflow";
+process.env.JWT_SECRET ??= "replace-this-in-tests-only";
+process.env.ADMIN_DEFAULT_PASSWORD ??= "changeme123";
+
+(globalThis as any).__egoflowPrisma = {} as any;
+(globalThis as any).__egoflowRedis = new FakeRedis();
+
+const moduleLoader = require("node:module") as typeof import("node:module") & {
+  _load: (request: string, parent: unknown, isMain: boolean) => unknown;
+};
+const originalLoad = moduleLoader._load;
+const fakeRedisModule = { redis: new FakeRedis() };
+
+moduleLoader._load = ((request: string, parent: unknown, isMain: boolean) => {
+  if (request === "../lib/infra/redis" || request.endsWith("/lib/infra/redis")) {
+    return fakeRedisModule;
+  }
+
+  if (request === "bullmq") {
+    return {
+      Queue: class FakeQueue {
+        async add() {
+          return { id: "fake-job" };
+        }
+
+        async getJob() {
+          return null;
+        }
+      },
+    };
+  }
+
+  return originalLoad(request, parent, isMain);
+}) as typeof moduleLoader._load;
+
+const accessTokenLib = require("../src/lib/auth/access-token") as typeof import("../src/lib/auth/access-token");
+const { userRepository } =
+  require("../src/repositories/user.repository") as typeof import("../src/repositories/user.repository");
+const pythonToken =
+  require("../src/lib/auth/python-token") as typeof import("../src/lib/auth/python-token");
+const mutablePythonToken = pythonToken as unknown as {
+  verifyPythonToken: typeof pythonToken.verifyPythonToken;
+};
+const dashboardSession =
+  require("../src/lib/auth/dashboard-session") as typeof import("../src/lib/auth/dashboard-session");
+const mutableDashboardSession = dashboardSession as unknown as {
+  verifyDashboardSession: typeof dashboardSession.verifyDashboardSession;
+};
+const { toSignedFileUrl, verifySignedFileUrlToken } =
+  require("../src/lib/storage/signed-file-url") as typeof import("../src/lib/storage/signed-file-url");
+const { getTargetDirectory } =
+  require("../src/lib/storage/storage") as typeof import("../src/lib/storage/storage");
+const { repositoryAccessService } =
+  require("../src/lib/repositories/repository-access") as typeof import("../src/lib/repositories/repository-access");
+const { videosService } =
+  require("../src/services/videos.service") as typeof import("../src/services/videos.service");
+const { videosRoutes } =
+  require("../src/routes/videos.route") as typeof import("../src/routes/videos.route");
+
+const originalVerifyAccessToken = accessTokenLib.verifyAccessToken;
+const originalFindActiveAuthenticatedUser = userRepository.findActiveAuthenticatedUser;
+const originalVerifyPythonToken = pythonToken.verifyPythonToken;
+const originalVerifyDashboardSession = dashboardSession.verifyDashboardSession;
+const originalAssertRepositoryAccess = repositoryAccessService.assertAction;
+const originalAssertRepositoryStatus = repositoryAccessService.assertRepositoryStatus;
+const originalListRepositoryVideos = videosService.listRepositoryVideos;
+const originalGetRepositoryVideoDownload = videosService.getRepositoryVideoDownload;
+const originalGetRepositoryVideoThumbnail = videosService.getRepositoryVideoThumbnail;
+const originalDeleteRepositoryVideo = videosService.deleteRepositoryVideo;
+
+const repoId = "11111111-1111-4111-8111-111111111111";
+const videoId = "22222222-2222-4222-8222-222222222222";
+const targetDirectory = getTargetDirectory();
+
+const startServer = async () => {
+  const app = express();
+  app.use(express.json());
+  app.use("/api/v1/repositories/:repoId/videos", videosRoutes);
+  app.use(errorMiddleware);
+
+  const listening = app.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve, reject) => {
+    listening.once("listening", () => resolve());
+    listening.once("error", reject);
+  });
+
+  const { port } = listening.address() as AddressInfo;
+  return {
+    baseUrl: `http://127.0.0.1:${port}`,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        listening.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      }),
+  };
+};
+
+beforeEach(() => {
+  (accessTokenLib as any).verifyAccessToken = (() => ({
+    userId: "alice",
+    role: "user",
+  })) as typeof accessTokenLib.verifyAccessToken;
+  userRepository.findActiveAuthenticatedUser = async () => ({
+    userId: "alice",
+    role: "user",
+    displayName: "Alice Kim",
+  });
+  mutablePythonToken.verifyPythonToken = async (token: string) =>
+    token === "ef_python-token"
+      ? {
+          userId: "alice",
+          role: "user",
+        }
+      : null;
+  mutableDashboardSession.verifyDashboardSession = async (token: string) =>
+    token === "dashboard-session"
+      ? {
+          sessionId: "session-1",
+          userId: "alice",
+          role: "user",
+          displayName: "Alice Kim",
+        }
+      : null;
+  repositoryAccessService.assertAction = (async (
+    _userId: string,
+    _userRole: "admin" | "user",
+    repoId: string,
+    action: string,
+  ) => {
+    if (action === "video.delete") {
+      throw new AppError(403, "FORBIDDEN", "Insufficient repository permissions.");
+    }
+
+    return {
+      repository: {
+        id: repoId,
+        name: "daily-kitchen",
+        ownerId: "alice",
+        visibility: "private",
+        description: "Daily kitchen recordings",
+        tags: [],
+        createdAt: new Date("2026-04-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-04-12T00:00:00.000Z"),
+      },
+      effectiveRole: "read",
+      isSystemAdmin: false,
+    };
+  }) as typeof repositoryAccessService.assertAction;
+  repositoryAccessService.assertRepositoryStatus = async (repositoryId: string) => ({
+    id: repositoryId,
+    deactivated: false,
+  });
+  videosService.listRepositoryVideos = originalListRepositoryVideos;
+  videosService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
+  videosService.getRepositoryVideoThumbnail = originalGetRepositoryVideoThumbnail;
+  videosService.deleteRepositoryVideo = originalDeleteRepositoryVideo;
+});
+
+afterEach(async () => {
+  (accessTokenLib as any).verifyAccessToken = originalVerifyAccessToken;
+  userRepository.findActiveAuthenticatedUser = originalFindActiveAuthenticatedUser;
+  mutablePythonToken.verifyPythonToken = originalVerifyPythonToken;
+  mutableDashboardSession.verifyDashboardSession = originalVerifyDashboardSession;
+  repositoryAccessService.assertAction = originalAssertRepositoryAccess;
+  repositoryAccessService.assertRepositoryStatus = originalAssertRepositoryStatus;
+  videosService.listRepositoryVideos = originalListRepositoryVideos;
+  videosService.getRepositoryVideoDownload = originalGetRepositoryVideoDownload;
+  videosService.getRepositoryVideoThumbnail = originalGetRepositoryVideoThumbnail;
+  videosService.deleteRepositoryVideo = originalDeleteRepositoryVideo;
+
+});
+
+test("repo-scoped list uses repository context resolved by repoAccess", { concurrency: false }, async () => {
+  const { baseUrl, close } = await startServer();
+  let capturedRepositoryId = "";
+  let capturedStatus = "";
+
+  videosService.listRepositoryVideos = (async (repository, query) => {
+    capturedRepositoryId = repository.id;
+    capturedStatus = query.status ?? "";
+    return {
+      total: 1,
+      page: query.page,
+      limit: query.limit,
+      contributors: [],
+      data: [],
+    };
+  }) as typeof videosService.listRepositoryVideos;
+
+  try {
+    const response = await fetch(
+      `${baseUrl}/api/v1/repositories/${repoId}/videos?status=COMPLETED&page=2&limit=5`,
+      {
+        headers: { Cookie: "egoflow_session=dashboard-session" },
+      },
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(capturedRepositoryId, repoId);
+    assert.equal(capturedStatus, "COMPLETED");
+    assert.deepEqual(await response.json(), {
+      total: 1,
+      page: 2,
+      limit: 5,
+      contributors: [],
+      data: [],
+    });
+  } finally {
+    await close();
+  }
+});
+
+test("repo-scoped artifact redirects reject HEAD but accept dashboard sessions and Python bearer tokens", { concurrency: false }, async () => {
+  const { baseUrl, close } = await startServer();
+  const videoPath = path.join(targetDirectory, "alice", "daily-kitchen", ".codex-test", `${videoId}.mp4`);
+  const thumbnailPath = path.join(targetDirectory, "alice", "daily-kitchen", ".codex-test", `${videoId}.jpg`);
+
+  await fs.mkdir(path.dirname(videoPath), { recursive: true });
+  await fs.writeFile(videoPath, Buffer.from("0123456789", "utf8"));
+  await fs.writeFile(thumbnailPath, Buffer.from("jpeg-bytes", "utf8"));
+
+  videosService.getRepositoryVideoDownload = (async () => ({
+    id: videoId,
+    path: videoPath,
+    sizeBytes: 10n,
+    sha256: "a".repeat(64),
+    redirectUrl: toSignedFileUrl(targetDirectory, videoPath)!,
+  })) as typeof videosService.getRepositoryVideoDownload;
+  videosService.getRepositoryVideoThumbnail = (async () => ({
+    redirectUrl: toSignedFileUrl(targetDirectory, thumbnailPath)!,
+  })) as typeof videosService.getRepositoryVideoThumbnail;
+
+  try {
+    const headResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {
+      method: "HEAD",
+      headers: { Cookie: "egoflow_session=dashboard-session" },
+      redirect: "manual",
+    });
+    assert.equal(headResponse.status, 404);
+    assert.equal(headResponse.headers.get("location"), null);
+    assert.equal(await headResponse.text(), "");
+
+    const thumbnailHeadResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/thumbnail`, {
+      method: "HEAD",
+      headers: { Cookie: "egoflow_session=dashboard-session" },
+      redirect: "manual",
+    });
+    assert.equal(thumbnailHeadResponse.status, 404);
+    assert.equal(thumbnailHeadResponse.headers.get("location"), null);
+    assert.equal(await thumbnailHeadResponse.text(), "");
+
+    const downloadResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {
+      headers: {
+        Cookie: "egoflow_session=dashboard-session",
+      },
+      redirect: "manual",
+    });
+    assert.equal(downloadResponse.status, 307);
+    const downloadLocation = downloadResponse.headers.get("location");
+    assert.ok(downloadLocation);
+
+    const redirectedUrl = new URL(downloadLocation, baseUrl);
+    assert.equal(redirectedUrl.pathname, `/files/alice/daily-kitchen/.codex-test/${videoId}.mp4`);
+    const signature = redirectedUrl.searchParams.get("signature");
+    assert.ok(signature);
+    assert.equal(verifySignedFileUrlToken(signature).path, `alice/daily-kitchen/.codex-test/${videoId}.mp4`);
+
+    const thumbnailResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/thumbnail`, {
+      headers: {
+        Cookie: "egoflow_session=dashboard-session",
+      },
+      redirect: "manual",
+    });
+    assert.equal(thumbnailResponse.status, 307);
+    const thumbnailLocation = thumbnailResponse.headers.get("location");
+    assert.ok(thumbnailLocation);
+
+    const thumbnailRedirect = new URL(thumbnailLocation, baseUrl);
+    assert.equal(thumbnailRedirect.pathname, `/files/alice/daily-kitchen/.codex-test/${videoId}.jpg`);
+    const thumbnailSignature = thumbnailRedirect.searchParams.get("signature");
+    assert.ok(thumbnailSignature);
+    assert.equal(
+      verifySignedFileUrlToken(thumbnailSignature).path,
+      `alice/daily-kitchen/.codex-test/${videoId}.jpg`,
+    );
+
+    const queryTokenResponse = await fetch(
+      `${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download?token=jwt-token`,
+      {
+        redirect: "manual",
+      },
+    );
+    assert.equal(queryTokenResponse.status, 401);
+    assert.equal((await queryTokenResponse.json()).error.code, "UNAUTHORIZED");
+
+    const pythonTokenResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/download`, {
+      headers: {
+        Authorization: "Bearer ef_python-token",
+      },
+      redirect: "manual",
+    });
+    assert.equal(pythonTokenResponse.status, 307);
+    const pythonTokenLocation = pythonTokenResponse.headers.get("location");
+    assert.ok(pythonTokenLocation);
+    const pythonTokenRedirect = new URL(pythonTokenLocation, baseUrl);
+    const pythonTokenSignature = pythonTokenRedirect.searchParams.get("signature");
+    assert.ok(pythonTokenSignature);
+    assert.equal(
+      verifySignedFileUrlToken(pythonTokenSignature).path,
+      `alice/daily-kitchen/.codex-test/${videoId}.mp4`,
+    );
+
+    const pythonThumbnailResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}/thumbnail`, {
+      headers: {
+        Authorization: "Bearer ef_python-token",
+      },
+      redirect: "manual",
+    });
+    assert.equal(pythonThumbnailResponse.status, 307);
+    const pythonThumbnailLocation = pythonThumbnailResponse.headers.get("location");
+    assert.ok(pythonThumbnailLocation);
+    const pythonThumbnailRedirect = new URL(pythonThumbnailLocation, baseUrl);
+    const pythonThumbnailSignature = pythonThumbnailRedirect.searchParams.get("signature");
+    assert.ok(pythonThumbnailSignature);
+    assert.equal(
+      verifySignedFileUrlToken(pythonThumbnailSignature).path,
+      `alice/daily-kitchen/.codex-test/${videoId}.jpg`,
+    );
+  } finally {
+    await close();
+    await fs.rm(videoPath, { force: true });
+    await fs.rm(thumbnailPath, { force: true });
+    await fs.rm(path.dirname(videoPath), { recursive: true, force: true });
+  }
+});
+
+test("repo-scoped DELETE requires maintain role", { concurrency: false }, async () => {
+  const { baseUrl, close } = await startServer();
+  videosService.deleteRepositoryVideo = (async () => {
+    throw new Error("DELETE handler should not execute without maintain access");
+  }) as typeof videosService.deleteRepositoryVideo;
+
+  try {
+    const deleteResponse = await fetch(`${baseUrl}/api/v1/repositories/${repoId}/videos/${videoId}`, {
+      method: "DELETE",
+      headers: { Cookie: "egoflow_session=dashboard-session" },
+    });
+    assert.equal(deleteResponse.status, 403);
+    assert.equal((await deleteResponse.json()).error.code, "FORBIDDEN");
+  } finally {
+    await close();
+  }
+});

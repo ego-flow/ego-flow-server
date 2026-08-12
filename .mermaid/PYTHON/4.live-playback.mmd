@@ -1,0 +1,106 @@
+sequenceDiagram
+  autonumber
+  participant Researcher as [VLM Researcher]
+  participant Python as [ego-flow Python Package]
+  participant Backend as [Backend]
+  participant DB as [DB]
+  participant Redis as [Redis]
+  participant MTX as [MediaMTX :8888]
+  participant Decoder as [PyAV]
+
+  Researcher->>Python: list_live_streams()
+  opt capability check
+    Python->>Backend: GET /api/v1/info
+    Note over Python,Backend: Auth 없음<br/>capabilities.live_streams 확인<br/>현재 Python package는 direct HLS URL에 fixed 8888 port를 사용한다.
+    Backend-->>Python: 200 server info
+  end
+
+  Python->>Backend: GET /api/v1/live-streams
+  Note over Python,Backend: Headers<br/>Authorization: Bearer ef_raw_python_static_token
+
+  Backend->>Backend: requireDashboardOrAppOrPython
+  Backend->>DB: 요청자가 read 가능한 repository ids 계산
+  Note over Backend,DB: admin은 전체 active repository read 가능<br/>일반 사용자는 public repository와 repo_members 기준
+  Backend->>Redis: active live cache 조회
+  Note over Backend,Redis: set: stream:active:sessions<br/>keys: stream:recording:{recordingSessionId}<br/><br/>list response에는 HTTP upload progress field를 포함하지 않는다.
+  Backend-->>Python: 200 { streams }
+  Note over Backend,Python: stream summary fields<br/>recording_session_id<br/>repository_id<br/>repository_name<br/>owner_id<br/>user_id<br/>device_type<br/>ingest_type: MEDIAMTX | HTTP<br/>stream_path<br/>status=live<br/>playback_available
+
+  Researcher->>Python: open_live_stream(stream)
+  Python->>Python: stream selector resolve
+  Note over Python: selector 후보<br/>LiveStreamInfo instance<br/>recording_session_id<br/>stream_path<br/>repository_name
+
+  alt stream.playback_ready is None
+    Python->>Backend: GET /api/v1/live-streams/{recordingSessionId}
+    Note over Python,Backend: Headers<br/>Authorization: Bearer ef_raw_python_static_token
+    Backend->>Backend: requireDashboardOrAppOrPython
+    Backend->>DB: RecordingSession STREAMING 조회 + repository read 권한 + active 상태 확인
+    Backend->>MTX: active path 조회
+    Note over Backend,MTX: MEDIAMTX stream이면 Control API로 path active 여부 확인<br/>HTTP ingest stream이면 playback_ready=false
+    Backend->>Redis: HTTP ingest progress 조회
+    Note over Backend,Redis: HTTP stream detail일 때만<br/>bytes_received, last_sequence, last_chunk_at 노출
+    Backend-->>Python: 200 stream detail
+    Note over Backend,Python: detail fields<br/>recording_session_id<br/>repository_id<br/>repository_name<br/>owner_id<br/>user_id<br/>device_type<br/>ingest_type<br/>stream_path<br/>registered_at<br/>status=live<br/>playback_available<br/>playback_ready<br/>bytes_received: number | null<br/>last_sequence: number | null<br/>last_chunk_at: ISO datetime | null
+  end
+
+  alt not playable
+    Python->>Python: raise EgoFlowStreamError
+    Note over Python: 현재 Python package는 ingest_type=MEDIAMTX이고<br/>playback_available=true이고 playback_ready=true인 stream만 HLS로 연다.<br/>HTTP ingest stream은 목록에는 보일 수 있지만 playback 대상이 아니다.
+  else playable MEDIAMTX stream
+    Python->>Backend: POST /api/v1/live-streams/{recordingSessionId}/playback-ticket
+    Note over Python,Backend: Headers<br/>Authorization: Bearer ef_raw_python_static_token<br/>Body 없음
+
+    Backend->>Backend: requireDashboardOrPython
+    Backend->>Redis: live cache 확인
+    Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/>must exist and status=STREAMING<br/>must be MEDIAMTX for HLS playback
+    Backend->>DB: repository read 권한 + active 상태 확인
+
+    alt stream hidden or not playable
+      Backend-->>Python: 404 Not Found or 409 Conflict
+    else ticket issued
+      Backend->>Redis: playback ticket 저장
+      Note over Backend,Redis: key: stream:hls-ticket:{playbackTicket}<br/><br/>value<br/>recordingSessionId<br/>repositoryId<br/>userId = ticket issuer<br/>ingestType=MEDIAMTX<br/>streamPath<br/>status=active<br/><br/>TTL: 600 seconds
+      Backend-->>Python: 201 { playback_ticket }
+    end
+
+    Python->>Python: direct HLS URL 구성
+    Note over Python: host = URL(api_base_url).hostname<br/>port = fixed 8888<br/>path = /{stream_path}/index.m3u8<br/>query = ticket={playback_ticket}
+
+    Python->>MTX: GET /live/{repo}/{recordingSessionId}/index.m3u8?ticket=pt_...
+    Note over Python,MTX: Authorization header는 사용하지 않는다.<br/>HLS는 Caddy가 아니라 MediaMTX 8888/tcp에서 직접 읽는다.
+
+    MTX->>Backend: POST /api/v1/auth/mediamtx
+    Note over MTX,Backend: authHTTPAddress payload<br/>action=read<br/>protocol=hls<br/>path=live/{repo}/{recordingSessionId}<br/>query=ticket=pt_...
+
+    Backend->>Redis: playback ticket + live cache 검증
+    Note over Backend,Redis: DB-free hot path<br/>ticket exists<br/>ticket.status=active<br/>ticket.streamPath == path<br/>stream:recording:{recordingSessionId} exists<br/>live cache status=STREAMING<br/>repositoryId/path match<br/>ticket TTL refresh to 600s
+
+    alt ticket invalid or stream inactive
+      Backend-->>MTX: 401 Unauthorized
+      MTX-->>Python: HLS request rejected
+      Python->>Python: EgoFlowStreamError or PyAV open error
+    else ticket valid
+      Backend-->>MTX: 200 OK
+      MTX-->>Python: playlist or fMP4 segment bytes
+      Python->>Decoder: av.open(hls_url)
+      Decoder-->>Python: decoded video frames
+      Python-->>Researcher: VideoFrame or FrameBatch
+    end
+
+    loop while playback continues
+      Python->>MTX: media playlist / fMP4 segment request with same query
+      MTX->>Backend: POST /api/v1/auth/mediamtx
+      Backend->>Redis: Redis-only validation + TTL refresh
+      Backend-->>MTX: 200 OK
+      MTX-->>Decoder: playlist or segment bytes
+      Decoder-->>Python: decoded frames
+    end
+  end
+
+%% 참고:
+%% Python package는 Dashboard에서 발급받은 ef_ static token만 사용한다.
+%% HLS URL query는 ticket만 사용한다. Authorization header는 HLS playlist/segment 요청에 붙이지 않는다.
+%% Python HLS client가 segment request까지 query를 유지하지 않으면 각 playlist/segment URL에 같은 query를 다시 붙여야 한다.
+%% LiveStreamInfo는 recording_session_id만 사용한다. 이전 별칭은 제거했다.
+%% LiveStreamInfo.from_dict는 stream_path fallback을 만들지 않는다. 서버 response에 stream_path가 없으면 playback open 단계에서 오류로 처리한다.
+%% list_live_streams()는 ingest_type, playback_available, repository_id, repository_name 기준 client-side filter를 지원한다.

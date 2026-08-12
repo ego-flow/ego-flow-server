@@ -1,0 +1,20 @@
+:80 {
+	encode zstd gzip
+
+	# WHIP publish ingress.
+	# Auth는 MediaMTX `authHTTPAddress`가 `?ticket=` query로 처리하므로 forward_auth 불필요.
+	# MediaMTX native WHIP path(`/live/{repo}/{recordingSessionId}/whip`)를 그대로 노출해 Location 기반 PATCH/DELETE도 같은 route로 처리한다.
+	@whip path_regexp whip ^/live/[^/]+/[^/]+/whip(?:/.*)?$
+	handle @whip {
+		reverse_proxy mediamtx:8889
+	}
+
+	@backend path /api* /api-docs* /files*
+	handle @backend {
+		reverse_proxy backend:3000
+	}
+
+	handle {
+		reverse_proxy dashboard:8088
+	}
+}

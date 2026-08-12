@@ -1,0 +1,211 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.5rem;
+
+  --background: #f6f8fa;
+  --foreground: #1f2328;
+  --card: #ffffff;
+  --card-foreground: #1f2328;
+  --popover: #ffffff;
+  --popover-foreground: #1f2328;
+  --primary: #0969da;
+  --primary-foreground: #ffffff;
+  --secondary: #f6f8fa;
+  --secondary-foreground: #1f2328;
+  --muted: #f6f8fa;
+  --muted-foreground: #57606a;
+  --accent: #d0d7de;
+  --accent-foreground: #1f2328;
+  --destructive: #cf222e;
+  --border: #d0d7de;
+  --input: #d0d7de;
+  --ring: #0969da;
+
+  --sea-ink: var(--foreground);
+  --sea-ink-soft: #57606a;
+  --line: #d0d7de;
+  --header-bg: rgba(255, 255, 255, 0.96);
+  --chip-line: #d0d7de;
+  --chip-bg: #f6f8fa;
+  --link-bg-hover: rgba(175, 184, 193, 0.2);
+  --lagoon-deep: #0969da;
+  --repository-summary-bg: #eaeef2;
+  --repository-summary-line: #afb8c1;
+  --repository-meta-bg: #f6f8fa;
+  --repository-meta-line: #d0d7de;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2357606a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --surface-shadow: rgba(31, 35, 40, 0.04) 0 1px 0,
+    rgba(31, 35, 40, 0.08) 0 3px 10px;
+  --motion-fast: 80ms;
+  --motion-base: 400ms;
+  --motion-slow: 800ms;
+  --motion-easing: cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+.dark {
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #0d1117;
+  --card-foreground: #ffffff;
+  --popover: #0d1117;
+  --popover-foreground: #ffffff;
+  --primary: #8dd6ff;
+  --primary-foreground: #111111;
+  --secondary: #21262d;
+  --secondary-foreground: #ffffff;
+  --muted: #161b22;
+  --muted-foreground: #8b949e;
+  --accent: #484f58;
+  --accent-foreground: #ffffff;
+  --destructive: #f85149;
+  --border: rgba(255, 255, 255, 0.22);
+  --input: #30363d;
+  --ring: #8dd6ff;
+
+  --sea-ink: var(--foreground);
+  --sea-ink-soft: #8b949e;
+  --line: rgba(255, 255, 255, 0.22);
+  --header-bg: rgba(13, 17, 23, 0.96);
+  --chip-line: #484f58;
+  --chip-bg: #161b22;
+  --link-bg-hover: rgba(177, 186, 196, 0.12);
+  --lagoon-deep: #8dd6ff;
+  --repository-summary-bg: #161b22;
+  --repository-summary-line: #484f58;
+  --repository-meta-bg: #0d1117;
+  --repository-meta-line: #30363d;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --surface-shadow: rgba(209, 217, 224, 0.25) 0 0 0 1px,
+    rgba(37, 41, 46, 0.04) 0 6px 12px -3px,
+    rgba(37, 41, 46, 0.12) 0 6px 18px;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+* {
+  @apply border-border;
+}
+
+body {
+  @apply bg-background text-foreground;
+  margin: 0;
+  min-height: 100dvh;
+  font-family: "Mona Sans", "MonaSansFallback", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.page-wrap {
+  width: min(100%, 72rem);
+  margin-inline: auto;
+}
+
+.page-wide {
+  width: min(100%, 110rem);
+  margin-inline: auto;
+}
+
+.page-full {
+  width: 100%;
+  margin-inline: auto;
+}
+
+.island-shell {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--surface-shadow);
+}
+
+.island-kicker {
+  font-family: "Mona Sans Mono", ui-monospace, SFMono-Regular, Consolas,
+    "Liberation Mono", monospace;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--lagoon-deep);
+}
+
+.theme-select {
+  min-height: 2.75rem;
+  appearance: none;
+  padding-right: 2.25rem;
+  background-color: var(--card);
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem;
+  color: var(--sea-ink);
+}
+
+.theme-select option {
+  background: var(--popover);
+  color: var(--popover-foreground);
+}
+
+@media (min-width: 40rem) {
+  .theme-select {
+    min-height: 2.5rem;
+  }
+}
+
+.display-title {
+  font-family: "Mona Sans", "MonaSansFallback", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-weight: 460;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 32%, transparent);
+  color: var(--foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

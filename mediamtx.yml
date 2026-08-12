@@ -1,0 +1,46 @@
+rtmp: yes
+rtmpAddress: :1935
+readTimeout: 30s
+writeTimeout: 30s
+
+hls: yes
+hlsAddress: :8888
+hlsAllowOrigins: ["*"]
+hlsAlwaysRemux: yes
+# hls.js (light build, lowLatencyMode)이 mediamtx의 LL-HLS playlist part duration 미세
+# 변화(예: 237ms → 238ms)에 stall 했다. dashboard live playback에는 sub-second latency가
+# 필요하지 않으므로 표준 fMP4 HLS variant로 전환. 1s segment × 7개 buffer로 약 3–7s 지연.
+hlsVariant: fmp4
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcICEServers2:
+  - url: stun:stun.l.google.com:19302
+
+api: yes
+apiAddress: :9997
+
+authMethod: http
+authHTTPAddress: http://backend:3000/api/v1/auth/mediamtx
+# publish는 publish ticket으로, HLS read는 playback ticket으로 검증한다.
+authHTTPExclude:
+  - action: api
+
+pathDefaults:
+  source: publisher
+  overridePublisher: yes
+  record: yes
+  recordPath: /data/raw/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordFormat: fmp4
+  recordPartDuration: 1s
+  recordSegmentDuration: 2h
+  recordDeleteAfter: 0s
+  runOnReady: /mediamtx-hooks/stream-ready-wrapper.sh
+  runOnNotReady: /mediamtx-hooks/stream-not-ready-wrapper.sh
+  runOnRecordSegmentCreate: /mediamtx-hooks/segment-create-wrapper.sh
+  runOnRecordSegmentComplete: /mediamtx-hooks/segment-complete-wrapper.sh
+
+paths:
+  "~^live/.+$":
+    record: yes

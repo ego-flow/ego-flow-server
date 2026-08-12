@@ -1,0 +1,54 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Runtime state and generated data
+.run/
+data/raw/*
+data/datasets/*
+data/postgres/
+data/redis/
+!data/raw/.gitkeep
+!data/datasets/.gitkeep
+metric-runs/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+config.json
+config.json.tmp.*
+certs/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.crt
+*.cer
+
+# Logs, databases, dumps, and temporary files
+*.log
+npm-debug.log*
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.tmp
+.DS_Store
+
+# Local tools and editor state
+.agents/
+.codex
+.cursor/
+.vscode/
+.idea/
+.cta.json
+.cursorrules
+
+# Local plans
+/specs/
+/tasks/

@@ -1,0 +1,1 @@
+export const PUBLISH_TICKET_TTL_SECONDS = 60;

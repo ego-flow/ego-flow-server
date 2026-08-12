@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="1000"><metadata><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:dc="http://purl.org/dc/elements/1.1/"><rdf:Description><dc:creator>RealFaviconGenerator</dc:creator><dc:source>https://realfavicongenerator.net</dc:source></rdf:Description></rdf:RDF></metadata><style>
+    #light-icon {
+      display: inline;
+    }
+    #dark-icon {
+      display: none;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      #light-icon {
+        display: none;
+      }
+      #dark-icon {
+        display: inline;
+      }
+    }
+  </style><g id="light-icon"><svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="1000"><g clip-path="url(#SvgjsClipPath1041)"><rect width="1000" height="1000" fill="#ffffff"></rect><g transform="matrix(1.7578125,0,0,1.7578125,50,50)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"><defs>
+    <linearGradient id="waveGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6058FF"></stop> 
+      <stop offset="100%" stop-color="#FF3366"></stop> 
+    </linearGradient>
+  <clipPath id="SvgjsClipPath1041"><rect width="1000" height="1000" x="0" y="0" rx="350" ry="350"></rect></clipPath></defs><path d="M 90 265 Q 180 200 260 256 T 430 245" fill="none" stroke="url(#waveGradient)" stroke-width="70" stroke-linecap="round"></path></svg></g></g></svg></g><g id="dark-icon"><svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="1000"><g><g transform="matrix(1.953125,0,0,1.953125,0,0)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"><defs>
+    <linearGradient id="waveGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6058FF"></stop> 
+      <stop offset="100%" stop-color="#FF3366"></stop> 
+    </linearGradient>
+  </defs><path d="M 90 265 Q 180 200 260 256 T 430 245" fill="none" stroke="url(#waveGradient)" stroke-width="70" stroke-linecap="round"></path></svg></g></g></svg></g></svg>

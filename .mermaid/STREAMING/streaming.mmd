@@ -1,0 +1,124 @@
+sequenceDiagram
+  autonumber
+  participant App as [App]
+  participant Backend as [Backend API]
+  participant MTX as [MediaMTX]
+  participant Caddy as [Caddy]
+  participant Queue as [Finalize Queue]
+  participant Worker as [Finalize Worker]
+  participant DB as [DB]
+
+  App->>Backend: register 요청
+  Note over App,Backend: API<br/>POST /api/v1/streams/register<br/><br/>Body<br/>repositoryId: {repository_uuid}<br/>deviceType: {optional_device_type}<br/>ingestType: MEDIAMTX 또는 HTTP
+
+  alt register success
+    Backend-->>App: recordingSessionId
+  else register error
+    Backend-->>App: 400/401/403/404 error
+  end
+
+  App->>Backend: publish-ticket 요청
+  Note over App,Backend: API<br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket<br/><br/>Response<br/>stream_path: live/{repositoryName}/{recordingSessionId}<br/>publish_ticket: t_{uuid}
+
+  alt publish-ticket success
+    Backend-->>App: stream_path + publish_ticket
+  else publish-ticket error
+    Backend-->>App: 400/401/403/404/409/412 error
+  end
+
+  alt ingestType = HTTP
+    App->>Backend: HTTP start 요청
+    Note over App,Backend: API<br/>POST /api/v1/http-streams/{recordingSessionId}/start<br/><br/>Body<br/>publish_ticket: t_{uuid}
+    Backend-->>App: status=STREAMING, bytes_received=0, last_sequence=null
+
+    loop upload chunks
+      App->>Backend: HTTP chunk upload
+      Note over App,Backend: API<br/>POST /api/v1/http-streams/{recordingSessionId}/chunks<br/><br/>Headers<br/>X-Chunk-Sequence<br/>X-Chunk-Offset<br/><br/>Body<br/>binary media chunk
+      Backend-->>App: bytes_received, last_sequence
+    end
+
+    alt normal finish
+      App->>Backend: HTTP finish 요청
+      Note over App,Backend: API<br/>POST /api/v1/http-streams/{recordingSessionId}/finish<br/><br/>Body<br/>total_bytes: {finalBytesReceived}
+      Backend->>Queue: recording-finalize enqueue
+      Backend-->>App: status=CLOSED, segment_status=WRITE_DONE
+    else unexpected interruption
+      Backend->>Backend: HTTP timeout reconcile
+      Note over Backend: 30초 주기 reconcile에서<br/>30초 초과로 chunk가 없으면<br/>raw file 상태에 따라 WRITE_DONE 또는 FAILED로 정리한다.
+      opt recoverable raw file
+        Backend->>Queue: recording-finalize enqueue
+      end
+    end
+  else ingestType = MEDIAMTX
+    App->>App: publish URL 구성
+    Note over App: RTMP<br/>rtmp://{host}:1935/{stream_path}?ticket={publish_ticket}<br/><br/>WHIP<br/>{backendOrigin}/{stream_path}/whip?ticket={publish_ticket}
+
+    alt RTMP publish
+      App->>MTX: RTMP connect + publish
+    else WHIP publish
+      App->>Caddy: WHIP POST SDP offer
+      Caddy->>MTX: proxy to MediaMTX
+    end
+
+    MTX->>Backend: MediaMTX auth callback
+    Note over MTX,Backend: API<br/>POST /api/v1/auth/mediamtx<br/><br/>action=publish<br/>ticket 검증 성공 시 publish 허용
+
+    par publish start hooks
+      MTX->>Backend: stream-ready hook
+      Backend->>Backend: RecordingSession PENDING -> STREAMING
+    and segment create hook
+      MTX->>Backend: recording-segment-create hook
+      Backend->>Backend: RecordingSegment WRITING 생성
+    end
+
+    loop publisher connection open
+      App->>MTX: encoded media
+      MTX->>MTX: raw fMP4 segment write
+    end
+
+    alt normal stop
+      App->>Backend: close-intent 요청
+      Note over App,Backend: API<br/>POST /api/v1/recordings/{recordingSessionId}/close-intent<br/><br/>Body<br/>reason: NORMAL_DISCONNECT
+      App->>MTX: publisher connection close
+    else app crash or network failure
+      App--xMTX: publisher connection lost
+    end
+
+    par close hooks
+      MTX->>Backend: stream-not-ready hook
+      Backend->>Backend: RecordingSession STREAMING -> CLOSED
+    and segment complete hook
+      MTX->>Backend: recording-segment-complete hook
+      Backend->>Backend: RecordingSegment WRITING -> WRITE_DONE
+    end
+
+    Backend->>Queue: recording-finalize enqueue when ready
+  end
+
+  opt finalize job
+    Queue->>Worker: recording-finalize job
+    Worker->>Worker: raw 안정화, ffprobe, encoding
+    Worker->>DB: processing result 저장
+    Note over Worker,DB: success: Video COMPLETED<br/>final failure: Video FAILED
+  end
+
+%% 참고:
+%% App이 직접 호출하는 streaming API는 MEDIAMTX ingest의 경우 register, publish-ticket, close-intent다.
+%% HTTP ingest의 경우 register, publish-ticket, http-streams/start, http-streams/chunks, http-streams/finish다.
+%% RTMP/WHIP publish auth, MediaMTX hooks, finalize worker는 server-side 내부 흐름이다.
+%% App은 streaming 재시작 시 기존 recordingSessionId나 publish_ticket을 직접 재사용하지 않고 register부터 다시 호출한다.
+%% HTTP ingest는 live playback을 제공하지 않지만 dashboard Live tab 목록에는 표시된다.
+%% HLS playback은 Caddy /hls proxy를 쓰지 않는다. Dashboard/Python은 playback-ticket 발급 후 :8888 native HLS URL을 직접 요청한다.
+%% HLS playback URL 형식은 http://{host}:8888/{stream_path}/index.m3u8?ticket={playback_ticket} 이다.
+%% HLS hot path는 MediaMTX auth callback이 Redis stream:hls-ticket:{ticketId}, stream:recording:{recordingSessionId}만 검증한다.
+%% Public API에서는 live stream identifier 명칭을 recordingSessionId로 통일한다.
+%% RTMP register/publish-ticket 상세는 .mermaid/RTMP/1.register.mmd와 .mermaid/RTMP/2.publish-ticket.mmd를 참고한다.
+%% WHIP register/publish-ticket 상세는 .mermaid/WEBRTC/1.register.mmd와 .mermaid/WEBRTC/2.publish-ticket.mmd를 참고한다.
+%% HTTP register/publish-ticket 상세는 .mermaid/HTTP/1.register.mmd와 .mermaid/HTTP/2.publish-ticket.mmd를 참고한다.
+%% 상세 HTTP start 흐름은 .mermaid/HTTP/3.http-start.mmd를 참고한다.
+%% 상세 HTTP chunk/finish/timeout 흐름은 .mermaid/HTTP/4.http-stream.mmd를 참고한다.
+%% 상세 RTMP 흐름은 .mermaid/RTMP/3.rtmp-publish.mmd와 .mermaid/RTMP/4.rtmp-stream.mmd를 참고한다.
+%% 상세 WHIP 흐름은 .mermaid/WEBRTC/3.whip-publish.mmd와 .mermaid/WEBRTC/4.whip-stream.mmd를 참고한다.
+%% HLS playback 공통 개요는 .mermaid/PLAYBACK/hls-playback.mmd를 참고한다.
+%% Dashboard HLS playback 상세는 .mermaid/PLAYBACK/dashboard-hls-playback.mmd를 참고한다.
+%% Python HLS playback 상세는 .mermaid/PLAYBACK/python-hls-playback.mmd를 참고한다.

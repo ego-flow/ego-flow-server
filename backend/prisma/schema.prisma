@@ -1,0 +1,224 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  user
+}
+
+enum RepoVisibility {
+  public
+  private
+}
+
+enum RepoRole {
+  read
+  maintain
+  admin
+}
+
+model Users {
+  id           String   @id @db.VarChar(64)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  role         UserRole @default(user)
+  deactivated  Boolean  @default(false)
+  displayName  String   @map("display_name") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  pythonToken     PythonTokens?
+
+  @@map("users")
+}
+
+model PythonTokens {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @unique @map("user_id") @db.VarChar(64)
+  name       String    @db.VarChar(100)
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(64)
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user Users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("python_tokens")
+}
+
+model Settings {
+  key       String   @id @db.VarChar(255)
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+enum VideoStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum VideoSemanticMetadataStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum RecordingSessionStatus {
+  PENDING
+  STREAMING
+  CLOSED
+}
+
+enum RecordingSessionIngestType {
+  MEDIAMTX
+  HTTP
+}
+
+enum RecordingSessionEndReason {
+  NORMAL_DISCONNECT
+  UNEXPECTED_DISCONNECT
+  ACCESS_FORBIDDEN
+  REPOSITORY_DELETED
+  INTERNAL_ERROR
+}
+
+enum RecordingSegmentStatus {
+  WRITING
+  WRITE_DONE
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Repositories {
+  id                 String         @id @default(uuid()) @db.Uuid
+  name               String         @db.VarChar(64)
+  ownerId            String         @map("owner_id") @db.VarChar(64)
+  visibility         RepoVisibility @default(public)
+  description        String?        @db.VarChar(500)
+  tags               Json           @default("[]")
+  contributors       Json           @default("[]")
+  deactivated        Boolean        @default(false)
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  @@unique([ownerId, name])
+  @@index([ownerId], map: "idx_repos_owner_id")
+  @@index([visibility], map: "idx_repos_visibility")
+  @@index([deactivated], map: "idx_repos_deactivated")
+  @@map("repositories")
+}
+
+model RepoMembers {
+  id           String   @id @default(uuid()) @db.Uuid
+  repositoryId String   @map("repository_id") @db.Uuid
+  userId       String   @map("user_id") @db.VarChar(64)
+  role         RepoRole
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([repositoryId, userId])
+  @@index([repositoryId], map: "idx_repo_members_repo_id")
+  @@index([userId], map: "idx_repo_members_user_id")
+  @@map("repo_members")
+}
+
+model RecordingSessions {
+  id              String                    @id @default(uuid()) @db.Uuid
+  repositoryId    String                    @map("repository_id") @db.Uuid
+  ownerId         String                    @map("owner_id") @db.VarChar(64)
+  userId          String                    @map("user_id") @db.VarChar(64)
+  deviceType      String?                   @map("device_type") @db.VarChar(100)
+  ingestType      RecordingSessionIngestType @map("ingest_type")
+  streamPath      String                    @map("stream_path") @db.VarChar(255)
+  status          RecordingSessionStatus
+  endReason       RecordingSessionEndReason? @map("end_reason")
+  targetDirectory String                    @map("target_directory") @db.VarChar(1024)
+  readyAt         DateTime?                 @map("ready_at")
+  closedAt        DateTime?                 @map("closed_at")
+  createdAt       DateTime                  @default(now()) @map("created_at")
+  updatedAt       DateTime                  @updatedAt @map("updated_at")
+
+  segment  RecordingSegments?
+  video    Videos?
+
+  @@index([repositoryId, status], map: "idx_recording_sessions_repo_status")
+  @@index([userId, createdAt], map: "idx_recording_sessions_user_created_at")
+  @@map("recording_sessions")
+}
+
+model RecordingSegments {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  recordingSessionId String                 @unique @map("recording_session_id") @db.Uuid
+  rawPath            String                 @map("raw_path") @db.VarChar(1024)
+  status             RecordingSegmentStatus
+  createdAt          DateTime               @default(now()) @map("created_at")
+  completedAt        DateTime?              @map("completed_at")
+
+  recordingSession RecordingSessions @relation(fields: [recordingSessionId], references: [id])
+
+  @@index([status], map: "idx_recording_segments_status")
+  @@map("recording_segments")
+}
+
+model Videos {
+  id                    String      @id @default(uuid()) @db.Uuid
+  repositoryId          String      @map("repository_id") @db.Uuid
+  recordingSessionId    String?     @unique @map("recording_session_id") @db.Uuid
+  rawRecordingPath      String      @map("raw_recording_path") @db.VarChar(1024)
+  streamPath            String?     @map("stream_path") @db.VarChar(255)
+  deviceType            String?     @map("device_type") @db.VarChar(100)
+  durationSec           Float?      @map("duration_sec")
+  resolutionWidth       Int?        @map("resolution_width")
+  resolutionHeight      Int?        @map("resolution_height")
+  fps                   Float?
+  codec                 String?     @db.VarChar(50)
+  recordedAt            DateTime?   @map("recorded_at")
+  vlmVideoPath          String?     @map("vlm_video_path") @db.VarChar(1024)
+  dashboardVideoPath    String?     @map("dashboard_video_path") @db.VarChar(1024)
+  thumbnailPath         String?     @map("thumbnail_path") @db.VarChar(1024)
+  sizeBytes             BigInt?
+  vlmSha256             String?     @map("vlm_sha256") @db.VarChar(64)
+  recorder              String?     @db.VarChar(64)
+  status                VideoStatus
+  errorMessage          String?     @map("error_message") @db.Text
+  processingStartedAt   DateTime?   @map("processing_started_at")
+  processingCompletedAt DateTime?   @map("processing_completed_at")
+  createdAt             DateTime    @default(now()) @map("created_at")
+  updatedAt             DateTime    @updatedAt @map("updated_at")
+
+  recordingSession RecordingSessions? @relation(fields: [recordingSessionId], references: [id])
+  semanticMetadata VideoSemanticMetadata?
+
+  @@index([status])
+  @@index([repositoryId], map: "idx_videos_repository_id")
+  @@index([recordedAt], map: "idx_videos_recorded_at")
+  @@index([recorder], map: "idx_videos_recorder")
+  @@index([recordingSessionId], map: "idx_videos_recording_session_id")
+  @@map("videos")
+}
+
+model VideoSemanticMetadata {
+  videoId               String                      @id @map("video_id") @db.Uuid
+  status                VideoSemanticMetadataStatus @default(PENDING)
+  clipSegments          Json?                       @map("clip_segments")
+  actionLabels          Json?                       @map("action_labels")
+  videoTextAlignment    Json?                       @map("video_text_alignment")
+  sceneSummary          String?                     @map("scene_summary") @db.Text
+  errorMessage          String?                     @map("error_message") @db.Text
+  processingStartedAt   DateTime?                   @map("processing_started_at")
+  processingCompletedAt DateTime?                   @map("processing_completed_at")
+  createdAt             DateTime                    @default(now()) @map("created_at")
+  updatedAt             DateTime                    @updatedAt @map("updated_at")
+
+  video Videos @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([status], map: "idx_video_semantic_metadata_status")
+  @@map("video_semantic_metadata")
+}

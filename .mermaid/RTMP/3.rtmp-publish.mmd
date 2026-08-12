@@ -1,0 +1,132 @@
+sequenceDiagram
+  autonumber
+  participant App as [Android App]
+  participant MTX as [MediaMTX]
+  participant Backend as [Backend]
+  participant Redis as [Redis]
+  participant DB as [DB]
+  participant Storage as [Raw Storage]
+
+  Note over App,Backend: 이전 단계<br/>POST /api/v1/streams/{recordingSessionId}/publish-ticket 성공<br/><br/>App이 받은 핵심 값<br/>stream_path = live/{repositoryName}/{recordingSessionId}<br/>publish_ticket = t_{uuid}<br/><br/>App이 이미 알고 있는 값<br/>backendBaseUrl = http://{host}
+
+  App->>App: RTMP publish URL 조립
+  Note over App: URL construction rule<br/>host = URL(backendBaseUrl).hostname<br/>rtmp://{host}:1935/{stream_path}?ticket={publish_ticket}<br/><br/>결과<br/>rtmp://{host}:1935/live/{repositoryName}/{recordingSessionId}?ticket=t_{uuid}
+
+  App->>MTX: TCP open + RTMP handshake
+  Note over App,MTX: host={host}<br/>port=1935<br/>RTMP app=live<br/>RTMP stream key={repositoryName}/{recordingSessionId}?ticket=t_{uuid}
+
+  App->>MTX: RTMP connect command
+  Note over App,MTX: tcUrl=rtmp://{host}:1935/live<br/>app=live<br/>codec capability는 App/RTMP client가 결정
+  MTX-->>App: connect _result
+
+  App->>MTX: releaseStream + FCPublish + createStream
+  Note over App,MTX: stream key={repositoryName}/{recordingSessionId}?ticket=t_{uuid}
+  MTX-->>App: createStream _result
+
+  App->>MTX: RTMP publish command
+  Note over App,MTX: publish(streamKey, type=live)
+
+  MTX->>Backend: publish auth callback
+  Note over MTX,Backend: API<br/>POST /api/v1/auth/mediamtx<br/><br/>Payload 핵심 값<br/>action=publish<br/>path=live/{repositoryName}/{recordingSessionId}<br/>query=ticket=t_{uuid}<br/>protocol=rtmp
+
+  alt auth payload invalid
+    Backend-->>MTX: 401 Unauthorized
+    Note over Backend,MTX: mediaMtxAuthSchema parse 실패<br/>MediaMTX에는 빈 401 응답만 반환
+    MTX-->>App: RTMP publish rejected
+  else action is not publish
+    Backend-->>MTX: 401 Unauthorized
+    Note over Backend,MTX: non-publish action은 이 endpoint에서 처리하지 않는다.
+    MTX-->>App: RTMP publish rejected
+  else legacy credential present
+    Backend-->>MTX: 401 Unauthorized
+    Note over Backend,MTX: password/token/query.pass/query.token 기반 publish credential은 허용하지 않는다.
+    MTX-->>App: RTMP publish rejected
+  else ticket credential only
+    Backend->>Redis: publish ticket 조회 및 검증
+    Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>checks: exists, status=active, ingestType=MEDIAMTX, streamPath == path<br/>검증 성공 시 TTL을 60 seconds로 갱신
+
+    alt ticket invalid
+      Backend-->>MTX: 401 Unauthorized
+      MTX-->>App: RTMP publish rejected
+      Note over App,MTX: App은 NetStream.Publish.Start를 받지 못하고<br/>RTMP AUTH/NETWORK 계열 start failure로 처리
+    else ticket valid
+      Note over Backend,Redis: auth 단계에서는 ticket consume, DB update, active set update를 하지 않는다.
+      Backend-->>MTX: 200 OK
+      MTX-->>App: onStatus NetStream.Publish.Start
+    end
+  end
+
+  Note over MTX,Backend: MediaMTX hook ordering<br/>stream-ready hook과 recording-segment-create hook의 호출 순서는 보장되지 않는다.<br/>Backend는 segment-create에서 session 존재 여부만 확인하고<br/>session status에는 의존하지 않는다.
+
+  MTX->>Backend: stream-ready hook
+  Note over MTX,Backend: API<br/>POST /api/v1/hooks/stream-ready<br/><br/>Payload 핵심 값<br/>path=live/{repositoryName}/{recordingSessionId}<br/>ticket=t_{uuid}
+
+  Backend->>Redis: ticket 재검증
+  Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>checks: exists, status=active, ingestType=MEDIAMTX, streamPath == path<br/>TTL refresh 없음
+
+  alt ticket 재검증 실패
+    Backend->>Backend: no-op
+    Note over Backend: hook은 200 OK로 끝나지만<br/>DB 조회, ticket consume, live cache update는 하지 않는다.
+  else ticket valid
+    Backend->>DB: RecordingSession 조회 및 session/ticket 검증
+    Note over Backend,DB: table: recording_sessions<br/>target row: id = ticket.recordingSessionId<br/>required status: PENDING<br/>session repositoryId/userId/ingestType/streamPath == ticket repositoryId/userId/ingestType/streamPath
+
+    alt session 없음 or PENDING 아님 or metadata mismatch
+      Backend->>Backend: no-op
+      Note over Backend: hook은 200 OK로 끝나지만<br/>ticket consume, DB update, live cache update는 하지 않는다.
+    else valid PENDING session
+    Backend->>Redis: ticket consume
+    Note over Backend,Redis: key: stream:ticket:{ticketId}<br/>value.status = consumed<br/>TTL refresh 없음<br/>기존 Redis TTL을 유지
+
+      alt ticket consume 실패
+        Backend->>Backend: no-op
+        Note over Backend: ticket이 이미 consumed/expired 되었거나<br/>Redis SET KEEPTTL XX가 실패하면 상태를 변경하지 않는다.
+      else ticket consumed
+        Backend->>DB: RecordingSession STREAMING 전환
+        Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId<br/>updated fields: status=STREAMING, ready_at if empty
+
+        Backend->>Redis: live cache 및 active set 갱신
+        Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>value fields<br/>repositoryId: {repositoryId}<br/>ownerId: {ownerId}<br/>repositoryName: {repositoryName}<br/>userId: {userId}<br/>ingestType: MEDIAMTX<br/>deviceType: {optional_device_type}<br/>status: STREAMING<br/>TTL: 7200 seconds<br/><br/>set: stream:active:sessions<br/>member: recordingSessionId
+      end
+    end
+  end
+
+  Note over App,Backend: 이 시점 이후 video/audio payload는 backend를 지나가지 않는다.<br/>App은 이미 열린 RTMP TCP socket으로 MediaMTX에 encoded media를 보내고,<br/>Backend는 MediaMTX hook 이벤트만 받는다.
+
+  MTX->>Storage: fMP4 recording segment open
+  Note over MTX,Storage: recordPath=/data/raw/live/{repositoryName}/{recordingSessionId}/{timestamp}<br/>recordFormat=fmp4<br/>recordPartDuration=1s<br/>recordSegmentDuration=2h
+
+  MTX->>Backend: recording-segment-create hook
+  Note over MTX,Backend: API<br/>POST /api/v1/hooks/recording-segment-create<br/><br/>Payload 핵심 값<br/>path=live/{repositoryName}/{recordingSessionId}<br/>segment_path=/data/raw/live/{repositoryName}/{recordingSessionId}/{timestamp}
+
+  Backend->>DB: RecordingSession 조회
+  Note over Backend,DB: table: recording_sessions<br/>target row: id = recordingSessionId from stream path<br/>status check 없음
+
+  alt session 없음
+    Backend->>Backend: no-op
+    Note over Backend: segment-create hook은 200 OK로 끝나지만<br/>RecordingSegment를 만들지 않는다.
+  else session 있음
+    Backend->>DB: RecordingSegment 조회 or WRITING 생성
+    Note over Backend,DB: table: recording_segments<br/>unique key: recording_session_id<br/>policy: one segment per recording session
+
+    alt 기존 segment 없음
+      Backend->>DB: RecordingSegment 생성
+      Note over Backend,DB: recording_session_id = recordingSessionId<br/>raw_path = segment_path<br/>status = WRITING
+      Backend->>Backend: writing-created log
+    else 기존 segment rawPath == segment_path
+      Backend->>Backend: duplicate create hook no-op
+      Note over Backend,DB: update 없음<br/>status도 변경하지 않는다.
+      Backend->>Backend: writing-created log
+    else 기존 segment rawPath와 segment_path가 다름
+      Backend->>Backend: additional segment ignored
+      Note over Backend: 이미 session에 연결된 segment가 있으면<br/>새 segment_path는 저장하지 않는다.
+    end
+  end
+
+  Note over App,MTX: 이후 실제 media 전송은 열린 RTMP publisher socket에서 진행된다.
+
+%% 참고:
+%% 이 문서는 publish-ticket 발급 이후 RTMP publish 인증, stream-ready, live cache 등록,
+%% 첫 recording segment 생성까지만 다룬다.
+%% 실제 RTMP media chunk 전송부터 stream 종료, hook 처리, finalize enqueue까지는
+%% .mermaid/RTMP/4.rtmp-stream.mmd에서 다룬다.

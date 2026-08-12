@@ -1,0 +1,5 @@
+#!/bin/sh
+BACKEND_URL="${EGOFLOW_BACKEND_URL:-http://backend:3000}"
+wget -qO /dev/null --post-data="{\"path\":\"$MTX_PATH\"}" \
+  --header="Content-Type: application/json" \
+  "${BACKEND_URL}/api/v1/hooks/stream-not-ready" 2>/dev/null || true

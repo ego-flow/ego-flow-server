@@ -1,0 +1,102 @@
+sequenceDiagram
+  autonumber
+  participant App as [App]
+  participant Backend as [Backend]
+  participant Redis as [Redis]
+  participant Storage as [Raw Storage]
+  participant DB as [DB]
+  participant Queue as [Finalize Queue]
+
+  Note over App,Backend: 전제<br/>.mermaid/HTTP/3.http-start.mmd 단계가 성공했다.<br/>RecordingSession.status = STREAMING<br/>RecordingSegment.status = WRITING<br/>Redis stream:recording:{recordingSessionId}에 HTTP upload cache가 있다.
+
+  loop chunk upload
+    App->>Backend: HTTP chunk upload 요청
+    Note over App,Backend: API<br/>POST /api/v1/http-streams/{recordingSessionId}/chunks<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/octet-stream<br/>X-Chunk-Sequence: {sequence}<br/>X-Chunk-Offset: {bytesReceived}<br/><br/>Body<br/>binary media chunk
+
+    Backend->>Backend: JWT payload 검증 및 request validation
+    Backend->>Redis: upload lock 획득
+    Note over Backend,Redis: key: stream:http-upload-lock:{recordingSessionId}<br/>TTL: 10 seconds
+
+    Backend->>Redis: HTTP upload cache 조회
+    Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>required value fields<br/>ingestType: HTTP<br/>status: STREAMING<br/>userId: request user<br/>rawPath<br/>bytesReceived<br/>lastSequence<br/>lastChunkAt
+
+    alt upload 불가
+      Backend-->>App: 401/403/404/409/412 error
+      Note over App,Backend: invalid JWT, owner mismatch,<br/>missing cache, sequence mismatch,<br/>or offset mismatch
+    else upload 가능
+      Backend->>Storage: raw file append
+      Note over Backend,Storage: rawPath에 chunk를 append하고 file을 close한다.
+
+      Backend->>Redis: HTTP upload cache 갱신
+      Note over Backend,Redis: key: stream:recording:{recordingSessionId}<br/><br/>updated fields<br/>bytesReceived += chunk.length<br/>lastSequence = sequence<br/>lastChunkAt = now<br/>TTL: 7200 seconds
+
+      Backend-->>App: 200 OK
+      Note over App,Backend: Response Body<br/>recording_session_id: {recordingSessionId}<br/>bytes_received: {nextBytesReceived}<br/>last_sequence: {sequence}
+    end
+  end
+
+  alt normal finish
+    App->>Backend: HTTP finish 요청
+    Note over App,Backend: API<br/>POST /api/v1/http-streams/{recordingSessionId}/finish<br/><br/>Headers<br/>Authorization: Bearer {appAccessToken}<br/>Content-Type: application/json<br/><br/>Body<br/>total_bytes: {finalBytesReceived}
+
+    Backend->>Redis: upload lock 획득 및 cache 검증
+    Backend->>Storage: raw file size 검증
+
+    alt total bytes or file size mismatch
+      Backend-->>App: 412 Precondition Failed
+    else finish 가능
+      Backend->>DB: HTTP upload 정상 종료 기록
+      Note over Backend,DB: recording_sessions<br/>STREAMING -> CLOSED<br/>end_reason = NORMAL_DISCONNECT<br/><br/>recording_segments<br/>WRITING -> WRITE_DONE
+
+      Backend->>Redis: HTTP upload pointer 정리
+      Note over Backend,Redis: delete key: stream:recording:{recordingSessionId}<br/>delete key: stream:http-upload-lock:{recordingSessionId}<br/>remove from set: stream:active:sessions
+
+      Backend->>Queue: recording-finalize enqueue
+      Backend-->>App: 200 OK
+      Note over App,Backend: Response Body<br/>recording_session_id: {recordingSessionId}<br/>status: CLOSED<br/>segment_status: WRITE_DONE<br/>bytes_received: {bytesReceived}
+    end
+  else app stops sending chunks
+    Note over App,Backend: App crash, network loss, process kill 등으로<br/>finish 없이 chunk upload가 멈춘다.
+  end
+
+  opt HTTP timeout reconcile loop
+    Backend->>DB: STREAMING HTTP session 조회
+    Note over Backend: loop interval<br/>30 seconds
+    Backend->>Redis: upload cache 확인
+    Note over Backend,Redis: timeout condition<br/>now - lastChunkAt > 30 seconds
+
+    alt cache missing or malformed
+      Backend->>DB: timeout failure 기록
+      Note over Backend,DB: failure condition<br/>Redis upload cache가 없거나 HTTP STREAMING cache 형식이 아니다.<br/><br/>state update<br/>RecordingSession STREAMING -> CLOSED<br/>end_reason = UNEXPECTED_DISCONNECT<br/>RecordingSegment WRITING -> FAILED<br/>Video.status = FAILED
+      Backend->>Redis: HTTP upload pointer 정리
+    else not timed out
+      Backend->>Backend: no-op
+    else timed out and raw file recoverable
+      Backend->>Storage: raw file stat
+      Note over Backend,Storage: recover condition<br/>rawPath file exists<br/>file size > 0<br/>file size == Redis bytesReceived
+
+      Backend->>DB: timeout recover 기록
+      Note over Backend,DB: timeout recover means upload stopped unexpectedly,<br/>but the bytes already appended to disk are internally consistent.<br/><br/>state update<br/>RecordingSession STREAMING -> CLOSED<br/>end_reason = UNEXPECTED_DISCONNECT<br/>RecordingSegment WRITING -> WRITE_DONE
+      Backend->>Redis: HTTP upload pointer 정리
+      Backend->>Queue: recording-finalize enqueue
+    else timed out and raw file not usable
+      Backend->>Storage: raw file stat
+      Note over Backend,Storage: failure condition<br/>rawPath file missing<br/>or file size == 0<br/>or file size != Redis bytesReceived
+
+      Backend->>DB: timeout failure 기록
+      Note over Backend,DB: timeout failure means the server cannot trust<br/>the partial upload as a valid raw recording.<br/><br/>state update<br/>RecordingSession STREAMING -> CLOSED<br/>end_reason = UNEXPECTED_DISCONNECT<br/>RecordingSegment WRITING -> FAILED<br/>Video.status = FAILED
+      Backend->>Redis: HTTP upload pointer 정리
+    end
+  end
+
+%% 참고:
+%% HTTP chunk hot path는 DB session 조회 없이 JWT payload, Redis upload cache, raw file append를 사용한다.
+%% timeout recover 조건은 raw file이 존재하고 non-empty이며 Redis bytesReceived와 실제 file size가 정확히 같은 경우다.
+%% timeout failure 조건은 Redis cache missing/malformed, raw file missing, raw file 0 byte, raw file size mismatch다.
+%% timeout reconcile은 guarded DB state claim으로 RecordingSession=STREAMING 및 RecordingSegment=WRITING 상태를 가져온 경우에만 후속 처리를 진행한다.
+%% claim 실패는 finish 또는 다른 reconcile이 먼저 처리한 race로 보고 no-op 처리한다.
+%% HTTP upload cache TTL은 7200초이며 chunk upload 때마다 refresh된다.
+%% HTTP timeout 기준은 lastChunkAt 기준 30초다.
+%% start 직후 첫 chunk가 오기 전 idle 시간도 같은 timeout 기준을 따른다.
+%% timeout 조건 충족 후 실제 정리는 다음 30초 reconcile loop에서 수행된다.
+%% 정상 finish 또는 recover가 WRITE_DONE을 만들면 기존 finalize worker 경로를 사용한다.
